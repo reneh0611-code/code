@@ -35,10 +35,11 @@ namespace CheatOnYourDayOnes.EditorTools
             CreateNetworkRoot(playerPrefab);
             CreateTestJob();
             CreateHUD();
+            CreatePreviewCamera();
             EditorSceneManager.SaveScene(scene, ScenePath);
             Selection.activeObject = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath);
             EditorGUIUtility.PingObject(Selection.activeObject);
-            EditorUtility.DisplayDialog("CYDOY Phase 1", "Phase 1 scene created.\n\nNow run Build Visual Prototype, then press Play and Start Host.", "Let's go");
+            EditorUtility.DisplayDialog("CYDOY Phase 1", "Phase 1 scene created.\n\nRun Build Visual Prototype, then press Play and Start Host.", "Let's go");
         }
 
         private static void CreateLighting()
@@ -179,6 +180,20 @@ namespace CheatOnYourDayOnes.EditorTools
         {
             GameObject hud = new("PrototypeHUD");
             hud.AddComponent<PrototypeHUD>();
+        }
+
+        private static void CreatePreviewCamera()
+        {
+            GameObject cameraObject = new("ScenePreviewCamera");
+            cameraObject.transform.position = new Vector3(0f, 8f, -18f);
+            cameraObject.transform.rotation = Quaternion.Euler(18f, 0f, 0f);
+            Camera camera = cameraObject.AddComponent<Camera>();
+            camera.fieldOfView = 60f;
+            AudioListener listener = cameraObject.AddComponent<AudioListener>();
+            ScenePreviewCamera handoff = cameraObject.AddComponent<ScenePreviewCamera>();
+            SerializedObject so = new(handoff);
+            so.FindProperty("audioListener").objectReferenceValue = listener;
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void CreateTestJob()
