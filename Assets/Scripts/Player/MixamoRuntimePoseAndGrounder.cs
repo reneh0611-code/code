@@ -11,6 +11,7 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private CharacterController characterController;
         [SerializeField] private bool applyRelaxedPoseWithoutController = true;
         [SerializeField] private bool forceGrounding = true;
+        [SerializeField] private bool lockVisualRootXZ = true;
         [SerializeField] private float visualGroundOffset = 0.008f;
         [SerializeField] private float groundProbeHeight = 2.5f;
         [SerializeField] private float groundProbeDistance = 6f;
@@ -20,15 +21,22 @@ namespace CheatOnYourDayOnes.Player
         private Transform _rightUpperArm;
         private Transform _rightLowerArm;
         private bool _ready;
+        private float _baseLocalX;
+        private float _baseLocalZ;
 
         private IEnumerator Start()
         {
             ResolveReferences();
 
-            // Humanoid and skinned bounds are not fully valid immediately after spawn.
             yield return null;
             yield return new WaitForEndOfFrame();
             yield return new WaitForEndOfFrame();
+
+            if (modelRoot != null)
+            {
+                _baseLocalX = modelRoot.localPosition.x;
+                _baseLocalZ = modelRoot.localPosition.z;
+            }
 
             CacheArmBones();
             _ready = true;
@@ -43,6 +51,9 @@ namespace CheatOnYourDayOnes.Player
 
             if (applyRelaxedPoseWithoutController && !hasRealAnimation)
                 ApplyNaturalStandingArms();
+
+            if (lockVisualRootXZ)
+                LockModelRootXZ();
 
             if (forceGrounding)
                 SnapFeetExactlyToGround();
@@ -71,7 +82,6 @@ namespace CheatOnYourDayOnes.Player
 
         private void ApplyNaturalStandingArms()
         {
-            // Aim the upper arms almost straight down, with a very small outward/forward angle.
             PoseArm(_leftUpperArm, _leftLowerArm, new Vector3(-0.08f, -1f, 0.07f), new Vector3(-0.03f, -1f, 0.12f));
             PoseArm(_rightUpperArm, _rightLowerArm, new Vector3(0.08f, -1f, 0.07f), new Vector3(0.03f, -1f, 0.12f));
         }
@@ -102,6 +112,17 @@ namespace CheatOnYourDayOnes.Player
             }
         }
 
+        private void LockModelRootXZ()
+        {
+            if (modelRoot == null)
+                return;
+
+            Vector3 local = modelRoot.localPosition;
+            local.x = _baseLocalX;
+            local.z = _baseLocalZ;
+            modelRoot.localPosition = local;
+        }
+
         public void SnapFeetExactlyToGround()
         {
             if (modelRoot == null)
@@ -129,14 +150,12 @@ namespace CheatOnYourDayOnes.Player
                 if (hit.transform == null)
                     continue;
 
-                // Ignore everything belonging to this player.
                 if (hit.transform == transform || hit.transform.IsChildOf(transform))
                     continue;
 
                 float desiredSoleY = hit.point.y + visualGroundOffset;
                 float deltaY = desiredSoleY - bounds.min.y;
 
-                // Move only the visual model. Gameplay collision stays untouched.
                 if (Mathf.Abs(deltaY) > 0.0005f)
                     modelRoot.position += Vector3.up * deltaY;
 
