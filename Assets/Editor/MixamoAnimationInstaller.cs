@@ -38,7 +38,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.DisplayDialog(
                 "CYDOY · Mixamo Animations",
-                "Idle / Walk / Run installed. The animator now blends automatically from actual player movement speed.",
+                "Idle / Walk / Run reinstalled with a stable animator setup.",
                 "Let's go");
         }
 
@@ -62,10 +62,11 @@ namespace CheatOnYourDayOnes.EditorTools
 
             AssetDatabase.AddObjectToAsset(blendTree, controller);
             blendTree.AddChild(idle, 0f);
-            blendTree.AddChild(walk, 0.48f);
+            blendTree.AddChild(walk, 0.5f);
             blendTree.AddChild(run, 1f);
             locomotion.motion = blendTree;
             locomotion.speed = 1f;
+            locomotion.writeDefaultValues = true;
 
             EditorUtility.SetDirty(blendTree);
             EditorUtility.SetDirty(controller);
@@ -86,8 +87,13 @@ namespace CheatOnYourDayOnes.EditorTools
                     throw new System.InvalidOperationException("No Animator found below Player.prefab.");
 
                 animator.runtimeAnimatorController = controller;
+                animator.enabled = true;
+                animator.speed = 1f;
                 animator.applyRootMotion = false;
+                animator.updateMode = AnimatorUpdateMode.Normal;
                 animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+
+                CharacterController characterController = root.GetComponent<CharacterController>();
 
                 CharacterAnimationDriver driver = root.GetComponent<CharacterAnimationDriver>();
                 if (driver == null)
@@ -95,9 +101,11 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 SerializedObject driverSO = new(driver);
                 driverSO.FindProperty("animator").objectReferenceValue = animator;
-                driverSO.FindProperty("trackedRoot").objectReferenceValue = root.transform;
-                driverSO.FindProperty("maxReferenceSpeed").floatValue = 6.8f;
-                driverSO.FindProperty("damping").floatValue = 0.10f;
+                driverSO.FindProperty("characterController").objectReferenceValue = characterController;
+                driverSO.FindProperty("walkReferenceSpeed").floatValue = 4.2f;
+                driverSO.FindProperty("runReferenceSpeed").floatValue = 6.8f;
+                driverSO.FindProperty("damping").floatValue = 0.08f;
+                driverSO.FindProperty("minimumMovingSpeed").floatValue = 0.08f;
                 driverSO.ApplyModifiedPropertiesWithoutUndo();
 
                 PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
