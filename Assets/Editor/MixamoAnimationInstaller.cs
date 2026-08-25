@@ -30,9 +30,11 @@ namespace CheatOnYourDayOnes.EditorTools
                 return;
             }
 
-            AnimationClip idle = PrepareClip(IdlePath, "Idle", ajAvatar);
-            AnimationClip walk = PrepareClip(WalkPath, "Walk", ajAvatar);
-            AnimationClip run = PrepareClip(RunPath, "Run", ajAvatar);
+            // Idle must be a true humanoid clip. A Generic fallback can exist as an asset
+            // but will not reliably drive AJ's humanoid bones, which looks like 'no idle'.
+            AnimationClip idle = PrepareClip(IdlePath, "Idle", ajAvatar, allowGenericFallback: false);
+            AnimationClip walk = PrepareClip(WalkPath, "Walk", ajAvatar, allowGenericFallback: true);
+            AnimationClip run = PrepareClip(RunPath, "Run", ajAvatar, allowGenericFallback: true);
 
             if (idle == null || walk == null || run == null)
             {
@@ -44,7 +46,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 EditorUtility.DisplayDialog(
                     "CYDOY · Animation Import",
                     "Still no usable clip from: " + missing.Trim() +
-                    "\n\nCheck Console lines beginning with [CYDOY].",
+                    "\n\nIdle is now required to import as a real Humanoid clip for AJ. The previous Generic Idle fallback was the reason AJ could enter the Idle state without visibly animating.\n\nCheck Console lines beginning with [CYDOY].",
                     "OK");
                 return;
             }
@@ -61,7 +63,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 "Let's go");
         }
 
-        private static AnimationClip PrepareClip(string path, string stateName, Avatar ajAvatar)
+        private static AnimationClip PrepareClip(string path, string stateName, Avatar ajAvatar, bool allowGenericFallback)
         {
             if (AssetDatabase.LoadMainAssetAtPath(path) == null)
             {
@@ -81,7 +83,7 @@ namespace CheatOnYourDayOnes.EditorTools
             importer.materialImportMode = ModelImporterMaterialImportMode.None;
             importer.SaveAndReimport();
 
-            AnimationClip genericClip = FindFirstRealClip(path);
+            AnimationClip genericClip = FindBestRealClip(path);
             if (genericClip == null)
             {
                 Debug.LogError("[CYDOY] GENERIC FAILED: no AnimationClip in " + path);
@@ -89,7 +91,9 @@ namespace CheatOnYourDayOnes.EditorTools
             }
 
             Debug.Log($"[CYDOY] GENERIC OK {stateName}: '{genericClip.name}', {genericClip.length:F2}s");
-            AnimationClip fallback = ExtractClipCopy(genericClip, stateName + "_GenericFallback");
+            AnimationClip fallback = allowGenericFallback
+                ? ExtractClipCopy(genericClip, stateName + "_GenericFallback")
+                : null;
 
             importer = AssetImporter.GetAtPath(path) as ModelImporter;
             importer.importAnimation = true;
@@ -98,18 +102,35 @@ namespace CheatOnYourDayOnes.EditorTools
             importer.sourceAvatar = ajAvatar;
             importer.SaveAndReimport();
 
-            AnimationClip humanoidClip = FindFirstRealClip(path);
-            if (humanoidClip != null)
+            AnimationClip humanoidClip = FindBestRealClip(path);
+            if (humanoidClip != null && humanoidClip.humanMotion)
             {
                 ConfigureLoop(importer);
                 importer.SaveAndReimport();
-                humanoidClip = FindFirstRealClip(path);
+                humanoidClip = FindBestRealClip(path);
 
-                if (humanoidClip != null)
+                if (humanoidClip != null && humanoidClip.humanMotion)
                 {
+                    // Use a stable .anim copy for Idle so later FBX reimports cannot silently
+                    // swap its sub-asset or leave the controller pointing at an unusable take.
+                    if (stateName == "Idle")
+                    {
+                        AnimationClip stableIdle = ExtractClipCopy(humanoidClip, "Idle_Humanoid");
+                        Debug.Log($"[CYDOY] HUMANOID OK Idle: '{humanoidClip.name}', {humanoidClip.length:F2}s -> stable Idle_Humanoid.anim");
+                        return stableIdle;
+                    }
+
                     Debug.Log($"[CYDOY] HUMANOID OK {stateName}: '{humanoidClip.name}', {humanoidClip.length:F2}s");
                     return humanoidClip;
                 }
+            }
+
+            if (!allowGenericFallback)
+            {
+                Debug.LogError(
+                    $"[CYDOY] HUMANOID REQUIRED but failed for {stateName}. " +
+                    $"The FBX had a Generic clip ('{genericClip.name}', {genericClip.length:F2}s), but no usable humanoid motion for AJ.");
+                return null;
             }
 
             Debug.LogWarning("[CYDOY] HUMANOID FAILED for " + stateName + ". Using extracted Generic fallback.");
@@ -156,14 +177,22 @@ namespace CheatOnYourDayOnes.EditorTools
             return null;
         }
 
-        private static AnimationClip FindFirstRealClip(string path)
+        private static AnimationClip FindBestRealClip(string path)
         {
+            AnimationClip best = null;
+
             foreach (UObject asset in AssetDatabase.LoadAllAssetsAtPath(path))
             {
-                if (asset is AnimationClip clip && !clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
-                    return clip;
+                if (asset is not AnimationClip clip)
+                    continue;
+                if (clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (best == null || clip.length > best.length)
+                    best = clip;
             }
-            return null;
+
+            return best;
         }
 
         private static AnimatorController BuildDirectController(AnimationClip idle, AnimationClip walk, AnimationClip run)
@@ -222,7 +251,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 SerializedObject driverSO = new(driver);
                 driverSO.FindProperty("animator").objectReferenceValue = animator;
                 driverSO.FindProperty("characterController").objectReferenceValue = characterController;
-                driverSO.FindProperty("walkThreshold").floatValue = 0.15f;
+                driverSO.FindProperty("walkThreshold").floatValue = 0.35f;
                 driverSO.FindProperty("runThreshold").floatValue = 5.1f;
                 driverSO.FindProperty("crossFadeDuration").floatValue = 0.10f;
                 driverSO.ApplyModifiedPropertiesWithoutUndo();
