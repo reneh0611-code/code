@@ -7,7 +7,7 @@ namespace CheatOnYourDayOnes.EditorTools
 {
     public static class MixamoCharacterInstaller
     {
-        private const string CharacterPath = "Assets/Models/Characters/Ch28_nonPBR.fbx";
+        private const string CharacterPath = "Assets/Models/Characters/Aj.fbx";
         private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
         private const float TargetHeight = 1.82f;
 
@@ -18,7 +18,7 @@ namespace CheatOnYourDayOnes.EditorTools
             if (characterAsset == null)
             {
                 EnsureFolders();
-                EditorUtility.DisplayDialog("CYDOY · Mixamo Character", "Character file not found.\n\nPut Ch28_nonPBR.fbx here:\n" + CharacterPath, "OK");
+                EditorUtility.DisplayDialog("CYDOY · Mixamo Character", "Character file not found.\n\nPut Aj.fbx here:\n" + CharacterPath, "OK");
                 return;
             }
 
@@ -43,7 +43,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 if (model == null)
                     model = Object.Instantiate(characterAsset);
 
-                model.name = "Mixamo_David";
+                model.name = "Mixamo_AJ";
                 model.transform.SetParent(visualRoot.transform, false);
                 model.transform.localPosition = Vector3.zero;
                 model.transform.localRotation = Quaternion.identity;
@@ -104,7 +104,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 EditorUtility.DisplayDialog(
                     "CYDOY · Mixamo Character",
-                    "Character updated with close third-person framing, exact ground alignment and natural arm posture.",
+                    "AJ installed with the existing third-person framing, grounding and animation hooks.",
                     "Nice");
             }
             finally
@@ -180,9 +180,9 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static void ApplyFallbackMaterialsIfNeeded(GameObject model)
         {
-            Material skin = GetOrCreateFallbackMaterial("David_Skin_Fallback", new Color(0.38f, 0.22f, 0.15f));
-            Material cloth = GetOrCreateFallbackMaterial("David_Clothes_Fallback", new Color(0.07f, 0.08f, 0.10f));
-            Material shoes = GetOrCreateFallbackMaterial("David_Shoes_Fallback", new Color(0.025f, 0.025f, 0.03f));
+            Material skin = GetOrCreateFallbackMaterial("AJ_Skin_Fallback", new Color(0.58f, 0.38f, 0.26f));
+            Material cloth = GetOrCreateFallbackMaterial("AJ_Clothes_Fallback", new Color(0.10f, 0.12f, 0.16f));
+            Material shoes = GetOrCreateFallbackMaterial("AJ_Shoes_Fallback", new Color(0.035f, 0.035f, 0.045f));
 
             foreach (Renderer renderer in model.GetComponentsInChildren<Renderer>(true))
             {
