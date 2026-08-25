@@ -34,7 +34,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 EditorUtility.DisplayDialog(
                     "CYDOY · Animation Import",
                     "Could not create a readable AnimationClip from: " + missing.Trim() +
-                    "\n\nThe installer now uses the exact three file paths and rebuilds their clip settings directly from the FBX take data.\n\nCheck the Console for the exact importer report.",
+                    "\n\nThe installer now performs a clean two-pass FBX import before reading the Mixamo take data.\n\nCheck the Console for the exact importer report.",
                     "OK");
                 return;
             }
@@ -61,6 +61,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 return null;
             }
 
+            // PASS 1: configure the FBX as a humanoid animation and let Unity import it fully.
             ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
             if (importer == null)
             {
@@ -75,18 +76,32 @@ namespace CheatOnYourDayOnes.EditorTools
             importer.importLights = false;
             importer.materialImportMode = ModelImporterMaterialImportMode.None;
 
+            // Clear custom clips before the first pass so newly replaced FBXs are read from their own take data.
+            importer.clipAnimations = Array.Empty<ModelImporterClipAnimation>();
+            importer.SaveAndReimport();
+
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+
+            // PASS 2: reload importer AFTER Unity has parsed the new FBX file.
+            importer = AssetImporter.GetAtPath(path) as ModelImporter;
+            if (importer == null)
+            {
+                Debug.LogError("[CYDOY] ModelImporter disappeared after first import: " + path);
+                return null;
+            }
+
             ModelImporterClipAnimation[] sourceClips = importer.defaultClipAnimations;
             if (sourceClips == null || sourceClips.Length == 0)
-                sourceClips = importer.clipAnimations;
-
-            if (sourceClips == null || sourceClips.Length == 0)
             {
-                Debug.LogError("[CYDOY] FBX contains no importable animation take data: " + path);
-                importer.SaveAndReimport();
+                Debug.LogError("[CYDOY] No default animation takes after clean import: " + path);
+                DumpSubAssets(path);
                 return null;
             }
 
             ModelImporterClipAnimation source = sourceClips[0];
+            Debug.Log($"[CYDOY] Raw take found in {path}: name='{source.name}', take='{source.takeName}', frames={source.firstFrame:F0}-{source.lastFrame:F0}");
+
             ModelImporterClipAnimation clip = new()
             {
                 name = forcedName,
@@ -106,19 +121,30 @@ namespace CheatOnYourDayOnes.EditorTools
             importer.clipAnimations = new[] { clip };
             importer.SaveAndReimport();
 
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+
             UObject[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
             foreach (UObject asset in assets)
             {
                 if (asset is AnimationClip animationClip &&
                     !animationClip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                 {
-                    Debug.Log($"[CYDOY] {path} → clip '{animationClip.name}', length={animationClip.length:F2}s, frames={clip.firstFrame:F0}-{clip.lastFrame:F0}, take='{clip.takeName}'");
+                    Debug.Log($"[CYDOY] READY {path} → clip '{animationClip.name}', length={animationClip.length:F2}s");
                     return animationClip;
                 }
             }
 
-            Debug.LogError("[CYDOY] Import completed but Unity still exposed no AnimationClip sub-asset for: " + path);
+            Debug.LogError("[CYDOY] Take existed, but Unity exposed no AnimationClip sub-asset after second import: " + path);
+            DumpSubAssets(path);
             return null;
+        }
+
+        private static void DumpSubAssets(string path)
+        {
+            UObject[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
+            Debug.Log("[CYDOY] Sub-assets for " + path + ":");
+            foreach (UObject asset in assets)
+                Debug.Log($"[CYDOY]   {asset.GetType().Name} : {asset.name}");
         }
 
         private static AnimatorController BuildDirectController(AnimationClip idle, AnimationClip walk, AnimationClip run)
