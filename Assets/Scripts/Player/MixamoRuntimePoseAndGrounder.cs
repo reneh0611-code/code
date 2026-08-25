@@ -1,37 +1,93 @@
+using System.Collections;
 using UnityEngine;
 
 namespace CheatOnYourDayOnes.Player
 {
+    /// <summary>
+    /// Aligns the whole rendered AJ model to the CharacterController bottom once.
+    /// It never edits bones, Animator state, animation curves or pose data.
+    /// </summary>
     public sealed class MixamoRuntimePoseAndGrounder : MonoBehaviour
     {
         [SerializeField] private Animator animator;
         [SerializeField] private Transform modelRoot;
         [SerializeField] private CharacterController characterController;
-        [SerializeField] private bool applyRelaxedPoseWithoutController = true;
+        [SerializeField, Min(0)] private int settleFrames = 2;
+        [SerializeField] private float soleOffset = 0f;
 
-        private Transform _leftUpperArm;
-        private Transform _leftLowerArm;
-        private Transform _rightUpperArm;
-        private Transform _rightLowerArm;
-
-        private void Start()
+        private IEnumerator Start()
         {
             ResolveReferences();
-            CacheHumanoidBones();
 
-            bool hasRealAnimation = animator != null && animator.runtimeAnimatorController != null;
-            if (applyRelaxedPoseWithoutController && !hasRealAnimation)
-                ApplyNaturalStandingArms();
+            if (modelRoot == null || characterController == null)
+                yield break;
+
+            // Wait until the Animator has evaluated the real Idle pose and renderer bounds are current.
+            for (int i = 0; i < settleFrames; i++)
+                yield return null;
+
+            AlignWholeVisualToControllerBottom();
+
+            // Important: never touch the animation again after the one-time visual offset.
+            enabled = false;
         }
 
         private void ResolveReferences()
         {
             if (animator == null)
                 animator = FindAjAnimator();
+
             if (characterController == null)
                 characterController = GetComponent<CharacterController>();
+
             if (modelRoot == null && animator != null)
                 modelRoot = FindModelRoot(animator.transform);
+        }
+
+        private void AlignWholeVisualToControllerBottom()
+        {
+            Renderer[] renderers = modelRoot.GetComponentsInChildren<Renderer>(true);
+            if (renderers == null || renderers.Length == 0)
+            {
+                Debug.LogWarning("[CYDOY] Ground alignment skipped: AJ has no renderers.", this);
+                return;
+            }
+
+            bool hasBounds = false;
+            Bounds combined = default;
+
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy)
+                    continue;
+
+                if (!hasBounds)
+                {
+                    combined = renderer.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    combined.Encapsulate(renderer.bounds);
+                }
+            }
+
+            if (!hasBounds)
+                return;
+
+            float controllerBottomY = transform.position.y
+                + characterController.center.y
+                - characterController.height * 0.5f;
+
+            float desiredVisualBottomY = controllerBottomY + soleOffset;
+            float deltaY = desiredVisualBottomY - combined.min.y;
+
+            modelRoot.position += Vector3.up * deltaY;
+
+            Debug.Log(
+                $"[CYDOY] AJ visual grounded once. VisualBottom={combined.min.y:F4}, " +
+                $"ControllerBottom={controllerBottomY:F4}, DeltaY={deltaY:F4}. Animation untouched.",
+                this);
         }
 
         private Animator FindAjAnimator()
@@ -39,6 +95,9 @@ namespace CheatOnYourDayOnes.Player
             Animator[] animators = GetComponentsInChildren<Animator>(true);
             foreach (Animator candidate in animators)
             {
+                if (candidate == null)
+                    continue;
+
                 Transform t = candidate.transform;
                 while (t != null && t != transform)
                 {
@@ -62,49 +121,6 @@ namespace CheatOnYourDayOnes.Player
             }
 
             return animatorTransform;
-        }
-
-        private void CacheHumanoidBones()
-        {
-            if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
-                return;
-
-            _leftUpperArm = animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
-            _leftLowerArm = animator.GetBoneTransform(HumanBodyBones.LeftLowerArm);
-            _rightUpperArm = animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
-            _rightLowerArm = animator.GetBoneTransform(HumanBodyBones.RightLowerArm);
-        }
-
-        private void ApplyNaturalStandingArms()
-        {
-            PoseArm(_leftUpperArm, _leftLowerArm, new Vector3(-0.08f, -1f, 0.07f), new Vector3(-0.03f, -1f, 0.12f));
-            PoseArm(_rightUpperArm, _rightLowerArm, new Vector3(0.08f, -1f, 0.07f), new Vector3(0.03f, -1f, 0.12f));
-        }
-
-        private void PoseArm(Transform upperArm, Transform lowerArm, Vector3 upperDesiredLocal, Vector3 lowerDesiredLocal)
-        {
-            if (upperArm == null || lowerArm == null)
-                return;
-
-            Vector3 currentUpperDirection = (lowerArm.position - upperArm.position).normalized;
-            Vector3 desiredUpperDirection = transform.TransformDirection(upperDesiredLocal.normalized);
-            if (currentUpperDirection.sqrMagnitude > 0.001f)
-            {
-                Quaternion correction = Quaternion.FromToRotation(currentUpperDirection, desiredUpperDirection);
-                upperArm.rotation = correction * upperArm.rotation;
-            }
-
-            Transform hand = lowerArm.childCount > 0 ? lowerArm.GetChild(0) : null;
-            if (hand == null)
-                return;
-
-            Vector3 currentLowerDirection = (hand.position - lowerArm.position).normalized;
-            Vector3 desiredLowerDirection = transform.TransformDirection(lowerDesiredLocal.normalized);
-            if (currentLowerDirection.sqrMagnitude > 0.001f)
-            {
-                Quaternion correction = Quaternion.FromToRotation(currentLowerDirection, desiredLowerDirection);
-                lowerArm.rotation = correction * lowerArm.rotation;
-            }
         }
     }
 }
