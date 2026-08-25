@@ -12,17 +12,27 @@ namespace CheatOnYourDayOnes.EditorTools
         private const string IdlePath = "Assets/Models/Animations/Idle.fbx";
         private const string WalkPath = "Assets/Models/Animations/Walk.fbx";
         private const string RunPath = "Assets/Models/Animations/Run.fbx";
+        private const string AjPath = "Assets/Models/Characters/Aj.fbx";
         private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
         private const string ControllerPath = "Assets/Models/Animations/AJ_Locomotion.controller";
+        private const string GeneratedFolder = "Assets/Models/Animations/Generated";
 
         [MenuItem("Tools/CYDOY/Install Mixamo Animations")]
         public static void Install()
         {
+            EnsureGeneratedFolder();
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 
-            AnimationClip idle = PrepareClip(IdlePath, "Idle");
-            AnimationClip walk = PrepareClip(WalkPath, "Walk");
-            AnimationClip run = PrepareClip(RunPath, "Run");
+            Avatar ajAvatar = FindAvatar(AjPath);
+            if (ajAvatar == null)
+            {
+                EditorUtility.DisplayDialog("CYDOY · Animation Import", "AJ Avatar not found. Run Tools → CYDOY → Install Mixamo Character first.", "OK");
+                return;
+            }
+
+            AnimationClip idle = PrepareClip(IdlePath, "Idle", ajAvatar);
+            AnimationClip walk = PrepareClip(WalkPath, "Walk", ajAvatar);
+            AnimationClip run = PrepareClip(RunPath, "Run", ajAvatar);
 
             if (idle == null || walk == null || run == null)
             {
@@ -33,8 +43,8 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 EditorUtility.DisplayDialog(
                     "CYDOY · Animation Import",
-                    "No readable AnimationClip found in: " + missing.Trim() +
-                    "\n\nThe importer no longer rewrites Mixamo take data. If one of these still fails, that FBX was exported without an animation clip or Unity still has a broken cached import for it.",
+                    "Still no usable clip from: " + missing.Trim() +
+                    "\n\nCheck Console lines beginning with [CYDOY]. The installer now tests Generic first, then Humanoid retargeting to AJ, and keeps an extracted Generic fallback if needed.",
                     "OK");
                 return;
             }
@@ -47,13 +57,11 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.DisplayDialog(
                 "CYDOY · Mixamo Animations",
-                "Installed successfully.\n\nIdle: " + idle.name +
-                "\nWalk: " + walk.name +
-                "\nRun: " + run.name,
+                "Installed successfully.\n\nIdle: " + idle.name + "\nWalk: " + walk.name + "\nRun: " + run.name,
                 "Let's go");
         }
 
-        private static AnimationClip PrepareClip(string path, string expectedStateName)
+        private static AnimationClip PrepareClip(string path, string stateName, Avatar ajAvatar)
         {
             if (AssetDatabase.LoadMainAssetAtPath(path) == null)
             {
@@ -63,67 +71,100 @@ namespace CheatOnYourDayOnes.EditorTools
 
             ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
             if (importer == null)
-            {
-                Debug.LogError("[CYDOY] No ModelImporter: " + path);
                 return null;
-            }
 
-            // First import: preserve the FBX's original take data.
+            // PASS 1: Generic. This is the most reliable way to verify that the FBX really contains animation data.
             importer.importAnimation = true;
-            importer.animationType = ModelImporterAnimationType.Human;
-            importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+            importer.animationType = ModelImporterAnimationType.Generic;
+            importer.avatarSetup = ModelImporterAvatarSetup.NoAvatar;
             importer.importCameras = false;
             importer.importLights = false;
             importer.materialImportMode = ModelImporterMaterialImportMode.None;
             importer.SaveAndReimport();
 
-            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
-
-            AnimationClip clip = FindFirstRealClip(path);
-            if (clip == null)
+            AnimationClip genericClip = FindFirstRealClip(path);
+            if (genericClip == null)
             {
-                Debug.LogError("[CYDOY] No AnimationClip sub-asset after clean import: " + path);
+                Debug.LogError("[CYDOY] GENERIC FAILED: no AnimationClip in " + path);
                 return null;
             }
 
-            // Only after the actual Mixamo clip exists do we configure looping/root lock.
-            importer = AssetImporter.GetAtPath(path) as ModelImporter;
-            if (importer != null)
-            {
-                ModelImporterClipAnimation[] clips = importer.defaultClipAnimations;
-                if (clips != null && clips.Length > 0)
-                {
-                    for (int i = 0; i < clips.Length; i++)
-                    {
-                        clips[i].loopTime = true;
-                        clips[i].loopPose = true;
-                        clips[i].lockRootRotation = true;
-                        clips[i].lockRootHeightY = true;
-                        clips[i].lockRootPositionXZ = true;
-                    }
+            Debug.Log($"[CYDOY] GENERIC OK {stateName}: '{genericClip.name}', {genericClip.length:F2}s");
+            AnimationClip fallback = ExtractClipCopy(genericClip, stateName + "_GenericFallback");
 
-                    importer.clipAnimations = clips;
-                    importer.SaveAndReimport();
-                    clip = FindFirstRealClip(path);
+            // PASS 2: Humanoid retargeted to AJ.
+            importer = AssetImporter.GetAtPath(path) as ModelImporter;
+            importer.importAnimation = true;
+            importer.animationType = ModelImporterAnimationType.Human;
+            importer.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
+            importer.sourceAvatar = ajAvatar;
+            importer.SaveAndReimport();
+
+            AnimationClip humanoidClip = FindFirstRealClip(path);
+            if (humanoidClip != null)
+            {
+                ConfigureLoop(importer);
+                importer.SaveAndReimport();
+                humanoidClip = FindFirstRealClip(path);
+
+                if (humanoidClip != null)
+                {
+                    Debug.Log($"[CYDOY] HUMANOID OK {stateName}: '{humanoidClip.name}', {humanoidClip.length:F2}s");
+                    return humanoidClip;
                 }
             }
 
-            if (clip != null)
-                Debug.Log($"[CYDOY] READY {expectedStateName}: '{clip.name}' from {path}, length={clip.length:F2}s");
+            Debug.LogWarning("[CYDOY] HUMANOID FAILED for " + stateName + ". Using extracted Generic fallback.");
+            return fallback;
+        }
 
-            return clip;
+        private static void ConfigureLoop(ModelImporter importer)
+        {
+            ModelImporterClipAnimation[] clips = importer.defaultClipAnimations;
+            if (clips == null || clips.Length == 0)
+                clips = importer.clipAnimations;
+            if (clips == null || clips.Length == 0)
+                return;
+
+            for (int i = 0; i < clips.Length; i++)
+            {
+                clips[i].loopTime = true;
+                clips[i].loopPose = true;
+                clips[i].lockRootRotation = true;
+                clips[i].lockRootHeightY = true;
+                clips[i].lockRootPositionXZ = true;
+            }
+            importer.clipAnimations = clips;
+        }
+
+        private static AnimationClip ExtractClipCopy(AnimationClip source, string name)
+        {
+            string path = GeneratedFolder + "/" + name + ".anim";
+            AssetDatabase.DeleteAsset(path);
+
+            AnimationClip copy = UObject.Instantiate(source);
+            copy.name = name;
+            copy.wrapMode = WrapMode.Loop;
+            AssetDatabase.CreateAsset(copy, path);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+            return AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+        }
+
+        private static Avatar FindAvatar(string path)
+        {
+            foreach (UObject asset in AssetDatabase.LoadAllAssetsAtPath(path))
+                if (asset is Avatar avatar && avatar.isValid)
+                    return avatar;
+            return null;
         }
 
         private static AnimationClip FindFirstRealClip(string path)
         {
-            UObject[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
-            foreach (UObject asset in assets)
+            foreach (UObject asset in AssetDatabase.LoadAllAssetsAtPath(path))
             {
-                if (asset is AnimationClip clip &&
-                    !clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
+                if (asset is AnimationClip clip && !clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                     return clip;
             }
-
             return null;
         }
 
@@ -131,8 +172,8 @@ namespace CheatOnYourDayOnes.EditorTools
         {
             AssetDatabase.DeleteAsset(ControllerPath);
             AnimatorController controller = AnimatorController.CreateAnimatorControllerAtPath(ControllerPath);
-
             AnimatorStateMachine machine = controller.layers[0].stateMachine;
+
             AnimatorState idleState = machine.AddState("Idle");
             AnimatorState walkState = machine.AddState("Walk");
             AnimatorState runState = machine.AddState("Run");
@@ -140,12 +181,8 @@ namespace CheatOnYourDayOnes.EditorTools
             idleState.motion = idle;
             walkState.motion = walk;
             runState.motion = run;
-            idleState.speed = 1f;
-            walkState.speed = 1f;
-            runState.speed = 1f;
-            idleState.writeDefaultValues = true;
-            walkState.writeDefaultValues = true;
-            runState.writeDefaultValues = true;
+            idleState.speed = walkState.speed = runState.speed = 1f;
+            idleState.writeDefaultValues = walkState.writeDefaultValues = runState.writeDefaultValues = true;
             machine.defaultState = idleState;
 
             EditorUtility.SetDirty(controller);
@@ -190,6 +227,16 @@ namespace CheatOnYourDayOnes.EditorTools
             finally
             {
                 PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        private static void EnsureGeneratedFolder()
+        {
+            if (!AssetDatabase.IsValidFolder(GeneratedFolder))
+            {
+                if (!AssetDatabase.IsValidFolder("Assets/Models/Animations"))
+                    throw new InvalidOperationException("Assets/Models/Animations does not exist.");
+                AssetDatabase.CreateFolder("Assets/Models/Animations", "Generated");
             }
         }
     }
