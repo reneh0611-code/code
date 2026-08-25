@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -6,11 +8,16 @@ namespace CheatOnYourDayOnes.EditorTools
 {
     public static class AJBackpackUtility
     {
+        private const string CharacterPath = "Assets/Models/Characters/Aj.fbx";
         private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
+        private const string GeneratedFolder = "Assets/Models/Characters/Generated";
 
         [MenuItem("Tools/CYDOY/Remove AJ Backpack")]
         public static void RemoveBackpack()
         {
+            EnsureReadableSource();
+            EnsureGeneratedFolder();
+
             GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
             if (playerPrefab == null)
             {
@@ -20,7 +27,8 @@ namespace CheatOnYourDayOnes.EditorTools
 
             GameObject root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
             int hiddenBones = 0;
-            int hiddenRenderers = 0;
+            int modifiedRenderers = 0;
+            int removedTriangles = 0;
 
             try
             {
@@ -31,7 +39,6 @@ namespace CheatOnYourDayOnes.EditorTools
                     return;
                 }
 
-                // Hide the obvious backpack bones/objects first.
                 foreach (Transform t in aj.GetComponentsInChildren<Transform>(true))
                 {
                     if (t == aj)
@@ -44,19 +51,89 @@ namespace CheatOnYourDayOnes.EditorTools
                     }
                 }
 
-                // More important: disable the SkinnedMeshRenderer that actually draws the backpack.
-                SkinnedMeshRenderer[] renderers = aj.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-                foreach (SkinnedMeshRenderer renderer in renderers)
+                foreach (SkinnedMeshRenderer renderer in aj.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 {
-                    if (renderer == null)
+                    if (renderer == null || renderer.sharedMesh == null)
                         continue;
 
-                    if (IsBackpackRenderer(renderer))
+                    Mesh source = renderer.sharedMesh;
+                    if (!source.isReadable)
                     {
-                        renderer.enabled = false;
-                        hiddenRenderers++;
-                        Debug.Log($"[CYDOY] Disabled backpack renderer: {GetPath(renderer.transform)} | mesh={renderer.sharedMesh?.name}");
+                        Debug.LogWarning($"[CYDOY] Mesh '{source.name}' is not readable; skipped backpack surgery.");
+                        continue;
                     }
+
+                    HashSet<int> backpackBoneIndices = GetBackpackBoneIndices(renderer);
+                    if (backpackBoneIndices.Count == 0)
+                        continue;
+
+                    BoneWeight[] weights = source.boneWeights;
+                    if (weights == null || weights.Length != source.vertexCount)
+                        continue;
+
+                    Mesh cleaned = Object.Instantiate(source);
+                    cleaned.name = source.name + "_NoBackpack";
+
+                    int removedFromRenderer = 0;
+                    for (int subMesh = 0; subMesh < source.subMeshCount; subMesh++)
+                    {
+                        int[] triangles = source.GetTriangles(subMesh);
+                        List<int> kept = new(triangles.Length);
+
+                        for (int i = 0; i + 2 < triangles.Length; i += 3)
+                        {
+                            int a = triangles[i];
+                            int b = triangles[i + 1];
+                            int c = triangles[i + 2];
+
+                            float wa = BackpackInfluence(weights[a], backpackBoneIndices);
+                            float wb = BackpackInfluence(weights[b], backpackBoneIndices);
+                            float wc = BackpackInfluence(weights[c], backpackBoneIndices);
+
+                            int stronglyWeightedVertices = 0;
+                            if (wa >= 0.20f) stronglyWeightedVertices++;
+                            if (wb >= 0.20f) stronglyWeightedVertices++;
+                            if (wc >= 0.20f) stronglyWeightedVertices++;
+
+                            float average = (wa + wb + wc) / 3f;
+                            bool backpackTriangle = stronglyWeightedVertices >= 2 || average >= 0.30f;
+
+                            if (backpackTriangle)
+                            {
+                                removedFromRenderer++;
+                                continue;
+                            }
+
+                            kept.Add(a);
+                            kept.Add(b);
+                            kept.Add(c);
+                        }
+
+                        cleaned.SetTriangles(kept, subMesh, false);
+                    }
+
+                    if (removedFromRenderer == 0)
+                    {
+                        Object.DestroyImmediate(cleaned);
+                        continue;
+                    }
+
+                    cleaned.RecalculateBounds();
+
+                    string safeRenderer = Sanitize(renderer.name);
+                    string assetPath = $"{GeneratedFolder}/AJ_NoBackpack_{safeRenderer}.asset";
+                    AssetDatabase.DeleteAsset(assetPath);
+                    AssetDatabase.CreateAsset(cleaned, assetPath);
+                    AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport);
+
+                    Mesh saved = AssetDatabase.LoadAssetAtPath<Mesh>(assetPath);
+                    renderer.sharedMesh = saved;
+                    EditorUtility.SetDirty(renderer);
+
+                    modifiedRenderers++;
+                    removedTriangles += removedFromRenderer;
+
+                    Debug.Log($"[CYDOY] Backpack geometry removed from renderer '{renderer.name}'. Triangles removed: {removedFromRenderer}. Generated mesh: {assetPath}");
                 }
 
                 PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
@@ -67,39 +144,52 @@ namespace CheatOnYourDayOnes.EditorTools
             }
 
             AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
             EditorUtility.DisplayDialog(
                 "CYDOY · AJ Backpack",
-                $"Backpack cleanup complete.\n\nBackpack bones/objects hidden: {hiddenBones}\nBackpack renderers disabled: {hiddenRenderers}\n\nIf renderer count is 0, send me the four renderer names from the AJ Analyzer and I can target the exact mesh by name.",
+                $"Backpack mesh cleanup complete.\n\nBackpack bones hidden: {hiddenBones}\nMeshes modified: {modifiedRenderers}\nBackpack triangles removed: {removedTriangles}\n\nThe original Aj.fbx was not destructively changed. The Player prefab now points to generated no-backpack mesh copies.",
                 "OK");
         }
 
-        public static bool IsBackpackRenderer(SkinnedMeshRenderer renderer)
+        private static void EnsureReadableSource()
         {
-            if (renderer == null)
-                return false;
+            ModelImporter importer = AssetImporter.GetAtPath(CharacterPath) as ModelImporter;
+            if (importer == null)
+                return;
 
-            string rendererName = renderer.name ?? string.Empty;
-            string meshName = renderer.sharedMesh != null ? renderer.sharedMesh.name : string.Empty;
-            string materialNames = string.Join(" ", renderer.sharedMaterials.Where(m => m != null).Select(m => m.name));
-            string key = (rendererName + " " + meshName + " " + materialNames).ToLowerInvariant();
-
-            if (IsBackpackToken(key))
-                return true;
-
-            // Some FBXs give the visible backpack mesh a generic name but bind it to backpack bones.
-            Transform[] bones = renderer.bones;
-            if (bones == null || bones.Length == 0)
-                return false;
-
-            int backpackBones = 0;
-            foreach (Transform bone in bones)
+            if (!importer.isReadable)
             {
+                importer.isReadable = true;
+                importer.SaveAndReimport();
+            }
+        }
+
+        private static HashSet<int> GetBackpackBoneIndices(SkinnedMeshRenderer renderer)
+        {
+            HashSet<int> result = new();
+            Transform[] bones = renderer.bones;
+            if (bones == null)
+                return result;
+
+            for (int i = 0; i < bones.Length; i++)
+            {
+                Transform bone = bones[i];
                 if (bone != null && IsBackpackToken(bone.name))
-                    backpackBones++;
+                    result.Add(i);
             }
 
-            // A dedicated accessory renderer usually has a meaningful share of its bone list on the backpack.
-            return backpackBones >= 2 && backpackBones >= Mathf.CeilToInt(bones.Length * 0.12f);
+            return result;
+        }
+
+        private static float BackpackInfluence(BoneWeight weight, HashSet<int> backpackIndices)
+        {
+            float total = 0f;
+            if (backpackIndices.Contains(weight.boneIndex0)) total += weight.weight0;
+            if (backpackIndices.Contains(weight.boneIndex1)) total += weight.weight1;
+            if (backpackIndices.Contains(weight.boneIndex2)) total += weight.weight2;
+            if (backpackIndices.Contains(weight.boneIndex3)) total += weight.weight3;
+            return total;
         }
 
         private static bool IsBackpackToken(string value)
@@ -110,6 +200,16 @@ namespace CheatOnYourDayOnes.EditorTools
             string n = value.ToLowerInvariant();
             return n.Contains("backpack") || n.Contains("back_pack") || n.Contains("rucksack") ||
                    n.Contains("shoulderbag") || n.Contains("back bag") || n == "bag";
+        }
+
+        private static void EnsureGeneratedFolder()
+        {
+            if (!AssetDatabase.IsValidFolder("Assets/Models"))
+                AssetDatabase.CreateFolder("Assets", "Models");
+            if (!AssetDatabase.IsValidFolder("Assets/Models/Characters"))
+                AssetDatabase.CreateFolder("Assets/Models", "Characters");
+            if (!AssetDatabase.IsValidFolder(GeneratedFolder))
+                AssetDatabase.CreateFolder("Assets/Models/Characters", "Generated");
         }
 
         private static Transform FindRecursive(Transform root, string targetName)
@@ -127,15 +227,11 @@ namespace CheatOnYourDayOnes.EditorTools
             return null;
         }
 
-        private static string GetPath(Transform t)
+        private static string Sanitize(string value)
         {
-            string path = t.name;
-            while (t.parent != null)
-            {
-                t = t.parent;
-                path = t.name + "/" + path;
-            }
-            return path;
+            foreach (char c in Path.GetInvalidFileNameChars())
+                value = value.Replace(c, '_');
+            return value.Replace('/', '_').Replace('\\', '_').Replace(':', '_');
         }
     }
 }
