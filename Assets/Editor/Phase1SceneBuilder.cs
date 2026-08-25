@@ -28,6 +28,7 @@ namespace CheatOnYourDayOnes.EditorTools
             EnsureFolder("Assets", "Scenes");
             EnsureFolder("Assets", "Prefabs");
             EnsureFolder("Assets/Prefabs", "Player");
+
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             CreateLighting();
             CreateGround();
@@ -37,9 +38,10 @@ namespace CheatOnYourDayOnes.EditorTools
             CreateHUD();
             CreatePreviewCamera();
             EditorSceneManager.SaveScene(scene, ScenePath);
+
             Selection.activeObject = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath);
             EditorGUIUtility.PingObject(Selection.activeObject);
-            EditorUtility.DisplayDialog("CYDOY Phase 1", "Phase 1 scene created.\n\nRun Build Visual Prototype, then press Play and Start Host.", "Let's go");
+            EditorUtility.DisplayDialog("CYDOY Phase 1", "Phase 1 scene rebuilt with the new third-person character.\n\nRun Build Visual Prototype next.", "Let's go");
         }
 
         private static void CreateLighting()
@@ -63,19 +65,15 @@ namespace CheatOnYourDayOnes.EditorTools
             if (AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath) != null)
                 AssetDatabase.DeleteAsset(PlayerPrefabPath);
 
-            GameObject player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            player.name = "Player";
-            player.transform.position = new Vector3(0f, 1f, 0f);
-
-            CapsuleCollider capsuleCollider = player.GetComponent<CapsuleCollider>();
-            if (capsuleCollider != null) Object.DestroyImmediate(capsuleCollider);
-            MeshRenderer rootRenderer = player.GetComponent<MeshRenderer>();
-            if (rootRenderer != null) rootRenderer.enabled = false;
+            GameObject player = new("Player");
+            player.transform.position = new Vector3(0f, 1.05f, 0f);
 
             CharacterController cc = player.AddComponent<CharacterController>();
-            cc.center = Vector3.zero;
-            cc.radius = 0.4f;
-            cc.height = 2f;
+            cc.center = new Vector3(0f, 0f, 0f);
+            cc.radius = 0.38f;
+            cc.height = 2.05f;
+            cc.stepOffset = 0.32f;
+            cc.slopeLimit = 48f;
 
             player.AddComponent<NetworkObject>();
             player.AddComponent<PlayerData>();
@@ -86,27 +84,43 @@ namespace CheatOnYourDayOnes.EditorTools
             player.AddComponent<PlayerAgent>();
             NetworkPlayerController controller = player.AddComponent<NetworkPlayerController>();
             PlayerInteractor interactor = player.AddComponent<PlayerInteractor>();
+            StylizedCharacterAnimator characterAnimator = player.AddComponent<StylizedCharacterAnimator>();
 
-            CreateStylizedPlayerVisual(player.transform);
+            CharacterParts parts = CreateStylizedPlayerVisual(player.transform);
+
+            SerializedObject animatorSO = new(characterAnimator);
+            animatorSO.FindProperty("leftArm").objectReferenceValue = parts.LeftArm;
+            animatorSO.FindProperty("rightArm").objectReferenceValue = parts.RightArm;
+            animatorSO.FindProperty("leftLeg").objectReferenceValue = parts.LeftLeg;
+            animatorSO.FindProperty("rightLeg").objectReferenceValue = parts.RightLeg;
+            animatorSO.FindProperty("torso").objectReferenceValue = parts.Torso;
+            animatorSO.ApplyModifiedPropertiesWithoutUndo();
 
             GameObject cameraRoot = new("CameraRoot");
             cameraRoot.transform.SetParent(player.transform);
-            cameraRoot.transform.localPosition = new Vector3(0f, 1.2f, 0f);
+            cameraRoot.transform.localPosition = Vector3.zero;
+
             GameObject cameraObject = new("PlayerCamera");
             cameraObject.transform.SetParent(cameraRoot.transform);
+            cameraObject.transform.localPosition = new Vector3(0.65f, 1.65f, -4.8f);
+            cameraObject.transform.localRotation = Quaternion.Euler(14f, 0f, 0f);
+
             Camera playerCamera = cameraObject.AddComponent<Camera>();
-            playerCamera.fieldOfView = 65f;
+            playerCamera.fieldOfView = 62f;
+            playerCamera.nearClipPlane = 0.08f;
             AudioListener listener = cameraObject.AddComponent<AudioListener>();
             ThirdPersonCamera thirdPersonCamera = cameraObject.AddComponent<ThirdPersonCamera>();
 
             SerializedObject cameraSO = new(thirdPersonCamera);
             cameraSO.FindProperty("target").objectReferenceValue = player.transform;
             cameraSO.ApplyModifiedPropertiesWithoutUndo();
+
             SerializedObject controllerSO = new(controller);
             controllerSO.FindProperty("cameraTarget").objectReferenceValue = cameraRoot.transform;
             controllerSO.FindProperty("playerCamera").objectReferenceValue = playerCamera;
             controllerSO.FindProperty("audioListener").objectReferenceValue = listener;
             controllerSO.ApplyModifiedPropertiesWithoutUndo();
+
             SerializedObject interactorSO = new(interactor);
             interactorSO.FindProperty("playerCamera").objectReferenceValue = playerCamera;
             interactorSO.ApplyModifiedPropertiesWithoutUndo();
@@ -114,51 +128,105 @@ namespace CheatOnYourDayOnes.EditorTools
             GameObject prefab = PrefabUtility.SaveAsPrefabAsset(player, PlayerPrefabPath);
             Object.DestroyImmediate(player);
             AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
             return prefab;
         }
 
-        private static void CreateStylizedPlayerVisual(Transform parent)
+        private static CharacterParts CreateStylizedPlayerVisual(Transform parent)
         {
             Material skin = GetMaterial("PlayerSkin", new Color(0.72f, 0.50f, 0.36f));
-            Material shirt = GetMaterial("PlayerShirt", new Color(0.10f, 0.12f, 0.16f));
-            Material pants = GetMaterial("PlayerPants", new Color(0.18f, 0.20f, 0.24f));
-            Material shoes = GetMaterial("PlayerShoes", new Color(0.04f, 0.04f, 0.05f));
+            Material shirt = GetMaterial("PlayerShirt", new Color(0.07f, 0.09f, 0.13f));
+            Material shirtAccent = GetMaterial("PlayerShirtAccent", new Color(0.82f, 0.82f, 0.78f));
+            Material pants = GetMaterial("PlayerPants", new Color(0.16f, 0.19f, 0.24f));
+            Material shoes = GetMaterial("PlayerShoes", new Color(0.035f, 0.035f, 0.045f));
+            Material hair = GetMaterial("PlayerHair", new Color(0.08f, 0.055f, 0.04f));
 
-            GameObject visual = new("Visual");
+            GameObject visual = new("CharacterVisual");
             visual.transform.SetParent(parent);
-            CreatePrimitivePart(visual.transform, PrimitiveType.Capsule, "Torso", new Vector3(0, 0.2f, 0), new Vector3(0.72f, 0.85f, 0.45f), shirt);
-            CreatePrimitivePart(visual.transform, PrimitiveType.Sphere, "Head", new Vector3(0, 1.03f, 0), new Vector3(0.52f, 0.58f, 0.52f), skin);
-            CreatePrimitivePart(visual.transform, PrimitiveType.Capsule, "LegL", new Vector3(-0.19f, -0.58f, 0), new Vector3(0.22f, 0.52f, 0.22f), pants);
-            CreatePrimitivePart(visual.transform, PrimitiveType.Capsule, "LegR", new Vector3(0.19f, -0.58f, 0), new Vector3(0.22f, 0.52f, 0.22f), pants);
-            CreatePrimitivePart(visual.transform, PrimitiveType.Cube, "ShoeL", new Vector3(-0.19f, -1.0f, 0.08f), new Vector3(0.28f, 0.16f, 0.45f), shoes);
-            CreatePrimitivePart(visual.transform, PrimitiveType.Cube, "ShoeR", new Vector3(0.19f, -1.0f, 0.08f), new Vector3(0.28f, 0.16f, 0.45f), shoes);
+            visual.transform.localPosition = Vector3.zero;
+
+            Transform torso = CreatePart(visual.transform, PrimitiveType.Capsule, "Torso", new Vector3(0f, 0.22f, 0f), new Vector3(0.68f, 0.72f, 0.44f), shirt);
+            CreatePart(torso, PrimitiveType.Cube, "ShirtStripe", new Vector3(0f, 0.12f, -0.50f), new Vector3(0.48f, 0.12f, 0.035f), shirtAccent);
+
+            Transform neck = CreatePart(visual.transform, PrimitiveType.Cylinder, "Neck", new Vector3(0f, 0.83f, 0f), new Vector3(0.18f, 0.13f, 0.18f), skin);
+            neck.localRotation = Quaternion.identity;
+
+            Transform head = CreatePart(visual.transform, PrimitiveType.Sphere, "Head", new Vector3(0f, 1.13f, 0f), new Vector3(0.48f, 0.56f, 0.46f), skin);
+            CreatePart(head, PrimitiveType.Sphere, "Hair", new Vector3(0f, 0.31f, 0.02f), new Vector3(0.94f, 0.38f, 0.93f), hair);
+
+            CreatePart(head, PrimitiveType.Sphere, "EarL", new Vector3(-0.52f, 0f, 0f), new Vector3(0.12f, 0.18f, 0.09f), skin);
+            CreatePart(head, PrimitiveType.Sphere, "EarR", new Vector3(0.52f, 0f, 0f), new Vector3(0.12f, 0.18f, 0.09f), skin);
+
+            GameObject leftArmPivot = new("LeftArmPivot");
+            leftArmPivot.transform.SetParent(visual.transform);
+            leftArmPivot.transform.localPosition = new Vector3(-0.45f, 0.57f, 0f);
+            CreatePart(leftArmPivot.transform, PrimitiveType.Capsule, "LeftArm", new Vector3(0f, -0.34f, 0f), new Vector3(0.18f, 0.40f, 0.18f), shirt);
+            CreatePart(leftArmPivot.transform, PrimitiveType.Sphere, "LeftHand", new Vector3(0f, -0.72f, 0f), new Vector3(0.18f, 0.18f, 0.18f), skin);
+
+            GameObject rightArmPivot = new("RightArmPivot");
+            rightArmPivot.transform.SetParent(visual.transform);
+            rightArmPivot.transform.localPosition = new Vector3(0.45f, 0.57f, 0f);
+            CreatePart(rightArmPivot.transform, PrimitiveType.Capsule, "RightArm", new Vector3(0f, -0.34f, 0f), new Vector3(0.18f, 0.40f, 0.18f), shirt);
+            CreatePart(rightArmPivot.transform, PrimitiveType.Sphere, "RightHand", new Vector3(0f, -0.72f, 0f), new Vector3(0.18f, 0.18f, 0.18f), skin);
+
+            GameObject leftLegPivot = new("LeftLegPivot");
+            leftLegPivot.transform.SetParent(visual.transform);
+            leftLegPivot.transform.localPosition = new Vector3(-0.20f, -0.32f, 0f);
+            CreatePart(leftLegPivot.transform, PrimitiveType.Capsule, "LeftLeg", new Vector3(0f, -0.38f, 0f), new Vector3(0.22f, 0.46f, 0.22f), pants);
+            CreatePart(leftLegPivot.transform, PrimitiveType.Cube, "LeftShoe", new Vector3(0f, -0.82f, 0.10f), new Vector3(0.27f, 0.16f, 0.48f), shoes);
+
+            GameObject rightLegPivot = new("RightLegPivot");
+            rightLegPivot.transform.SetParent(visual.transform);
+            rightLegPivot.transform.localPosition = new Vector3(0.20f, -0.32f, 0f);
+            CreatePart(rightLegPivot.transform, PrimitiveType.Capsule, "RightLeg", new Vector3(0f, -0.38f, 0f), new Vector3(0.22f, 0.46f, 0.22f), pants);
+            CreatePart(rightLegPivot.transform, PrimitiveType.Cube, "RightShoe", new Vector3(0f, -0.82f, 0.10f), new Vector3(0.27f, 0.16f, 0.48f), shoes);
+
+            return new CharacterParts
+            {
+                Torso = torso,
+                LeftArm = leftArmPivot.transform,
+                RightArm = rightArmPivot.transform,
+                LeftLeg = leftLegPivot.transform,
+                RightLeg = rightLegPivot.transform
+            };
         }
 
-        private static void CreatePrimitivePart(Transform parent, PrimitiveType type, string name, Vector3 localPos, Vector3 localScale, Material mat)
+        private static Transform CreatePart(Transform parent, PrimitiveType type, string name, Vector3 localPosition, Vector3 localScale, Material material)
         {
             GameObject part = GameObject.CreatePrimitive(type);
             part.name = name;
             part.transform.SetParent(parent);
-            part.transform.localPosition = localPos;
+            part.transform.localPosition = localPosition;
             part.transform.localRotation = Quaternion.identity;
             part.transform.localScale = localScale;
-            Collider c = part.GetComponent<Collider>();
-            if (c != null) Object.DestroyImmediate(c);
-            part.GetComponent<Renderer>().sharedMaterial = mat;
+
+            Collider collider = part.GetComponent<Collider>();
+            if (collider != null)
+                Object.DestroyImmediate(collider);
+
+            Renderer renderer = part.GetComponent<Renderer>();
+            if (renderer != null)
+                renderer.sharedMaterial = material;
+
+            return part.transform;
         }
 
         private static Material GetMaterial(string name, Color color)
         {
-            if (!AssetDatabase.IsValidFolder("Assets/Materials")) AssetDatabase.CreateFolder("Assets", "Materials");
-            if (!AssetDatabase.IsValidFolder("Assets/Materials/Prototype")) AssetDatabase.CreateFolder("Assets/Materials", "Prototype");
+            if (!AssetDatabase.IsValidFolder("Assets/Materials"))
+                AssetDatabase.CreateFolder("Assets", "Materials");
+            if (!AssetDatabase.IsValidFolder("Assets/Materials/Prototype"))
+                AssetDatabase.CreateFolder("Assets/Materials", "Prototype");
+
             string path = $"Assets/Materials/Prototype/{name}.mat";
             Material mat = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (mat == null)
             {
                 Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-                mat = new Material(shader);
+                mat = new Material(shader) { name = name };
                 AssetDatabase.CreateAsset(mat, path);
             }
+
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
             if (mat.HasProperty("_Color")) mat.SetColor("_Color", color);
             EditorUtility.SetDirty(mat);
@@ -208,7 +276,17 @@ namespace CheatOnYourDayOnes.EditorTools
         private static void EnsureFolder(string parent, string child)
         {
             string path = parent + "/" + child;
-            if (!AssetDatabase.IsValidFolder(path)) AssetDatabase.CreateFolder(parent, child);
+            if (!AssetDatabase.IsValidFolder(path))
+                AssetDatabase.CreateFolder(parent, child);
+        }
+
+        private sealed class CharacterParts
+        {
+            public Transform Torso;
+            public Transform LeftArm;
+            public Transform RightArm;
+            public Transform LeftLeg;
+            public Transform RightLeg;
         }
     }
 }
