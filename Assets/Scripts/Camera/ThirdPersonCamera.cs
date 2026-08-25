@@ -1,3 +1,4 @@
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -22,6 +23,7 @@ namespace CheatOnYourDayOnes.CameraSystem
         private float _pitch = 12f;
         private float _currentDistance;
         private bool _cursorLocked;
+        private bool _didInitialGameplayLock;
 
         public float Yaw => _yaw;
 
@@ -32,7 +34,8 @@ namespace CheatOnYourDayOnes.CameraSystem
 
         private void OnEnable()
         {
-            LockCursor(true);
+            LockCursor(false);
+            _didInitialGameplayLock = false;
         }
 
         private void OnDisable()
@@ -49,6 +52,21 @@ namespace CheatOnYourDayOnes.CameraSystem
 
         private void Update()
         {
+            bool networkRunning = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
+
+            if (!networkRunning)
+            {
+                if (_cursorLocked)
+                    LockCursor(false);
+                return;
+            }
+
+            if (!_didInitialGameplayLock)
+            {
+                _didInitialGameplayLock = true;
+                LockCursor(true);
+            }
+
             if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
                 LockCursor(false);
 
