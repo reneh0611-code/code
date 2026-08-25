@@ -66,6 +66,59 @@ namespace CheatOnYourDayOnes.EditorTools
                 "Let's go");
         }
 
+        [MenuItem("Tools/CYDOY/Refresh Run Only")]
+        public static void RefreshRunOnly()
+        {
+            EnsureGeneratedFolder();
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+
+            AnimatorController controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerPath);
+            if (controller == null)
+            {
+                EditorUtility.DisplayDialog(
+                    "CYDOY · Run Refresh",
+                    "AJ_Locomotion.controller does not exist yet. Run Tools → CYDOY → Install Mixamo Animations once first.",
+                    "OK");
+                return;
+            }
+
+            AnimationClip run = PrepareHumanoidClip(RunPath, "Run");
+            if (run == null)
+            {
+                EditorUtility.DisplayDialog(
+                    "CYDOY · Run Refresh",
+                    "The new Run.fbx could not be imported as a valid Humanoid animation.\n\nIdle and Walk were NOT changed.",
+                    "OK");
+                return;
+            }
+
+            AnimatorState runState = FindState(controller.layers[0].stateMachine, "Run");
+            if (runState == null)
+            {
+                EditorUtility.DisplayDialog(
+                    "CYDOY · Run Refresh",
+                    "Run state was not found in AJ_Locomotion.controller.\n\nIdle and Walk were NOT changed.",
+                    "OK");
+                return;
+            }
+
+            runState.motion = run;
+            runState.speed = 1f;
+            EditorUtility.SetDirty(runState);
+            EditorUtility.SetDirty(controller);
+
+            EnsureControllerStillOnPlayer(controller);
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            Debug.Log($"[CYDOY] RUN ONLY refreshed: '{run.name}' ({run.length:F2}s). Idle and Walk untouched.");
+            EditorUtility.DisplayDialog(
+                "CYDOY · Run Refresh",
+                "Run updated successfully.\n\nIdle and Walk were left completely untouched.\nRun: " + run.name,
+                "Nice");
+        }
+
         private static AnimationClip PrepareHumanoidClip(string path, string stateName)
         {
             if (AssetDatabase.LoadMainAssetAtPath(path) == null)
@@ -97,9 +150,6 @@ namespace CheatOnYourDayOnes.EditorTools
                 return null;
             }
 
-            // Preserve the original Mixamo motion as much as possible.
-            // Do NOT bake/lock root position or root rotation here. The downloads are already In Place,
-            // and applyRootMotion is disabled on AJ, so extra root manipulation only distorts the pose.
             ConfigureLoopOnly(importer);
             importer.SaveAndReimport();
 
@@ -183,6 +233,17 @@ namespace CheatOnYourDayOnes.EditorTools
             return null;
         }
 
+        private static AnimatorState FindState(AnimatorStateMachine stateMachine, string stateName)
+        {
+            foreach (ChildAnimatorState child in stateMachine.states)
+            {
+                if (child.state != null && child.state.name == stateName)
+                    return child.state;
+            }
+
+            return null;
+        }
+
         private static AnimatorController BuildDirectController(AnimationClip idle, AnimationClip walk, AnimationClip run)
         {
             AssetDatabase.DeleteAsset(ControllerPath);
@@ -208,6 +269,30 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.SetDirty(controller);
             return controller;
+        }
+
+        private static void EnsureControllerStillOnPlayer(RuntimeAnimatorController controller)
+        {
+            GameObject playerAsset = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            if (playerAsset == null)
+                return;
+
+            GameObject root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
+            try
+            {
+                Animator animator = FindAjAnimator(root.transform);
+                if (animator == null)
+                    return;
+
+                animator.runtimeAnimatorController = controller;
+                animator.enabled = true;
+                animator.applyRootMotion = false;
+                PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
         }
 
         private static void InstallOnPlayer(RuntimeAnimatorController controller, Avatar ajAvatar)
