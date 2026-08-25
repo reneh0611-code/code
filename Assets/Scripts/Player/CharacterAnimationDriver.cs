@@ -7,7 +7,7 @@ namespace CheatOnYourDayOnes.Player
     {
         [SerializeField] private Animator animator;
         [SerializeField] private CharacterController characterController;
-        [SerializeField] private float walkThreshold = 0.15f;
+        [SerializeField] private float walkThreshold = 0.35f;
         [SerializeField] private float runThreshold = 5.1f;
         [SerializeField] private float crossFadeDuration = 0.10f;
 
