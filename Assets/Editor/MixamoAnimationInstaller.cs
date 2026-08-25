@@ -15,7 +15,6 @@ namespace CheatOnYourDayOnes.EditorTools
         private const string AjPath = "Assets/Models/Characters/Aj.fbx";
         private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
         private const string ControllerPath = "Assets/Resources/AJ_Locomotion.controller";
-        private const string GeneratedFolder = "Assets/Models/Animations/Generated";
 
         [MenuItem("Tools/CYDOY/Repair AJ Locomotion")]
         public static void RepairAjLocomotion()
@@ -31,27 +30,23 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static void InstallInternal(string dialogTitle)
         {
-            EnsureFolders();
+            EnsureResourcesFolder();
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 
             Avatar ajAvatar = FindAvatar(AjPath);
             if (ajAvatar == null)
             {
-                EditorUtility.DisplayDialog(dialogTitle, "AJ Avatar not found. Run Tools → CYDOY → Install Mixamo Character first.", "OK");
+                EditorUtility.DisplayDialog(dialogTitle, "AJ Avatar not found. Run Install Mixamo Character first.", "OK");
                 return;
             }
 
-            AnimationClip idle = PrepareHumanoidClip(IdlePath, "Idle");
-            AnimationClip walk = PrepareHumanoidClip(WalkPath, "Walk");
-            AnimationClip run = PrepareHumanoidClip(RunPath, "Run");
+            AnimationClip idle = PrepareDirectHumanoidClip(IdlePath, "Idle");
+            AnimationClip walk = PrepareDirectHumanoidClip(WalkPath, "Walk");
+            AnimationClip run = PrepareDirectHumanoidClip(RunPath, "Run");
 
             if (idle == null || walk == null || run == null)
             {
-                string missing = string.Empty;
-                if (idle == null) missing += "Idle.fbx ";
-                if (walk == null) missing += "Walk.fbx ";
-                if (run == null) missing += "Run.fbx ";
-                EditorUtility.DisplayDialog(dialogTitle, "Could not prepare: " + missing.Trim(), "OK");
+                EditorUtility.DisplayDialog(dialogTitle, "One or more Humanoid clips could not be prepared. Check [CYDOY] Console logs.", "OK");
                 return;
             }
 
@@ -63,28 +58,29 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.DisplayDialog(
                 dialogTitle,
-                "AJ locomotion repaired.\n\nIdle: " + idle.name + "\nWalk: " + walk.name + "\nRun: " + run.name +
-                "\n\nRuntime fallback: Resources/AJ_Locomotion",
+                "AJ locomotion repaired using the original Humanoid FBX clips.\n\nIdle: " + idle.name +
+                "\nWalk: " + walk.name +
+                "\nRun: " + run.name,
                 "Let's go");
         }
 
         [MenuItem("Tools/CYDOY/Refresh Run Only")]
         public static void RefreshRunOnly()
         {
-            EnsureFolders();
+            EnsureResourcesFolder();
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 
             AnimatorController controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerPath);
             if (controller == null)
             {
-                EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Controller missing. Use Tools → CYDOY → Repair AJ Locomotion first.", "OK");
+                EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Controller missing. Use Repair AJ Locomotion first.", "OK");
                 return;
             }
 
-            AnimationClip run = PrepareHumanoidClip(RunPath, "Run");
+            AnimationClip run = PrepareDirectHumanoidClip(RunPath, "Run");
             if (run == null)
             {
-                EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Run.fbx could not be imported. Idle and Walk were untouched.", "OK");
+                EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Run.fbx is not a valid Humanoid clip. Idle and Walk were untouched.", "OK");
                 return;
             }
 
@@ -102,10 +98,10 @@ namespace CheatOnYourDayOnes.EditorTools
             EnsureControllerStillOnPlayer(controller);
             AssetDatabase.SaveAssets();
 
-            EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Run updated. Idle and Walk unchanged.", "Nice");
+            EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Run updated from the original Humanoid FBX clip. Idle and Walk unchanged.", "Nice");
         }
 
-        private static AnimationClip PrepareHumanoidClip(string path, string stateName)
+        private static AnimationClip PrepareDirectHumanoidClip(string path, string stateName)
         {
             if (AssetDatabase.LoadMainAssetAtPath(path) == null)
             {
@@ -129,57 +125,30 @@ namespace CheatOnYourDayOnes.EditorTools
             if (importer == null)
                 return null;
 
-            AnimationClip clip = FindBestHumanoidClip(path);
-            if (clip == null)
-            {
-                Debug.LogError("[CYDOY] No Humanoid clip found for " + stateName + " in " + path);
-                return null;
-            }
-
-            ConfigureLoopOnly(importer);
-            importer.SaveAndReimport();
-            clip = FindBestHumanoidClip(path);
-            if (clip == null)
-                return null;
-
-            AnimationClip stable = ExtractStableClip(clip, stateName + "_Humanoid");
-            if (stable != null)
-                Debug.Log($"[CYDOY] READY {stateName}: '{clip.name}', {clip.length:F2}s, humanMotion={clip.humanMotion}");
-
-            return stable;
-        }
-
-        private static void ConfigureLoopOnly(ModelImporter importer)
-        {
             ModelImporterClipAnimation[] clips = importer.defaultClipAnimations;
             if (clips == null || clips.Length == 0)
                 clips = importer.clipAnimations;
-            if (clips == null || clips.Length == 0)
-                return;
 
-            for (int i = 0; i < clips.Length; i++)
+            if (clips != null && clips.Length > 0)
             {
-                clips[i].loopTime = true;
-                clips[i].loopPose = true;
+                for (int i = 0; i < clips.Length; i++)
+                {
+                    clips[i].loopTime = true;
+                    clips[i].loopPose = true;
+                }
+                importer.clipAnimations = clips;
+                importer.SaveAndReimport();
             }
-            importer.clipAnimations = clips;
-        }
 
-        private static AnimationClip ExtractStableClip(AnimationClip source, string name)
-        {
-            if (source == null)
+            AnimationClip clip = FindBestHumanoidClip(path);
+            if (clip == null)
+            {
+                Debug.LogError("[CYDOY] No Humanoid animation clip found for " + stateName + " in " + path);
                 return null;
+            }
 
-            string path = GeneratedFolder + "/" + name + ".anim";
-            AssetDatabase.DeleteAsset(path);
-
-            AnimationClip copy = new AnimationClip();
-            EditorUtility.CopySerialized(source, copy);
-            copy.name = name;
-            copy.wrapMode = WrapMode.Loop;
-            AssetDatabase.CreateAsset(copy, path);
-            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
-            return AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+            Debug.Log($"[CYDOY] READY {stateName}: direct FBX clip '{clip.name}', length={clip.length:F2}s, humanMotion={clip.humanMotion}");
+            return clip;
         }
 
         private static AnimationClip FindBestHumanoidClip(string path)
@@ -236,53 +205,25 @@ namespace CheatOnYourDayOnes.EditorTools
             return controller;
         }
 
-        private static void EnsureControllerStillOnPlayer(RuntimeAnimatorController controller)
-        {
-            GameObject playerAsset = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
-            if (playerAsset == null) return;
-
-            GameObject root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
-            try
-            {
-                Animator animator = FindAjAnimator(root.transform);
-                if (animator == null) return;
-
-                animator.runtimeAnimatorController = controller;
-                animator.enabled = true;
-                animator.applyRootMotion = false;
-
-                CharacterAnimationDriver driver = root.GetComponent<CharacterAnimationDriver>();
-                if (driver != null)
-                {
-                    SerializedObject driverSO = new(driver);
-                    SerializedProperty fallback = driverSO.FindProperty("fallbackController");
-                    if (fallback != null) fallback.objectReferenceValue = controller;
-                    driverSO.ApplyModifiedPropertiesWithoutUndo();
-                }
-
-                PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
-            }
-            finally
-            {
-                PrefabUtility.UnloadPrefabContents(root);
-            }
-        }
-
         private static void InstallOnPlayer(RuntimeAnimatorController controller, Avatar ajAvatar)
         {
             GameObject playerAsset = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
             if (playerAsset == null)
-                throw new InvalidOperationException("Player.prefab not found. Run the Phase 1 player builder first.");
+                throw new InvalidOperationException("Player.prefab not found.");
 
             GameObject root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
             try
             {
-                Animator animator = FindAjAnimator(root.transform);
+                Transform ajRoot = FindAjRoot(root.transform);
+                Animator animator = ajRoot != null ? ajRoot.GetComponentInChildren<Animator>(true) : root.GetComponentInChildren<Animator>(true);
                 if (animator == null)
-                    throw new InvalidOperationException("No Animator found under Mixamo_AJ in Player.prefab.");
+                    throw new InvalidOperationException("AJ Animator not found in Player.prefab.");
 
-                foreach (Animator other in root.GetComponentsInChildren<Animator>(true))
-                    if (other != animator) other.enabled = false;
+                if (ajRoot != null)
+                {
+                    Vector3 p = ajRoot.localPosition;
+                    ajRoot.localPosition = new Vector3(p.x, 0f, p.z);
+                }
 
                 animator.avatar = ajAvatar;
                 animator.runtimeAnimatorController = controller;
@@ -307,22 +248,44 @@ namespace CheatOnYourDayOnes.EditorTools
                 SerializedObject driverSO = new(driver);
                 driverSO.FindProperty("animator").objectReferenceValue = animator;
                 driverSO.FindProperty("characterController").objectReferenceValue = characterController;
-                driverSO.FindProperty("fallbackController").objectReferenceValue = controller;
+                SerializedProperty fallback = driverSO.FindProperty("fallbackController");
+                if (fallback != null) fallback.objectReferenceValue = controller;
                 driverSO.FindProperty("walkThreshold").floatValue = 0.35f;
                 driverSO.FindProperty("runThreshold").floatValue = 5.1f;
                 driverSO.FindProperty("crossFadeDuration").floatValue = 0.10f;
                 driverSO.ApplyModifiedPropertiesWithoutUndo();
 
-                MixamoRuntimePoseAndGrounder grounder = root.GetComponent<MixamoRuntimePoseAndGrounder>();
-                if (grounder != null)
+                PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        private static void EnsureControllerStillOnPlayer(RuntimeAnimatorController controller)
+        {
+            GameObject playerAsset = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            if (playerAsset == null) return;
+
+            GameObject root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
+            try
+            {
+                Transform ajRoot = FindAjRoot(root.transform);
+                Animator animator = ajRoot != null ? ajRoot.GetComponentInChildren<Animator>(true) : root.GetComponentInChildren<Animator>(true);
+                if (animator != null)
                 {
-                    SerializedObject groundSO = new(grounder);
-                    groundSO.FindProperty("animator").objectReferenceValue = animator;
-                    groundSO.FindProperty("modelRoot").objectReferenceValue = FindAjRoot(root.transform);
-                    groundSO.FindProperty("characterController").objectReferenceValue = characterController;
-                    groundSO.FindProperty("forceGrounding").boolValue = true;
-                    groundSO.FindProperty("visualGroundOffset").floatValue = 0.01f;
-                    groundSO.ApplyModifiedPropertiesWithoutUndo();
+                    animator.runtimeAnimatorController = controller;
+                    animator.applyRootMotion = false;
+                }
+
+                CharacterAnimationDriver driver = root.GetComponent<CharacterAnimationDriver>();
+                if (driver != null)
+                {
+                    SerializedObject driverSO = new(driver);
+                    SerializedProperty fallback = driverSO.FindProperty("fallbackController");
+                    if (fallback != null) fallback.objectReferenceValue = controller;
+                    driverSO.ApplyModifiedPropertiesWithoutUndo();
                 }
 
                 PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
@@ -333,43 +296,21 @@ namespace CheatOnYourDayOnes.EditorTools
             }
         }
 
-        private static Animator FindAjAnimator(Transform root)
-        {
-            Transform ajRoot = FindAjRoot(root);
-            if (ajRoot != null)
-            {
-                Animator exact = ajRoot.GetComponentInChildren<Animator>(true);
-                if (exact != null) return exact;
-            }
-            return root.GetComponentInChildren<Animator>(true);
-        }
-
         private static Transform FindAjRoot(Transform root)
         {
-            return FindChildRecursive(root, "Mixamo_AJ");
-        }
-
-        private static Transform FindChildRecursive(Transform root, string targetName)
-        {
-            if (root.name == targetName) return root;
+            if (root.name == "Mixamo_AJ") return root;
             for (int i = 0; i < root.childCount; i++)
             {
-                Transform result = FindChildRecursive(root.GetChild(i), targetName);
+                Transform result = FindAjRoot(root.GetChild(i));
                 if (result != null) return result;
             }
             return null;
         }
 
-        private static void EnsureFolders()
+        private static void EnsureResourcesFolder()
         {
             if (!AssetDatabase.IsValidFolder("Assets/Resources"))
                 AssetDatabase.CreateFolder("Assets", "Resources");
-            if (!AssetDatabase.IsValidFolder("Assets/Models"))
-                AssetDatabase.CreateFolder("Assets", "Models");
-            if (!AssetDatabase.IsValidFolder("Assets/Models/Animations"))
-                AssetDatabase.CreateFolder("Assets/Models", "Animations");
-            if (!AssetDatabase.IsValidFolder(GeneratedFolder))
-                AssetDatabase.CreateFolder("Assets/Models/Animations", "Generated");
         }
     }
 }
