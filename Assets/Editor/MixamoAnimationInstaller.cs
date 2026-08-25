@@ -44,13 +44,13 @@ namespace CheatOnYourDayOnes.EditorTools
                 EditorUtility.DisplayDialog(
                     "CYDOY · Animation Import",
                     "Still no usable clip from: " + missing.Trim() +
-                    "\n\nCheck Console lines beginning with [CYDOY]. The installer now tests Generic first, then Humanoid retargeting to AJ, and keeps an extracted Generic fallback if needed.",
+                    "\n\nCheck Console lines beginning with [CYDOY].",
                     "OK");
                 return;
             }
 
             AnimatorController controller = BuildDirectController(idle, walk, run);
-            InstallOnPlayer(controller);
+            InstallOnPlayer(controller, ajAvatar);
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -73,7 +73,6 @@ namespace CheatOnYourDayOnes.EditorTools
             if (importer == null)
                 return null;
 
-            // PASS 1: Generic. This is the most reliable way to verify that the FBX really contains animation data.
             importer.importAnimation = true;
             importer.animationType = ModelImporterAnimationType.Generic;
             importer.avatarSetup = ModelImporterAvatarSetup.NoAvatar;
@@ -92,7 +91,6 @@ namespace CheatOnYourDayOnes.EditorTools
             Debug.Log($"[CYDOY] GENERIC OK {stateName}: '{genericClip.name}', {genericClip.length:F2}s");
             AnimationClip fallback = ExtractClipCopy(genericClip, stateName + "_GenericFallback");
 
-            // PASS 2: Humanoid retargeted to AJ.
             importer = AssetImporter.GetAtPath(path) as ModelImporter;
             importer.importAnimation = true;
             importer.animationType = ModelImporterAnimationType.Human;
@@ -189,7 +187,7 @@ namespace CheatOnYourDayOnes.EditorTools
             return controller;
         }
 
-        private static void InstallOnPlayer(RuntimeAnimatorController controller)
+        private static void InstallOnPlayer(RuntimeAnimatorController controller, Avatar ajAvatar)
         {
             GameObject playerAsset = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
             if (playerAsset == null)
@@ -198,10 +196,17 @@ namespace CheatOnYourDayOnes.EditorTools
             GameObject root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
             try
             {
-                Animator animator = root.GetComponentInChildren<Animator>(true);
+                Animator animator = FindAjAnimator(root.transform);
                 if (animator == null)
-                    throw new InvalidOperationException("No Animator found below Player.prefab.");
+                    throw new InvalidOperationException("No Animator found under Mixamo_AJ in Player.prefab.");
 
+                foreach (Animator other in root.GetComponentsInChildren<Animator>(true))
+                {
+                    if (other != animator)
+                        other.enabled = false;
+                }
+
+                animator.avatar = ajAvatar;
                 animator.runtimeAnimatorController = controller;
                 animator.enabled = true;
                 animator.speed = 1f;
@@ -219,8 +224,11 @@ namespace CheatOnYourDayOnes.EditorTools
                 driverSO.FindProperty("characterController").objectReferenceValue = characterController;
                 driverSO.FindProperty("walkThreshold").floatValue = 0.15f;
                 driverSO.FindProperty("runThreshold").floatValue = 5.1f;
-                driverSO.FindProperty("crossFadeDuration").floatValue = 0.12f;
+                driverSO.FindProperty("crossFadeDuration").floatValue = 0.10f;
                 driverSO.ApplyModifiedPropertiesWithoutUndo();
+
+                Debug.Log(
+                    $"[CYDOY] Controller '{controller.name}' wired directly to AJ Animator '{GetHierarchyPath(animator.transform)}'. Avatar='{ajAvatar.name}'.");
 
                 PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
             }
@@ -228,6 +236,45 @@ namespace CheatOnYourDayOnes.EditorTools
             {
                 PrefabUtility.UnloadPrefabContents(root);
             }
+        }
+
+        private static Animator FindAjAnimator(Transform root)
+        {
+            Transform ajRoot = FindChildRecursive(root, "Mixamo_AJ");
+            if (ajRoot != null)
+            {
+                Animator exact = ajRoot.GetComponentInChildren<Animator>(true);
+                if (exact != null)
+                    return exact;
+            }
+
+            return root.GetComponentInChildren<Animator>(true);
+        }
+
+        private static Transform FindChildRecursive(Transform root, string targetName)
+        {
+            if (root.name == targetName)
+                return root;
+
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform result = FindChildRecursive(root.GetChild(i), targetName);
+                if (result != null)
+                    return result;
+            }
+
+            return null;
+        }
+
+        private static string GetHierarchyPath(Transform t)
+        {
+            string path = t.name;
+            while (t.parent != null)
+            {
+                t = t.parent;
+                path = t.name + "/" + path;
+            }
+            return path;
         }
 
         private static void EnsureGeneratedFolder()
