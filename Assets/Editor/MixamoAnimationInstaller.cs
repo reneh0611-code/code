@@ -15,6 +15,7 @@ namespace CheatOnYourDayOnes.EditorTools
         public static void Install()
         {
             EnsureFolder();
+            ForceAnimationReimport();
 
             AnimationClip idle = FindClip("idle");
             AnimationClip walk = FindClip("walk");
@@ -24,13 +25,13 @@ namespace CheatOnYourDayOnes.EditorTools
             {
                 EditorUtility.DisplayDialog(
                     "CYDOY · Mixamo Animations",
-                    "I need three FBX animation files inside:\n" + AnimationFolder +
-                    "\n\nTheir filenames must contain:\n• idle\n• walk\n• run\n\nExample: Idle.fbx, Walk.fbx, Run.fbx\n\nDownload Walk and Run as In Place from Mixamo.",
+                    "I need three FBX files in:\n" + AnimationFolder +
+                    "\n\nFilenames must contain idle, walk and run.\nExample: Idle.fbx, Walk.fbx, Run.fbx.",
                     "OK");
                 return;
             }
 
-            AnimatorController controller = BuildController(idle, walk, run);
+            AnimatorController controller = BuildDirectController(idle, walk, run);
             InstallOnPlayer(controller);
 
             AssetDatabase.SaveAssets();
@@ -38,37 +39,33 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.DisplayDialog(
                 "CYDOY · Mixamo Animations",
-                "Idle / Walk / Run reinstalled with a stable animator setup.",
+                "Done. The original Mixamo Idle, Walk and Run clips are now used directly and loop continuously. No Blend Tree.",
                 "Let's go");
         }
 
-        private static AnimatorController BuildController(AnimationClip idle, AnimationClip walk, AnimationClip run)
+        private static AnimatorController BuildDirectController(AnimationClip idle, AnimationClip walk, AnimationClip run)
         {
             AssetDatabase.DeleteAsset(ControllerPath);
             AnimatorController controller = AnimatorController.CreateAnimatorControllerAtPath(ControllerPath);
-            controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
 
-            AnimatorStateMachine stateMachine = controller.layers[0].stateMachine;
-            AnimatorState locomotion = stateMachine.AddState("Locomotion");
-            stateMachine.defaultState = locomotion;
+            AnimatorStateMachine machine = controller.layers[0].stateMachine;
+            AnimatorState idleState = machine.AddState("Idle");
+            AnimatorState walkState = machine.AddState("Walk");
+            AnimatorState runState = machine.AddState("Run");
 
-            BlendTree blendTree = new()
-            {
-                name = "Idle Walk Run",
-                blendType = BlendTreeType.Simple1D,
-                blendParameter = "Speed",
-                useAutomaticThresholds = false
-            };
+            idleState.motion = idle;
+            walkState.motion = walk;
+            runState.motion = run;
 
-            AssetDatabase.AddObjectToAsset(blendTree, controller);
-            blendTree.AddChild(idle, 0f);
-            blendTree.AddChild(walk, 0.5f);
-            blendTree.AddChild(run, 1f);
-            locomotion.motion = blendTree;
-            locomotion.speed = 1f;
-            locomotion.writeDefaultValues = true;
+            idleState.speed = 1f;
+            walkState.speed = 1f;
+            runState.speed = 1f;
 
-            EditorUtility.SetDirty(blendTree);
+            idleState.writeDefaultValues = true;
+            walkState.writeDefaultValues = true;
+            runState.writeDefaultValues = true;
+            machine.defaultState = idleState;
+
             EditorUtility.SetDirty(controller);
             return controller;
         }
@@ -102,10 +99,9 @@ namespace CheatOnYourDayOnes.EditorTools
                 SerializedObject driverSO = new(driver);
                 driverSO.FindProperty("animator").objectReferenceValue = animator;
                 driverSO.FindProperty("characterController").objectReferenceValue = characterController;
-                driverSO.FindProperty("walkReferenceSpeed").floatValue = 4.2f;
-                driverSO.FindProperty("runReferenceSpeed").floatValue = 6.8f;
-                driverSO.FindProperty("damping").floatValue = 0.08f;
-                driverSO.FindProperty("minimumMovingSpeed").floatValue = 0.08f;
+                driverSO.FindProperty("walkThreshold").floatValue = 0.15f;
+                driverSO.FindProperty("runThreshold").floatValue = 5.1f;
+                driverSO.FindProperty("crossFadeDuration").floatValue = 0.12f;
                 driverSO.ApplyModifiedPropertiesWithoutUndo();
 
                 PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
@@ -113,6 +109,17 @@ namespace CheatOnYourDayOnes.EditorTools
             finally
             {
                 PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        private static void ForceAnimationReimport()
+        {
+            string[] guids = AssetDatabase.FindAssets("t:Model", new[] { AnimationFolder });
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (path.EndsWith(".fbx", System.StringComparison.OrdinalIgnoreCase))
+                    AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
             }
         }
 
