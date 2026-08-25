@@ -1,12 +1,10 @@
 using UnityEditor;
-using UnityEngine;
 
 namespace CheatOnYourDayOnes.EditorTools
 {
     public sealed class MixamoAnimationPostprocessor : AssetPostprocessor
     {
         private const string AnimationFolder = "Assets/Models/Animations/";
-        private const string CharacterPath = "Assets/Models/Characters/Aj.fbx";
 
         private void OnPreprocessModel()
         {
@@ -17,18 +15,14 @@ namespace CheatOnYourDayOnes.EditorTools
                 return;
 
             importer.animationType = ModelImporterAnimationType.Human;
-            importer.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
+            importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
             importer.importAnimation = true;
             importer.importCameras = false;
             importer.importLights = false;
             importer.materialImportMode = ModelImporterMaterialImportMode.None;
-
-            Avatar avatar = LoadCharacterAvatar();
-            if (avatar != null)
-                importer.sourceAvatar = avatar;
         }
 
-        private void OnPostprocessModel(GameObject root)
+        private void OnPostprocessModel(UnityEngine.GameObject root)
         {
             if (!assetPath.StartsWith(AnimationFolder, System.StringComparison.OrdinalIgnoreCase))
                 return;
@@ -53,17 +47,6 @@ namespace CheatOnYourDayOnes.EditorTools
             }
 
             importer.clipAnimations = clips;
-        }
-
-        private static Avatar LoadCharacterAvatar()
-        {
-            Object[] assets = AssetDatabase.LoadAllAssetsAtPath(CharacterPath);
-            foreach (Object asset in assets)
-            {
-                if (asset is Avatar avatar)
-                    return avatar;
-            }
-            return null;
         }
     }
 }
