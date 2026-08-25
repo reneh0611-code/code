@@ -6,6 +6,7 @@ using UnityEngine;
 namespace CheatOnYourDayOnes.Player
 {
     [RequireComponent(typeof(NetworkObject))]
+    [RequireComponent(typeof(PlayerData))]
     [RequireComponent(typeof(PlayerWallet))]
     [RequireComponent(typeof(AuraSystem))]
     [RequireComponent(typeof(NeedsSystem))]
