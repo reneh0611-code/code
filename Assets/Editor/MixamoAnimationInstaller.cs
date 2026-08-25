@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.IO;
 using CheatOnYourDayOnes.Player;
 using UnityEditor;
 using UnityEditor.Animations;
@@ -11,54 +9,35 @@ namespace CheatOnYourDayOnes.EditorTools
 {
     public static class MixamoAnimationInstaller
     {
-        private const string AnimationFolder = "Assets/Models/Animations";
+        private const string IdlePath = "Assets/Models/Animations/Idle.fbx";
+        private const string WalkPath = "Assets/Models/Animations/Walk.fbx";
+        private const string RunPath = "Assets/Models/Animations/Run.fbx";
         private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
         private const string ControllerPath = "Assets/Models/Animations/AJ_Locomotion.controller";
 
         [MenuItem("Tools/CYDOY/Install Mixamo Animations")]
         public static void Install()
         {
-            EnsureFolder();
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 
-            List<string> fbxPaths = GetPhysicalFbxAssetPaths();
-            if (fbxPaths.Count == 0)
-            {
-                EditorUtility.DisplayDialog(
-                    "CYDOY · Mixamo Animations",
-                    "Unity can see no .fbx files inside:\n" + AnimationFolder +
-                    "\n\nPhysical folder checked:\n" + GetPhysicalAnimationFolder(),
-                    "OK");
-                return;
-            }
-
-            Debug.Log("[CYDOY] FBX files physically found:\n" + string.Join("\n", fbxPaths));
-
-            foreach (string path in fbxPaths)
-                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-
-            AnimationClip idle = FindClip(fbxPaths, "idle", "standing idle", "breathing idle");
-            AnimationClip walk = FindClip(fbxPaths, "walk", "walking");
-            AnimationClip run = FindClip(fbxPaths, "run", "running", "jog", "jogging");
+            AnimationClip idle = PrepareAndLoadClip(IdlePath, "Idle");
+            AnimationClip walk = PrepareAndLoadClip(WalkPath, "Walk");
+            AnimationClip run = PrepareAndLoadClip(RunPath, "Run");
 
             if (idle == null || walk == null || run == null)
             {
-                string report = BuildClipReport(fbxPaths);
                 string missing = string.Empty;
-                if (idle == null) missing += "Idle ";
-                if (walk == null) missing += "Walk ";
-                if (run == null) missing += "Run ";
+                if (idle == null) missing += "Idle.fbx ";
+                if (walk == null) missing += "Walk.fbx ";
+                if (run == null) missing += "Run.fbx ";
 
-                Debug.LogError("[CYDOY] Animation detection failed.\n" + report);
                 EditorUtility.DisplayDialog(
-                    "CYDOY · Animation Detection",
-                    "Missing: " + missing.Trim() +
-                    "\n\nUnity DID find your FBX files. It could not classify the internal animation clips.\n\nLook at the Console for a complete list of FBX filenames and internal clip names.",
+                    "CYDOY · Animation Import",
+                    "Could not create a readable AnimationClip from: " + missing.Trim() +
+                    "\n\nThe installer now uses the exact three file paths and rebuilds their clip settings directly from the FBX take data.\n\nCheck the Console for the exact importer report.",
                     "OK");
                 return;
             }
-
-            Debug.Log($"[CYDOY] Using exact clips: Idle='{idle.name}', Walk='{walk.name}', Run='{run.name}'");
 
             AnimatorController controller = BuildDirectController(idle, walk, run);
             InstallOnPlayer(controller);
@@ -74,79 +53,72 @@ namespace CheatOnYourDayOnes.EditorTools
                 "Let's go");
         }
 
-        private static List<string> GetPhysicalFbxAssetPaths()
+        private static AnimationClip PrepareAndLoadClip(string path, string forcedName)
         {
-            string physicalFolder = GetPhysicalAnimationFolder();
-            var result = new List<string>();
-
-            if (!Directory.Exists(physicalFolder))
-                return result;
-
-            string[] files = Directory.GetFiles(physicalFolder, "*.fbx", SearchOption.AllDirectories);
-            foreach (string physicalPath in files)
+            if (AssetDatabase.LoadMainAssetAtPath(path) == null)
             {
-                string normalized = physicalPath.Replace('\\', '/');
-                string dataPath = Application.dataPath.Replace('\\', '/');
-                if (!normalized.StartsWith(dataPath, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string assetPath = "Assets" + normalized.Substring(dataPath.Length);
-                result.Add(assetPath);
+                Debug.LogError("[CYDOY] Missing FBX at exact path: " + path);
+                return null;
             }
 
-            return result;
-        }
-
-        private static string GetPhysicalAnimationFolder()
-        {
-            return Path.Combine(Application.dataPath, "Models", "Animations");
-        }
-
-        private static AnimationClip FindClip(List<string> fbxPaths, params string[] keywords)
-        {
-            foreach (string path in fbxPaths)
+            ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
+            if (importer == null)
             {
-                string fileName = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
-                UObject[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
+                Debug.LogError("[CYDOY] No ModelImporter available for: " + path);
+                return null;
+            }
 
-                foreach (UObject asset in assets)
+            importer.importAnimation = true;
+            importer.animationType = ModelImporterAnimationType.Human;
+            importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+            importer.importCameras = false;
+            importer.importLights = false;
+            importer.materialImportMode = ModelImporterMaterialImportMode.None;
+
+            ModelImporterClipAnimation[] sourceClips = importer.defaultClipAnimations;
+            if (sourceClips == null || sourceClips.Length == 0)
+                sourceClips = importer.clipAnimations;
+
+            if (sourceClips == null || sourceClips.Length == 0)
+            {
+                Debug.LogError("[CYDOY] FBX contains no importable animation take data: " + path);
+                importer.SaveAndReimport();
+                return null;
+            }
+
+            ModelImporterClipAnimation source = sourceClips[0];
+            ModelImporterClipAnimation clip = new()
+            {
+                name = forcedName,
+                takeName = source.takeName,
+                firstFrame = source.firstFrame,
+                lastFrame = source.lastFrame,
+                loopTime = true,
+                loopPose = true,
+                lockRootRotation = true,
+                lockRootHeightY = true,
+                lockRootPositionXZ = true,
+                keepOriginalOrientation = true,
+                keepOriginalPositionY = true,
+                keepOriginalPositionXZ = true
+            };
+
+            importer.clipAnimations = new[] { clip };
+            importer.SaveAndReimport();
+
+            UObject[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
+            foreach (UObject asset in assets)
+            {
+                if (asset is AnimationClip animationClip &&
+                    !animationClip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (asset is not AnimationClip clip || clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    string clipName = clip.name.ToLowerInvariant();
-                    foreach (string keyword in keywords)
-                    {
-                        string key = keyword.ToLowerInvariant();
-                        if (fileName.Contains(key) || clipName.Contains(key))
-                        {
-                            Debug.Log($"[CYDOY] Matched '{keyword}' → file '{path}', clip '{clip.name}'");
-                            return clip;
-                        }
-                    }
+                    Debug.Log($"[CYDOY] {path} → clip '{animationClip.name}', length={animationClip.length:F2}s, frames={clip.firstFrame:F0}-{clip.lastFrame:F0}, take='{clip.takeName}'");
+                    return animationClip;
                 }
             }
 
+            Debug.LogError("[CYDOY] Import completed but Unity still exposed no AnimationClip sub-asset for: " + path);
             return null;
-        }
-
-        private static string BuildClipReport(List<string> fbxPaths)
-        {
-            var lines = new List<string>();
-            foreach (string path in fbxPaths)
-            {
-                var clipNames = new List<string>();
-                UObject[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
-                foreach (UObject asset in assets)
-                {
-                    if (asset is AnimationClip clip && !clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
-                        clipNames.Add(clip.name);
-                }
-
-                lines.Add(path + " → [" + string.Join(", ", clipNames) + "]");
-            }
-
-            return string.Join("\n", lines);
         }
 
         private static AnimatorController BuildDirectController(AnimationClip idle, AnimationClip walk, AnimationClip run)
@@ -213,14 +185,6 @@ namespace CheatOnYourDayOnes.EditorTools
             {
                 PrefabUtility.UnloadPrefabContents(root);
             }
-        }
-
-        private static void EnsureFolder()
-        {
-            if (!AssetDatabase.IsValidFolder("Assets/Models"))
-                AssetDatabase.CreateFolder("Assets", "Models");
-            if (!AssetDatabase.IsValidFolder(AnimationFolder))
-                AssetDatabase.CreateFolder("Assets/Models", "Animations");
         }
     }
 }
