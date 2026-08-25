@@ -7,6 +7,7 @@ namespace CheatOnYourDayOnes.Player
     {
         [SerializeField] private Animator animator;
         [SerializeField] private CharacterController characterController;
+        [SerializeField] private RuntimeAnimatorController fallbackController;
         [SerializeField] private float walkThreshold = 0.35f;
         [SerializeField] private float runThreshold = 5.1f;
         [SerializeField] private float crossFadeDuration = 0.10f;
@@ -26,6 +27,15 @@ namespace CheatOnYourDayOnes.Player
             if (animator == null)
                 animator = FindAjAnimator();
 
+            if (fallbackController == null)
+                fallbackController = Resources.Load<RuntimeAnimatorController>("AJ_Locomotion");
+
+            if (animator != null && animator.runtimeAnimatorController == null && fallbackController != null)
+            {
+                animator.runtimeAnimatorController = fallbackController;
+                Debug.Log("[CYDOY] AJ runtime controller self-healed from Resources/AJ_Locomotion.", animator);
+            }
+
             ConfigureAnimator();
         }
 
@@ -39,7 +49,16 @@ namespace CheatOnYourDayOnes.Player
 
             if (animator.runtimeAnimatorController == null)
             {
-                Debug.LogError("[CYDOY] CharacterAnimationDriver: AJ has no RuntimeAnimatorController.", animator);
+                if (fallbackController == null)
+                    fallbackController = Resources.Load<RuntimeAnimatorController>("AJ_Locomotion");
+
+                if (fallbackController != null)
+                    animator.runtimeAnimatorController = fallbackController;
+            }
+
+            if (animator.runtimeAnimatorController == null)
+            {
+                Debug.LogError("[CYDOY] CharacterAnimationDriver: AJ has no RuntimeAnimatorController and Resources/AJ_Locomotion was not found.", animator);
                 return;
             }
 
@@ -61,8 +80,7 @@ namespace CheatOnYourDayOnes.Player
             if (!idleExists || !walkExists || !runExists)
             {
                 Debug.LogError(
-                    "[CYDOY] AJ AnimatorController is missing one or more required states on Base Layer. " +
-                    "Expected: Base Layer.Idle, Base Layer.Walk, Base Layer.Run.",
+                    "[CYDOY] AJ AnimatorController is missing required states. Expected Base Layer.Idle, Walk and Run.",
                     animator);
                 return;
             }
@@ -93,10 +111,7 @@ namespace CheatOnYourDayOnes.Player
         private void PlayState(int stateHash, bool immediate)
         {
             if (animator == null || !animator.HasState(0, stateHash))
-            {
-                Debug.LogError($"[CYDOY] Animator state hash {stateHash} does not exist on AJ.", this);
                 return;
-            }
 
             animator.speed = 1f;
 
