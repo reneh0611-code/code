@@ -7,7 +7,7 @@ namespace CheatOnYourDayOnes.Player
     {
         [SerializeField] private Animator animator;
         [SerializeField] private CharacterController characterController;
-        [SerializeField] private float idleThreshold = 0.35f;
+        [SerializeField] private float walkThreshold = 0.15f;
         [SerializeField] private float runThreshold = 5.1f;
         [SerializeField] private float crossFadeDuration = 0.10f;
 
@@ -68,12 +68,7 @@ namespace CheatOnYourDayOnes.Player
             }
 
             _ready = true;
-
-            // Start absolutely clean in Idle. Do not blend from the FBX bind pose.
-            animator.Play(IdleHash, 0, 0f);
-            animator.Update(0f);
-            _currentState = IdleHash;
-            Debug.Log("[CYDOY] AJ state -> IDLE (forced at startup)", animator);
+            PlayState(IdleHash, true);
         }
 
         private void Update()
@@ -85,22 +80,17 @@ namespace CheatOnYourDayOnes.Player
             planarVelocity.y = 0f;
             float speed = planarVelocity.magnitude;
 
-            int wantedState;
-
-            // CharacterController.velocity can keep tiny residual horizontal values after stopping.
-            // Treat everything below this threshold as a hard idle condition.
-            if (speed <= idleThreshold)
-                wantedState = IdleHash;
-            else if (speed < runThreshold)
-                wantedState = WalkHash;
-            else
-                wantedState = RunHash;
+            int wantedState = speed < walkThreshold
+                ? IdleHash
+                : speed < runThreshold
+                    ? WalkHash
+                    : RunHash;
 
             if (wantedState != _currentState)
-                PlayState(wantedState, speed);
+                PlayState(wantedState, false);
         }
 
-        private void PlayState(int stateHash, float speed)
+        private void PlayState(int stateHash, bool immediate)
         {
             if (animator == null || !animator.HasState(0, stateHash))
             {
@@ -110,21 +100,10 @@ namespace CheatOnYourDayOnes.Player
 
             animator.speed = 1f;
 
-            if (stateHash == IdleHash)
-            {
-                // Idle is deliberately forced instead of cross-faded. This prevents a residual
-                // locomotion pose from keeping AJ visually in Walk when movement has stopped.
-                animator.Play(IdleHash, 0, 0f);
-                animator.Update(0f);
-                Debug.Log($"[CYDOY] AJ state -> IDLE | speed={speed:F3}", animator);
-            }
+            if (immediate)
+                animator.Play(stateHash, 0, 0f);
             else
-            {
                 animator.CrossFadeInFixedTime(stateHash, crossFadeDuration, 0);
-
-                string label = stateHash == RunHash ? "RUN" : "WALK";
-                Debug.Log($"[CYDOY] AJ state -> {label} | speed={speed:F3}", animator);
-            }
 
             _currentState = stateHash;
         }
