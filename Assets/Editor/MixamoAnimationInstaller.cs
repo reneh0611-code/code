@@ -33,32 +33,31 @@ namespace CheatOnYourDayOnes.EditorTools
             EnsureResourcesFolder();
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 
-            Avatar ajAvatar = FindAvatar(AjPath);
-            if (ajAvatar == null)
+            if (!PrepareAjForDirectPlayback())
             {
-                EditorUtility.DisplayDialog(dialogTitle, "AJ Avatar not found. Run Install Mixamo Character first.", "OK");
+                EditorUtility.DisplayDialog(dialogTitle, "AJ could not be configured as Generic. Check Assets/Models/Characters/Aj.fbx.", "OK");
                 return;
             }
 
-            AnimationClip idle = PrepareDirectHumanoidClip(IdlePath, "Idle");
-            AnimationClip walk = PrepareDirectHumanoidClip(WalkPath, "Walk");
-            AnimationClip run = PrepareDirectHumanoidClip(RunPath, "Run");
+            AnimationClip idle = PrepareOriginalGenericClip(IdlePath, "Idle");
+            AnimationClip walk = PrepareOriginalGenericClip(WalkPath, "Walk");
+            AnimationClip run = PrepareOriginalGenericClip(RunPath, "Run");
 
             if (idle == null || walk == null || run == null)
             {
-                EditorUtility.DisplayDialog(dialogTitle, "One or more Humanoid clips could not be prepared. Check [CYDOY] Console logs.", "OK");
+                EditorUtility.DisplayDialog(dialogTitle, "One or more original Mixamo clips could not be prepared. Check [CYDOY] Console logs.", "OK");
                 return;
             }
 
             AnimatorController controller = BuildDirectController(idle, walk, run);
-            InstallOnPlayer(controller, ajAvatar);
+            InstallOnPlayer(controller);
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
             EditorUtility.DisplayDialog(
                 dialogTitle,
-                "AJ locomotion repaired with Humanoid root motion baked into pose.\n\nIdle: " + idle.name +
+                "AJ now uses the original Generic Mixamo transform animation.\n\nNo Humanoid retargeting.\nNo root baking.\nNo loop-pose modification.\nNo animation blending.\n\nIdle: " + idle.name +
                 "\nWalk: " + walk.name +
                 "\nRun: " + run.name,
                 "Let's go");
@@ -77,10 +76,10 @@ namespace CheatOnYourDayOnes.EditorTools
                 return;
             }
 
-            AnimationClip run = PrepareDirectHumanoidClip(RunPath, "Run");
+            AnimationClip run = PrepareOriginalGenericClip(RunPath, "Run");
             if (run == null)
             {
-                EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Run.fbx is not a valid Humanoid clip. Idle and Walk were untouched.", "OK");
+                EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Run.fbx could not be loaded as its original Generic animation.", "OK");
                 return;
             }
 
@@ -98,10 +97,22 @@ namespace CheatOnYourDayOnes.EditorTools
             EnsureControllerStillOnPlayer(controller);
             AssetDatabase.SaveAssets();
 
-            EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Run updated. Idle and Walk unchanged.", "Nice");
+            EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Run updated directly from Run.fbx with no retargeting or pose modification.", "Nice");
         }
 
-        private static AnimationClip PrepareDirectHumanoidClip(string path, string stateName)
+        private static bool PrepareAjForDirectPlayback()
+        {
+            ModelImporter importer = AssetImporter.GetAtPath(AjPath) as ModelImporter;
+            if (importer == null)
+                return false;
+
+            importer.animationType = ModelImporterAnimationType.Generic;
+            importer.importAnimation = true;
+            importer.SaveAndReimport();
+            return AssetDatabase.LoadAssetAtPath<GameObject>(AjPath) != null;
+        }
+
+        private static AnimationClip PrepareOriginalGenericClip(string path, string stateName)
         {
             if (AssetDatabase.LoadMainAssetAtPath(path) == null)
             {
@@ -114,8 +125,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 return null;
 
             importer.importAnimation = true;
-            importer.animationType = ModelImporterAnimationType.Human;
-            importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+            importer.animationType = ModelImporterAnimationType.Generic;
             importer.importCameras = false;
             importer.importLights = false;
             importer.materialImportMode = ModelImporterMaterialImportMode.None;
@@ -133,54 +143,36 @@ namespace CheatOnYourDayOnes.EditorTools
             {
                 for (int i = 0; i < clips.Length; i++)
                 {
+                    // Repeat the exact source clip. Do not alter its pose at the seam.
                     clips[i].loopTime = true;
-                    clips[i].loopPose = true;
-
-                    // Mixamo locomotion is downloaded In Place and movement is handled by our
-                    // CharacterController. Bake all Humanoid root transforms into the pose so
-                    // Unity does not retarget extra hip/root translation or rotation onto AJ.
-                    clips[i].lockRootRotation = true;
-                    clips[i].lockRootHeightY = true;
-                    clips[i].lockRootPositionXZ = true;
-                    clips[i].keepOriginalOrientation = false;
-                    clips[i].keepOriginalPositionY = false;
-                    clips[i].keepOriginalPositionXZ = false;
+                    clips[i].loopPose = false;
                 }
 
                 importer.clipAnimations = clips;
                 importer.SaveAndReimport();
             }
 
-            AnimationClip clip = FindBestHumanoidClip(path);
+            AnimationClip clip = FindBestOriginalClip(path);
             if (clip == null)
             {
-                Debug.LogError("[CYDOY] No Humanoid animation clip found for " + stateName + " in " + path);
+                Debug.LogError("[CYDOY] No animation clip found for " + stateName + " in " + path);
                 return null;
             }
 
-            Debug.Log($"[CYDOY] READY {stateName}: '{clip.name}', length={clip.length:F2}s, humanMotion={clip.humanMotion}, root baked into pose");
+            Debug.Log($"[CYDOY] ORIGINAL {stateName}: '{clip.name}', length={clip.length:F2}s, humanMotion={clip.humanMotion}");
             return clip;
         }
 
-        private static AnimationClip FindBestHumanoidClip(string path)
+        private static AnimationClip FindBestOriginalClip(string path)
         {
             AnimationClip best = null;
             foreach (UObject asset in AssetDatabase.LoadAllAssetsAtPath(path))
             {
                 if (asset is not AnimationClip clip) continue;
                 if (clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase)) continue;
-                if (!clip.humanMotion) continue;
                 if (best == null || clip.length > best.length) best = clip;
             }
             return best;
-        }
-
-        private static Avatar FindAvatar(string path)
-        {
-            foreach (UObject asset in AssetDatabase.LoadAllAssetsAtPath(path))
-                if (asset is Avatar avatar && avatar.isValid && avatar.isHuman)
-                    return avatar;
-            return null;
         }
 
         private static AnimatorState FindState(AnimatorStateMachine stateMachine, string stateName)
@@ -216,7 +208,7 @@ namespace CheatOnYourDayOnes.EditorTools
             return controller;
         }
 
-        private static void InstallOnPlayer(RuntimeAnimatorController controller, Avatar ajAvatar)
+        private static void InstallOnPlayer(RuntimeAnimatorController controller)
         {
             GameObject playerAsset = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
             if (playerAsset == null)
@@ -230,14 +222,6 @@ namespace CheatOnYourDayOnes.EditorTools
                 if (animator == null)
                     throw new InvalidOperationException("AJ Animator not found in Player.prefab.");
 
-                // Keep the currently correct model height untouched except for the known neutral root position.
-                if (ajRoot != null)
-                {
-                    Vector3 p = ajRoot.localPosition;
-                    ajRoot.localPosition = new Vector3(p.x, 0f, p.z);
-                }
-
-                animator.avatar = ajAvatar;
                 animator.runtimeAnimatorController = controller;
                 animator.enabled = true;
                 animator.speed = 1f;
@@ -264,8 +248,24 @@ namespace CheatOnYourDayOnes.EditorTools
                 if (fallback != null) fallback.objectReferenceValue = controller;
                 driverSO.FindProperty("walkThreshold").floatValue = 0.35f;
                 driverSO.FindProperty("runThreshold").floatValue = 5.1f;
-                driverSO.FindProperty("crossFadeDuration").floatValue = 0.10f;
+                SerializedProperty crossFade = driverSO.FindProperty("crossFadeDuration");
+                if (crossFade != null) crossFade.floatValue = 0f;
                 driverSO.ApplyModifiedPropertiesWithoutUndo();
+
+                MixamoRuntimePoseAndGrounder grounder = root.GetComponent<MixamoRuntimePoseAndGrounder>();
+                if (grounder == null) grounder = root.AddComponent<MixamoRuntimePoseAndGrounder>();
+                SerializedObject groundSO = new(grounder);
+                SerializedProperty groundAnimator = groundSO.FindProperty("animator");
+                if (groundAnimator != null) groundAnimator.objectReferenceValue = animator;
+                SerializedProperty modelRoot = groundSO.FindProperty("modelRoot");
+                if (modelRoot != null && ajRoot != null) modelRoot.objectReferenceValue = ajRoot;
+                SerializedProperty cc = groundSO.FindProperty("characterController");
+                if (cc != null) cc.objectReferenceValue = characterController;
+                SerializedProperty settle = groundSO.FindProperty("settleFrames");
+                if (settle != null) settle.intValue = 2;
+                SerializedProperty sole = groundSO.FindProperty("soleOffset");
+                if (sole != null) sole.floatValue = 0f;
+                groundSO.ApplyModifiedPropertiesWithoutUndo();
 
                 PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
             }
