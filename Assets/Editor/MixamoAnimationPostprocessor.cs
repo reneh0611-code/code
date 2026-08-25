@@ -14,12 +14,9 @@ namespace CheatOnYourDayOnes.EditorTools
             if (assetImporter is not ModelImporter importer)
                 return;
 
-            // Keep the Mixamo animation itself untouched. We only tell Unity
-            // to import it as a Humanoid animation. Loop/root settings are
-            // applied later by the installer after the real clip exists.
+            // IMPORTANT: Do not force Generic/Humanoid/avatar settings here.
+            // The installer controls that explicitly in multiple passes.
             importer.importAnimation = true;
-            importer.animationType = ModelImporterAnimationType.Human;
-            importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
             importer.importCameras = false;
             importer.importLights = false;
             importer.materialImportMode = ModelImporterMaterialImportMode.None;
