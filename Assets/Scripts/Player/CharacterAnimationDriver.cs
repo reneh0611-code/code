@@ -2,54 +2,70 @@ using UnityEngine;
 
 namespace CheatOnYourDayOnes.Player
 {
+    [RequireComponent(typeof(CharacterController))]
     public sealed class CharacterAnimationDriver : MonoBehaviour
     {
         [SerializeField] private Animator animator;
-        [SerializeField] private Transform trackedRoot;
-        [SerializeField] private float maxReferenceSpeed = 6.8f;
-        [SerializeField] private float damping = 0.10f;
+        [SerializeField] private CharacterController characterController;
+        [SerializeField] private float walkReferenceSpeed = 4.2f;
+        [SerializeField] private float runReferenceSpeed = 6.8f;
+        [SerializeField] private float damping = 0.08f;
+        [SerializeField] private float minimumMovingSpeed = 0.08f;
 
         private static readonly int SpeedHash = Animator.StringToHash("Speed");
-        private Vector3 _lastPosition;
-        private bool _initialized;
 
         private void Awake()
         {
             if (animator == null)
                 animator = GetComponentInChildren<Animator>(true);
-            if (trackedRoot == null)
-                trackedRoot = transform;
+            if (characterController == null)
+                characterController = GetComponent<CharacterController>();
+
+            if (animator != null)
+            {
+                animator.enabled = true;
+                animator.speed = 1f;
+                animator.applyRootMotion = false;
+                animator.updateMode = AnimatorUpdateMode.Normal;
+                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            }
         }
 
-        private void OnEnable()
+        private void Start()
         {
-            if (trackedRoot != null)
-            {
-                _lastPosition = trackedRoot.position;
-                _initialized = true;
-            }
+            if (animator == null || animator.runtimeAnimatorController == null)
+                return;
+
+            animator.Rebind();
+            animator.Update(0f);
+            animator.speed = 1f;
         }
 
         private void Update()
         {
-            if (animator == null || animator.runtimeAnimatorController == null || trackedRoot == null)
+            if (animator == null || animator.runtimeAnimatorController == null || characterController == null)
                 return;
 
-            if (!_initialized)
+            Vector3 planarVelocity = characterController.velocity;
+            planarVelocity.y = 0f;
+            float speed = planarVelocity.magnitude;
+
+            float blendValue;
+            if (speed <= minimumMovingSpeed)
             {
-                _lastPosition = trackedRoot.position;
-                _initialized = true;
-                return;
+                blendValue = 0f;
+            }
+            else if (speed <= walkReferenceSpeed)
+            {
+                blendValue = Mathf.InverseLerp(minimumMovingSpeed, walkReferenceSpeed, speed) * 0.5f;
+            }
+            else
+            {
+                blendValue = Mathf.Lerp(0.5f, 1f, Mathf.InverseLerp(walkReferenceSpeed, runReferenceSpeed, speed));
             }
 
-            Vector3 delta = trackedRoot.position - _lastPosition;
-            _lastPosition = trackedRoot.position;
-            delta.y = 0f;
-
-            float worldSpeed = Time.deltaTime > 0.0001f ? delta.magnitude / Time.deltaTime : 0f;
-            float normalizedSpeed = Mathf.Clamp01(worldSpeed / Mathf.Max(0.1f, maxReferenceSpeed));
-
-            animator.SetFloat(SpeedHash, normalizedSpeed, damping, Time.deltaTime);
+            animator.speed = 1f;
+            animator.SetFloat(SpeedHash, blendValue, damping, Time.deltaTime);
         }
     }
 }
