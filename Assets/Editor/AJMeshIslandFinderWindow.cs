@@ -10,6 +10,7 @@ namespace CheatOnYourDayOnes.EditorTools
     {
         private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
         private const string GeneratedFolder = "Assets/Models/Characters/Generated";
+        private const string NpcRootName = "Generated_NPCs";
 
         private GameObject _root;
         private Transform _aj;
@@ -35,23 +36,35 @@ namespace CheatOnYourDayOnes.EditorTools
         }
 
         private void OnEnable() => Reload();
-        private void OnDisable() => Cleanup();
+
+        private void OnDisable()
+        {
+            RestoreGeneratedNpcsFromPlayerPrefab();
+            CleanupPrefabPreview();
+        }
 
         private void Reload()
         {
-            Cleanup();
+            CleanupPrefabPreview();
+
             _root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
             _aj = FindRecursive(_root.transform, "Mixamo_AJ");
-            _renderers = _aj != null ? _aj.GetComponentsInChildren<SkinnedMeshRenderer>(true) : Array.Empty<SkinnedMeshRenderer>();
+            _renderers = _aj != null
+                ? _aj.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+                : Array.Empty<SkinnedMeshRenderer>();
+
             _rendererIndex = Mathf.Clamp(_rendererIndex, 0, Mathf.Max(0, _renderers.Length - 1));
             BuildIslands();
+            SyncAllGeneratedNpcsFromCurrentPlayerPreview();
+            SceneView.RepaintAll();
             Repaint();
         }
 
-        private void Cleanup()
+        private void CleanupPrefabPreview()
         {
             if (_root != null)
                 PrefabUtility.UnloadPrefabContents(_root);
+
             _root = null;
             _aj = null;
             _renderers = Array.Empty<SkinnedMeshRenderer>();
@@ -63,8 +76,8 @@ namespace CheatOnYourDayOnes.EditorTools
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("AJ Mesh Island Finder", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "Der Rucksack ist offenbar innerhalb eines SkinnedMeshes eingebaut. Dieses Tool zerlegt das gewählte Mesh in getrennte, zusammenhängende Geometrie-Inseln. " +
-                "Mit 'Insel testweise entfernen' kannst du einzeln prüfen, bei welcher Insel nur der Rucksack verschwindet.",
+                "Der Rucksack steckt innerhalb eines SkinnedMeshes. Dieses Tool zerlegt das gewählte Mesh in getrennte Geometrie-Inseln. " +
+                "Die Test-Vorschau wird jetzt gleichzeitig auf den Player-AJ UND auf alle bereits platzierten Generated_NPCs angewendet.",
                 MessageType.Info);
 
             if (_renderers.Length == 0)
@@ -73,7 +86,10 @@ namespace CheatOnYourDayOnes.EditorTools
                 return;
             }
 
-            string[] labels = _renderers.Select((r, i) => $"{i + 1}: {r.name} / {(r.sharedMesh != null ? r.sharedMesh.name : "<none>")}").ToArray();
+            string[] labels = _renderers
+                .Select((r, i) => $"{i + 1}: {r.name} / {(r.sharedMesh != null ? r.sharedMesh.name : "<none>")}")
+                .ToArray();
+
             int newIndex = EditorGUILayout.Popup("Renderer", _rendererIndex, labels);
             if (newIndex != _rendererIndex)
             {
@@ -87,7 +103,13 @@ namespace CheatOnYourDayOnes.EditorTools
             EditorGUILayout.Space(6);
             EditorGUILayout.LabelField($"Gefundene Inseln: {_islands.Count}");
 
+            GameObject npcRoot = GameObject.Find(NpcRootName);
+            EditorGUILayout.LabelField(
+                "NPC Vorschau",
+                npcRoot != null ? $"AKTIV ({npcRoot.transform.childCount} NPCs gefunden)" : "Keine Generated_NPCs in Szene");
+
             _scroll = EditorGUILayout.BeginScrollView(_scroll);
+
             for (int i = 0; i < _islands.Count; i++)
             {
                 Island island = _islands[i];
@@ -105,8 +127,10 @@ namespace CheatOnYourDayOnes.EditorTools
                 if (GUILayout.Button("Diese Insel = Backpack dauerhaft entfernen"))
                     PermanentlyRemoveIsland(i);
                 EditorGUILayout.EndHorizontal();
+
                 EditorGUILayout.EndVertical();
             }
+
             EditorGUILayout.EndScrollView();
 
             EditorGUILayout.Space(6);
@@ -151,7 +175,8 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 for (int start = 0; start < triCount; start++)
                 {
-                    if (visited[start]) continue;
+                    if (visited[start])
+                        continue;
 
                     Island island = new() { subMesh = sub };
                     queue.Enqueue(start);
@@ -175,7 +200,9 @@ namespace CheatOnYourDayOnes.EditorTools
                         {
                             foreach (int n in vertexToTri[v])
                             {
-                                if (visited[n]) continue;
+                                if (visited[n])
+                                    continue;
+
                                 visited[n] = true;
                                 queue.Enqueue(n);
                             }
@@ -185,10 +212,10 @@ namespace CheatOnYourDayOnes.EditorTools
                     if (island.vertices.Count > 0)
                     {
                         int first = island.vertices.First();
-                        Bounds b = new(verts[first], Vector3.zero);
+                        Bounds bounds = new(verts[first], Vector3.zero);
                         foreach (int v in island.vertices)
-                            b.Encapsulate(verts[v]);
-                        island.localBounds = b;
+                            bounds.Encapsulate(verts[v]);
+                        island.localBounds = bounds;
                     }
 
                     _islands.Add(island);
@@ -204,27 +231,49 @@ namespace CheatOnYourDayOnes.EditorTools
                 return;
 
             SkinnedMeshRenderer renderer = _renderers[_rendererIndex];
+            string rendererName = renderer.name;
             renderer.sharedMesh = preview;
+
+            ApplyMeshToGeneratedNpcs(rendererName, preview);
             SceneView.RepaintAll();
 
             EditorUtility.DisplayDialog(
                 "CYDOY · Test",
-                "Die gewählte Insel wurde nur in dieser temporären Vorschau entfernt. Schau jetzt im Scene-/Prefab-Fenster, ob genau der Rucksack verschwunden ist. Mit 'Änderungen verwerfen / neu laden' stellst du alles wieder her.",
+                "Die Insel wurde temporär beim Player-AJ UND bei allen vorhandenen Generated_NPCs entfernt.\n\nSchau jetzt direkt in der Szene, ob der Rucksack verschwunden ist.\n\nMit 'Änderungen verwerfen / neu laden' stellst du Player und NPCs wieder her.",
                 "OK");
         }
 
         private void PermanentlyRemoveIsland(int islandIndex)
         {
-            // Reload a clean prefab copy before making the permanent asset.
+            if (_rendererIndex < 0 || _rendererIndex >= _renderers.Length)
+                return;
+
             string rendererName = _renderers[_rendererIndex].name;
-            string meshName = _renderers[_rendererIndex].sharedMesh != null ? _renderers[_rendererIndex].sharedMesh.name : string.Empty;
+            string meshName = _renderers[_rendererIndex].sharedMesh != null
+                ? _renderers[_rendererIndex].sharedMesh.name
+                : string.Empty;
             int requestedIsland = islandIndex;
 
-            Reload();
+            // Always start the permanent operation from a clean prefab copy.
+            CleanupPrefabPreview();
+            _root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
+            _aj = FindRecursive(_root.transform, "Mixamo_AJ");
+            _renderers = _aj != null
+                ? _aj.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+                : Array.Empty<SkinnedMeshRenderer>();
 
-            _rendererIndex = Array.FindIndex(_renderers, r => r != null && r.name == rendererName && r.sharedMesh != null && r.sharedMesh.name == meshName);
+            _rendererIndex = Array.FindIndex(
+                _renderers,
+                r => r != null &&
+                     r.name == rendererName &&
+                     r.sharedMesh != null &&
+                     (r.sharedMesh.name == meshName || meshName.EndsWith("_IslandPreview")));
+
             if (_rendererIndex < 0)
-                _rendererIndex = 0;
+                _rendererIndex = Array.FindIndex(_renderers, r => r != null && r.name == rendererName);
+            if (_rendererIndex < 0)
+                return;
+
             BuildIslands();
 
             if (requestedIsland < 0 || requestedIsland >= _islands.Count)
@@ -237,18 +286,25 @@ namespace CheatOnYourDayOnes.EditorTools
             SkinnedMeshRenderer renderer = _renderers[_rendererIndex];
             string safe = Sanitize(renderer.name);
             string path = $"{GeneratedFolder}/AJ_NoBackpack_Island_{safe}.asset";
+
             AssetDatabase.DeleteAsset(path);
             AssetDatabase.CreateAsset(cleaned, path);
             AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
 
-            renderer.sharedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            Mesh savedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            renderer.sharedMesh = savedMesh;
             EditorUtility.SetDirty(renderer);
+
             PrefabUtility.SaveAsPrefabAsset(_root, PlayerPrefabPath);
             AssetDatabase.SaveAssets();
 
+            // Existing scene NPCs are independent clones, so sync the saved mesh immediately.
+            ApplyMeshToGeneratedNpcs(renderer.name, savedMesh);
+            SceneView.RepaintAll();
+
             EditorUtility.DisplayDialog(
                 "CYDOY · Backpack entfernt",
-                "Die ausgewählte Geometrie-Insel wurde dauerhaft aus dem Player-AJ entfernt. Wenn das die richtige Insel war, erzeuge danach die NPCs neu.",
+                "Die ausgewählte Geometrie-Insel wurde dauerhaft aus dem Player-AJ entfernt und direkt auf alle vorhandenen Generated_NPCs synchronisiert.",
                 "Perfekt");
 
             Reload();
@@ -257,7 +313,11 @@ namespace CheatOnYourDayOnes.EditorTools
         private bool TryCreateMeshWithoutIsland(int islandIndex, out Mesh result)
         {
             result = null;
-            if (_rendererIndex < 0 || _rendererIndex >= _renderers.Length || islandIndex < 0 || islandIndex >= _islands.Count)
+
+            if (_rendererIndex < 0 ||
+                _rendererIndex >= _renderers.Length ||
+                islandIndex < 0 ||
+                islandIndex >= _islands.Count)
                 return false;
 
             Mesh source = _renderers[_rendererIndex].sharedMesh;
@@ -292,9 +352,12 @@ namespace CheatOnYourDayOnes.EditorTools
                     int a = tris[i];
                     int b = tris[i + 1];
                     int c = tris[i + 2];
+
                     if (!removeKeys.Contains(Key(a, b, c)))
                     {
-                        kept.Add(a); kept.Add(b); kept.Add(c);
+                        kept.Add(a);
+                        kept.Add(b);
+                        kept.Add(c);
                     }
                 }
 
@@ -303,6 +366,70 @@ namespace CheatOnYourDayOnes.EditorTools
 
             result.RecalculateBounds();
             return true;
+        }
+
+        private static void ApplyMeshToGeneratedNpcs(string rendererName, Mesh mesh)
+        {
+            GameObject npcRoot = GameObject.Find(NpcRootName);
+            if (npcRoot == null || mesh == null)
+                return;
+
+            foreach (Transform npc in npcRoot.transform)
+            {
+                SkinnedMeshRenderer[] npcRenderers = npc.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                SkinnedMeshRenderer target = npcRenderers.FirstOrDefault(r => r != null && r.name == rendererName);
+                if (target == null)
+                    continue;
+
+                target.sharedMesh = mesh;
+                EditorUtility.SetDirty(target);
+            }
+        }
+
+        private void SyncAllGeneratedNpcsFromCurrentPlayerPreview()
+        {
+            if (_renderers == null || _renderers.Length == 0)
+                return;
+
+            foreach (SkinnedMeshRenderer renderer in _renderers)
+            {
+                if (renderer != null && renderer.sharedMesh != null)
+                    ApplyMeshToGeneratedNpcs(renderer.name, renderer.sharedMesh);
+            }
+        }
+
+        private static void RestoreGeneratedNpcsFromPlayerPrefab()
+        {
+            GameObject npcRoot = GameObject.Find(NpcRootName);
+            if (npcRoot == null)
+                return;
+
+            GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            if (playerPrefab == null)
+                return;
+
+            Transform aj = FindRecursive(playerPrefab.transform, "Mixamo_AJ");
+            if (aj == null)
+                return;
+
+            SkinnedMeshRenderer[] sourceRenderers = aj.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            foreach (SkinnedMeshRenderer source in sourceRenderers)
+            {
+                if (source == null || source.sharedMesh == null)
+                    continue;
+
+                foreach (Transform npc in npcRoot.transform)
+                {
+                    SkinnedMeshRenderer target = npc
+                        .GetComponentsInChildren<SkinnedMeshRenderer>(true)
+                        .FirstOrDefault(r => r != null && r.name == source.name);
+
+                    if (target != null)
+                        target.sharedMesh = source.sharedMesh;
+                }
+            }
+
+            SceneView.RepaintAll();
         }
 
         private static string Key(int a, int b, int c)
@@ -314,26 +441,35 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static Transform FindRecursive(Transform root, string targetName)
         {
-            if (root.name == targetName) return root;
+            if (root.name == targetName)
+                return root;
+
             for (int i = 0; i < root.childCount; i++)
             {
-                Transform r = FindRecursive(root.GetChild(i), targetName);
-                if (r != null) return r;
+                Transform result = FindRecursive(root.GetChild(i), targetName);
+                if (result != null)
+                    return result;
             }
+
             return null;
         }
 
         private static void EnsureGeneratedFolder()
         {
-            if (!AssetDatabase.IsValidFolder("Assets/Models")) AssetDatabase.CreateFolder("Assets", "Models");
-            if (!AssetDatabase.IsValidFolder("Assets/Models/Characters")) AssetDatabase.CreateFolder("Assets/Models", "Characters");
-            if (!AssetDatabase.IsValidFolder(GeneratedFolder)) AssetDatabase.CreateFolder("Assets/Models/Characters", "Generated");
+            if (!AssetDatabase.IsValidFolder("Assets/Models"))
+                AssetDatabase.CreateFolder("Assets", "Models");
+            if (!AssetDatabase.IsValidFolder("Assets/Models/Characters"))
+                AssetDatabase.CreateFolder("Assets/Models", "Characters");
+            if (!AssetDatabase.IsValidFolder(GeneratedFolder))
+                AssetDatabase.CreateFolder("Assets/Models/Characters", "Generated");
         }
 
-        private static string Sanitize(string s)
+        private static string Sanitize(string value)
         {
-            foreach (char c in System.IO.Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
-            return s.Replace('/', '_').Replace('\\', '_').Replace(':', '_');
+            foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+                value = value.Replace(c, '_');
+
+            return value.Replace('/', '_').Replace('\\', '_').Replace(':', '_');
         }
     }
 }
