@@ -9,21 +9,24 @@ namespace CheatOnYourDayOnes.EditorTools
 {
     public static class NPCWorldPopulator
     {
-        private const string CharacterPath = "Assets/Models/Characters/Aj.fbx";
+        private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
         private const string ControllerPath = "Assets/Resources/AJ_Locomotion.controller";
         private const string RootName = "Generated_NPCs";
 
         [MenuItem("Tools/CYDOY/Populate World With NPCs")]
         public static void Populate()
         {
-            GameObject characterAsset = AssetDatabase.LoadAssetAtPath<GameObject>(CharacterPath);
+            GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
             RuntimeAnimatorController controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(ControllerPath);
 
-            if (characterAsset == null || controller == null)
+            Transform sourceAjTransform = playerPrefab != null ? FindRecursive(playerPrefab.transform, "Mixamo_AJ") : null;
+            GameObject sourceAj = sourceAjTransform != null ? sourceAjTransform.gameObject : null;
+
+            if (sourceAj == null || controller == null)
             {
                 EditorUtility.DisplayDialog(
                     "CYDOY · NPC Population",
-                    "AJ or AJ_Locomotion.controller is missing.\n\nMake sure the character and locomotion are installed first.",
+                    "The textured Mixamo_AJ inside Player.prefab or AJ_Locomotion.controller is missing.\n\nMake sure AJ is installed and textured first.",
                     "OK");
                 return;
             }
@@ -78,17 +81,18 @@ namespace CheatOnYourDayOnes.EditorTools
                     ? Random.Range(0.58f, 0.72f)
                     : Random.Range(0.90f, 1.08f);
 
-                GameObject npc = PrefabUtility.InstantiatePrefab(characterAsset) as GameObject;
-                if (npc == null)
-                    npc = Object.Instantiate(characterAsset);
-
+                // Important: clone the already textured AJ from Player.prefab instead of raw Aj.fbx.
+                // This guarantees every NPC starts with the exact same working textures/materials as the player.
+                GameObject npc = Object.Instantiate(sourceAj);
                 npc.name = isChild ? $"NPC_Child_{created + 1:00}" : $"NPC_Adult_{created + 1:00}";
                 npc.transform.SetParent(root.transform);
                 npc.transform.position = position;
                 npc.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                npc.transform.localScale = Vector3.one * scale;
+                npc.transform.localScale = sourceAj.transform.localScale * scale;
+                npc.SetActive(true);
 
                 RemoveModelColliders(npc);
+                HideBackpack(npc.transform);
 
                 Animator animator = npc.GetComponentInChildren<Animator>(true);
                 if (animator == null)
@@ -96,20 +100,27 @@ namespace CheatOnYourDayOnes.EditorTools
                 animator.runtimeAnimatorController = controller;
                 animator.applyRootMotion = false;
                 animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                animator.enabled = true;
 
-                CharacterController cc = npc.AddComponent<CharacterController>();
+                CharacterController cc = npc.GetComponent<CharacterController>();
+                if (cc == null)
+                    cc = npc.AddComponent<CharacterController>();
                 cc.height = 1.82f;
                 cc.radius = 0.30f;
                 cc.center = new Vector3(0f, 0.91f, 0f);
                 cc.stepOffset = 0.25f;
                 cc.skinWidth = 0.04f;
 
-                NPCWanderer wanderer = npc.AddComponent<NPCWanderer>();
+                NPCWanderer wanderer = npc.GetComponent<NPCWanderer>();
+                if (wanderer == null)
+                    wanderer = npc.AddComponent<NPCWanderer>();
                 float speed = isChild ? Random.Range(1.0f, 1.25f) : Random.Range(1.25f, 1.65f);
                 float radius = Random.Range(7f, 13f);
                 wanderer.Configure(speed, radius);
 
-                NPCAppearanceRandomizer appearance = npc.AddComponent<NPCAppearanceRandomizer>();
+                NPCAppearanceRandomizer appearance = npc.GetComponent<NPCAppearanceRandomizer>();
+                if (appearance == null)
+                    appearance = npc.AddComponent<NPCAppearanceRandomizer>();
                 appearance.Configure(isChild, hasCap);
 
                 SnapVisualBottomToGround(npc, hit.point.y);
@@ -126,7 +137,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.DisplayDialog(
                 "CYDOY · NPC Population",
-                $"Placed {created} NPCs.\n\nAdults and up to two children are mixed naturally.\nOnly a few NPCs get caps.\nThey wander independently and never auto-face the player.",
+                $"Placed {created} NPCs from the textured Player AJ.\n\nThey keep AJ's real textures, vary only recognized clothing materials, and backpacks are hidden.",
                 "Nice");
         }
 
@@ -146,6 +157,34 @@ namespace CheatOnYourDayOnes.EditorTools
         {
             foreach (Collider collider in npc.GetComponentsInChildren<Collider>(true))
                 Object.DestroyImmediate(collider);
+        }
+
+        private static void HideBackpack(Transform root)
+        {
+            foreach (Transform t in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (t == root)
+                    continue;
+
+                string n = t.name.ToLowerInvariant();
+                if (n.Contains("backpack") || n.Contains("back_pack") || n.Contains("rucksack") || n == "bag" || n.Contains("shoulderbag"))
+                    t.gameObject.SetActive(false);
+            }
+        }
+
+        private static Transform FindRecursive(Transform root, string targetName)
+        {
+            if (root.name == targetName)
+                return root;
+
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform found = FindRecursive(root.GetChild(i), targetName);
+                if (found != null)
+                    return found;
+            }
+
+            return null;
         }
 
         private static void SnapVisualBottomToGround(GameObject npc, float groundY)
