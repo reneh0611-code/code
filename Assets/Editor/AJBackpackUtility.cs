@@ -1,3 +1,4 @@
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -18,7 +19,8 @@ namespace CheatOnYourDayOnes.EditorTools
             }
 
             GameObject root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
-            int hidden = 0;
+            int hiddenBones = 0;
+            int hiddenRenderers = 0;
 
             try
             {
@@ -29,16 +31,31 @@ namespace CheatOnYourDayOnes.EditorTools
                     return;
                 }
 
+                // Hide the obvious backpack bones/objects first.
                 foreach (Transform t in aj.GetComponentsInChildren<Transform>(true))
                 {
                     if (t == aj)
                         continue;
 
-                    string n = t.name.ToLowerInvariant();
-                    if (n.Contains("backpack") || n.Contains("back_pack") || n.Contains("rucksack") || n == "bag" || n.Contains("shoulderbag"))
+                    if (IsBackpackToken(t.name))
                     {
                         t.gameObject.SetActive(false);
-                        hidden++;
+                        hiddenBones++;
+                    }
+                }
+
+                // More important: disable the SkinnedMeshRenderer that actually draws the backpack.
+                SkinnedMeshRenderer[] renderers = aj.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                foreach (SkinnedMeshRenderer renderer in renderers)
+                {
+                    if (renderer == null)
+                        continue;
+
+                    if (IsBackpackRenderer(renderer))
+                    {
+                        renderer.enabled = false;
+                        hiddenRenderers++;
+                        Debug.Log($"[CYDOY] Disabled backpack renderer: {GetPath(renderer.transform)} | mesh={renderer.sharedMesh?.name}");
                     }
                 }
 
@@ -52,10 +69,47 @@ namespace CheatOnYourDayOnes.EditorTools
             AssetDatabase.SaveAssets();
             EditorUtility.DisplayDialog(
                 "CYDOY · AJ Backpack",
-                hidden > 0
-                    ? $"Backpack removed from AJ. Hidden objects: {hidden}."
-                    : "No object with Backpack/Bag/Rucksack in its name was found. If the backpack is fused into the body mesh, it cannot be removed cleanly by hierarchy name alone.",
+                $"Backpack cleanup complete.\n\nBackpack bones/objects hidden: {hiddenBones}\nBackpack renderers disabled: {hiddenRenderers}\n\nIf renderer count is 0, send me the four renderer names from the AJ Analyzer and I can target the exact mesh by name.",
                 "OK");
+        }
+
+        public static bool IsBackpackRenderer(SkinnedMeshRenderer renderer)
+        {
+            if (renderer == null)
+                return false;
+
+            string rendererName = renderer.name ?? string.Empty;
+            string meshName = renderer.sharedMesh != null ? renderer.sharedMesh.name : string.Empty;
+            string materialNames = string.Join(" ", renderer.sharedMaterials.Where(m => m != null).Select(m => m.name));
+            string key = (rendererName + " " + meshName + " " + materialNames).ToLowerInvariant();
+
+            if (IsBackpackToken(key))
+                return true;
+
+            // Some FBXs give the visible backpack mesh a generic name but bind it to backpack bones.
+            Transform[] bones = renderer.bones;
+            if (bones == null || bones.Length == 0)
+                return false;
+
+            int backpackBones = 0;
+            foreach (Transform bone in bones)
+            {
+                if (bone != null && IsBackpackToken(bone.name))
+                    backpackBones++;
+            }
+
+            // A dedicated accessory renderer usually has a meaningful share of its bone list on the backpack.
+            return backpackBones >= 2 && backpackBones >= Mathf.CeilToInt(bones.Length * 0.12f);
+        }
+
+        private static bool IsBackpackToken(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return false;
+
+            string n = value.ToLowerInvariant();
+            return n.Contains("backpack") || n.Contains("back_pack") || n.Contains("rucksack") ||
+                   n.Contains("shoulderbag") || n.Contains("back bag") || n == "bag";
         }
 
         private static Transform FindRecursive(Transform root, string targetName)
@@ -71,6 +125,17 @@ namespace CheatOnYourDayOnes.EditorTools
             }
 
             return null;
+        }
+
+        private static string GetPath(Transform t)
+        {
+            string path = t.name;
+            while (t.parent != null)
+            {
+                t = t.parent;
+                path = t.name + "/" + path;
+            }
+            return path;
         }
     }
 }
