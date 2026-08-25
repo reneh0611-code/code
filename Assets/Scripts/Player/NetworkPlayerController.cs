@@ -9,10 +9,12 @@ namespace CheatOnYourDayOnes.Player
     public sealed class NetworkPlayerController : NetworkBehaviour
     {
         [Header("Movement")]
-        [SerializeField, Min(0.1f)] private float walkSpeed = 4.5f;
-        [SerializeField, Min(0.1f)] private float sprintSpeed = 7.0f;
-        [SerializeField, Min(0.1f)] private float rotationSpeed = 14f;
-        [SerializeField] private float gravity = -24f;
+        [SerializeField, Min(0.1f)] private float walkSpeed = 4.2f;
+        [SerializeField, Min(0.1f)] private float sprintSpeed = 6.8f;
+        [SerializeField, Min(0.1f)] private float acceleration = 18f;
+        [SerializeField, Min(0.1f)] private float deceleration = 22f;
+        [SerializeField, Min(0.1f)] private float rotationSpeed = 18f;
+        [SerializeField] private float gravity = -26f;
 
         [Header("Camera")]
         [SerializeField] private Transform cameraTarget;
@@ -23,14 +25,13 @@ namespace CheatOnYourDayOnes.Player
         private Vector2 _moveInput;
         private bool _sprintInput;
         private float _verticalVelocity;
+        private Vector3 _serverPlanarVelocity;
 
-        private readonly NetworkVariable<Vector3> _serverPosition = new(
-            default,
+        private readonly NetworkVariable<Vector3> _serverPosition = new(default,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
 
-        private readonly NetworkVariable<Quaternion> _serverRotation = new(
-            Quaternion.identity,
+        private readonly NetworkVariable<Quaternion> _serverRotation = new(Quaternion.identity,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
 
@@ -62,8 +63,8 @@ namespace CheatOnYourDayOnes.Player
 
             if (!IsServer)
             {
-                transform.position = Vector3.Lerp(transform.position, _serverPosition.Value, 18f * Time.deltaTime);
-                transform.rotation = Quaternion.Slerp(transform.rotation, _serverRotation.Value, 18f * Time.deltaTime);
+                transform.position = Vector3.Lerp(transform.position, _serverPosition.Value, 20f * Time.deltaTime);
+                transform.rotation = Quaternion.Slerp(transform.rotation, _serverRotation.Value, 20f * Time.deltaTime);
             }
         }
 
@@ -91,6 +92,7 @@ namespace CheatOnYourDayOnes.Player
             if (Keyboard.current.dKey.isPressed) x += 1f;
             if (Keyboard.current.sKey.isPressed) y -= 1f;
             if (Keyboard.current.wKey.isPressed) y += 1f;
+
             _moveInput = Vector2.ClampMagnitude(new Vector2(x, y), 1f);
             _sprintInput = Keyboard.current.leftShiftKey.isPressed;
         }
@@ -105,18 +107,23 @@ namespace CheatOnYourDayOnes.Player
 
             input = Vector2.ClampMagnitude(input, 1f);
             Quaternion yawRotation = Quaternion.Euler(0f, cameraYaw, 0f);
-            Vector3 move = yawRotation * new Vector3(input.x, 0f, input.y);
-            float speed = sprint ? sprintSpeed : walkSpeed;
+            Vector3 desiredDirection = yawRotation * new Vector3(input.x, 0f, input.y);
+            float maxSpeed = sprint ? sprintSpeed : walkSpeed;
+            Vector3 desiredVelocity = desiredDirection * maxSpeed;
 
-            if (_controller.isGrounded && _verticalVelocity < 0f) _verticalVelocity = -2f;
+            float rate = desiredVelocity.sqrMagnitude > 0.001f ? acceleration : deceleration;
+            _serverPlanarVelocity = Vector3.MoveTowards(_serverPlanarVelocity, desiredVelocity, rate * Time.deltaTime);
+
+            if (_controller.isGrounded && _verticalVelocity < 0f)
+                _verticalVelocity = -2f;
             _verticalVelocity += gravity * Time.deltaTime;
 
-            Vector3 velocity = move * speed;
+            Vector3 velocity = _serverPlanarVelocity;
             velocity.y = _verticalVelocity;
             _controller.Move(velocity * Time.deltaTime);
 
-            Vector3 flatMove = new(move.x, 0f, move.z);
-            if (flatMove.sqrMagnitude > 0.01f)
+            Vector3 flatMove = new(_serverPlanarVelocity.x, 0f, _serverPlanarVelocity.z);
+            if (flatMove.sqrMagnitude > 0.12f)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(flatMove.normalized, Vector3.up);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
