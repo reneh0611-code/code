@@ -33,9 +33,13 @@ namespace CheatOnYourDayOnes.EditorTools
                 return;
             }
 
+            // Idle uses the new Humanoid path because that fixed Idle on AJ.
             AnimationClip idle = PrepareHumanoidClip(IdlePath, "Idle");
-            AnimationClip walk = PrepareHumanoidClip(WalkPath, "Walk");
-            AnimationClip run = PrepareHumanoidClip(RunPath, "Run");
+
+            // Walk and Run intentionally use the old Generic path because those exact
+            // Mixamo motions looked correct before the Humanoid conversion changed them.
+            AnimationClip walk = PrepareGenericClip(WalkPath, "Walk");
+            AnimationClip run = PrepareGenericClip(RunPath, "Run");
 
             if (idle == null || walk == null || run == null)
             {
@@ -46,8 +50,8 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 EditorUtility.DisplayDialog(
                     "CYDOY · Animation Import",
-                    "Could not create a Humanoid animation from: " + missing.Trim() +
-                    "\n\nThe installer now lets each Mixamo FBX create its own Humanoid avatar. It no longer copies AJ's rig configuration onto the animation FBXs.",
+                    "Could not prepare: " + missing.Trim() +
+                    "\n\nIdle is imported as Humanoid. Walk and Run are preserved from their original Generic Mixamo clips.",
                     "OK");
                 return;
             }
@@ -76,14 +80,8 @@ namespace CheatOnYourDayOnes.EditorTools
 
             ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
             if (importer == null)
-            {
-                Debug.LogError("[CYDOY] No ModelImporter for: " + path);
                 return null;
-            }
 
-            // Important: every Mixamo animation FBX owns its own skeleton hierarchy.
-            // Let Unity build a Humanoid Avatar FROM THAT FBX. Humanoid animation clips
-            // can then retarget automatically to AJ's different Humanoid Avatar at runtime.
             importer.importAnimation = true;
             importer.animationType = ModelImporterAnimationType.Human;
             importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
@@ -92,44 +90,78 @@ namespace CheatOnYourDayOnes.EditorTools
             importer.materialImportMode = ModelImporterMaterialImportMode.None;
             importer.SaveAndReimport();
 
-            // Never retain an AnimationClip reference across SaveAndReimport.
             importer = AssetImporter.GetAtPath(path) as ModelImporter;
             if (importer == null)
                 return null;
 
-            AnimationClip firstHumanoidClip = FindBestHumanoidClip(path);
-            if (firstHumanoidClip == null)
+            AnimationClip clip = FindBestHumanoidClip(path);
+            if (clip == null)
             {
-                Debug.LogError(
-                    $"[CYDOY] HUMANOID FAILED {stateName}: Unity created no human-motion clip in {path}. " +
-                    "Open the FBX Rig tab and verify Avatar Definition = Create From This Model and the humanoid mapping is valid.");
+                Debug.LogError("[CYDOY] No Humanoid clip found for " + stateName + " in " + path);
                 return null;
             }
 
             ConfigureLoop(importer);
             importer.SaveAndReimport();
 
-            // Reacquire after the reimport because all FBX sub-assets were recreated.
-            AnimationClip finalHumanoidClip = FindBestHumanoidClip(path);
-            if (finalHumanoidClip == null)
+            clip = FindBestHumanoidClip(path);
+            if (clip == null)
+                return null;
+
+            AnimationClip stable = ExtractStableClip(clip, stateName + "_Humanoid");
+            if (stable != null)
             {
-                Debug.LogError("[CYDOY] Humanoid clip disappeared after loop configuration: " + path);
+                Debug.Log($"[CYDOY] READY {stateName} HUMANOID: '{clip.name}', length={clip.length:F2}s");
+            }
+
+            return stable;
+        }
+
+        private static AnimationClip PrepareGenericClip(string path, string stateName)
+        {
+            if (AssetDatabase.LoadMainAssetAtPath(path) == null)
+            {
+                Debug.LogError("[CYDOY] Missing FBX: " + path);
                 return null;
             }
 
-            string stableName = stateName + "_Humanoid";
-            AnimationClip stableClip = ExtractStableClip(finalHumanoidClip, stableName);
-            if (stableClip == null)
+            ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
+            if (importer == null)
+                return null;
+
+            importer.importAnimation = true;
+            importer.animationType = ModelImporterAnimationType.Generic;
+            importer.avatarSetup = ModelImporterAvatarSetup.NoAvatar;
+            importer.importCameras = false;
+            importer.importLights = false;
+            importer.materialImportMode = ModelImporterMaterialImportMode.None;
+            importer.SaveAndReimport();
+
+            importer = AssetImporter.GetAtPath(path) as ModelImporter;
+            if (importer == null)
+                return null;
+
+            AnimationClip clip = FindBestRealClip(path);
+            if (clip == null)
             {
-                Debug.LogError("[CYDOY] Could not create stable .anim copy for " + stateName);
+                Debug.LogError("[CYDOY] No Generic clip found for " + stateName + " in " + path);
                 return null;
             }
 
-            Debug.Log(
-                $"[CYDOY] READY {stateName}: source='{finalHumanoidClip.name}', " +
-                $"length={finalHumanoidClip.length:F2}s, humanMotion={finalHumanoidClip.humanMotion} -> {stableName}.anim");
+            ConfigureLoop(importer);
+            importer.SaveAndReimport();
 
-            return stableClip;
+            clip = FindBestRealClip(path);
+            if (clip == null)
+                return null;
+
+            AnimationClip stable = ExtractStableClip(clip, stateName + "_Original");
+            if (stable != null)
+            {
+                Debug.Log($"[CYDOY] READY {stateName} ORIGINAL: '{clip.name}', length={clip.length:F2}s");
+            }
+
+            return stable;
         }
 
         private static void ConfigureLoop(ModelImporter importer)
@@ -148,9 +180,6 @@ namespace CheatOnYourDayOnes.EditorTools
                 clips[i].lockRootRotation = true;
                 clips[i].lockRootHeightY = true;
                 clips[i].lockRootPositionXZ = true;
-                clips[i].keepOriginalOrientation = true;
-                clips[i].keepOriginalPositionY = true;
-                clips[i].keepOriginalPositionXZ = true;
             }
 
             importer.clipAnimations = clips;
@@ -185,6 +214,24 @@ namespace CheatOnYourDayOnes.EditorTools
                 if (clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                     continue;
                 if (!clip.humanMotion)
+                    continue;
+
+                if (best == null || clip.length > best.length)
+                    best = clip;
+            }
+
+            return best;
+        }
+
+        private static AnimationClip FindBestRealClip(string path)
+        {
+            AnimationClip best = null;
+
+            foreach (UObject asset in AssetDatabase.LoadAllAssetsAtPath(path))
+            {
+                if (asset is not AnimationClip clip)
+                    continue;
+                if (clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 if (best == null || clip.length > best.length)
@@ -272,10 +319,6 @@ namespace CheatOnYourDayOnes.EditorTools
                 driverSO.FindProperty("crossFadeDuration").floatValue = 0.10f;
                 driverSO.ApplyModifiedPropertiesWithoutUndo();
 
-                Debug.Log(
-                    $"[CYDOY] Controller '{controller.name}' wired to AJ Animator " +
-                    $"'{GetHierarchyPath(animator.transform)}' with Avatar '{ajAvatar.name}'.");
-
                 PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
             }
             finally
@@ -310,17 +353,6 @@ namespace CheatOnYourDayOnes.EditorTools
             }
 
             return null;
-        }
-
-        private static string GetHierarchyPath(Transform t)
-        {
-            string path = t.name;
-            while (t.parent != null)
-            {
-                t = t.parent;
-                path = t.name + "/" + path;
-            }
-            return path;
         }
 
         private static void EnsureGeneratedFolder()
