@@ -7,12 +7,15 @@ namespace CheatOnYourDayOnes.Player
     {
         [SerializeField] private Animator animator;
         [SerializeField] private CharacterController characterController;
-        [SerializeField] private float walkReferenceSpeed = 4.2f;
-        [SerializeField] private float runReferenceSpeed = 6.8f;
-        [SerializeField] private float damping = 0.08f;
-        [SerializeField] private float minimumMovingSpeed = 0.08f;
+        [SerializeField] private float walkThreshold = 0.15f;
+        [SerializeField] private float runThreshold = 5.1f;
+        [SerializeField] private float crossFadeDuration = 0.12f;
 
-        private static readonly int SpeedHash = Animator.StringToHash("Speed");
+        private static readonly int IdleHash = Animator.StringToHash("Idle");
+        private static readonly int WalkHash = Animator.StringToHash("Walk");
+        private static readonly int RunHash = Animator.StringToHash("Run");
+
+        private int _currentState;
 
         private void Awake()
         {
@@ -38,7 +41,7 @@ namespace CheatOnYourDayOnes.Player
 
             animator.Rebind();
             animator.Update(0f);
-            animator.speed = 1f;
+            PlayState(IdleHash, true);
         }
 
         private void Update()
@@ -50,22 +53,25 @@ namespace CheatOnYourDayOnes.Player
             planarVelocity.y = 0f;
             float speed = planarVelocity.magnitude;
 
-            float blendValue;
-            if (speed <= minimumMovingSpeed)
-            {
-                blendValue = 0f;
-            }
-            else if (speed <= walkReferenceSpeed)
-            {
-                blendValue = Mathf.InverseLerp(minimumMovingSpeed, walkReferenceSpeed, speed) * 0.5f;
-            }
-            else
-            {
-                blendValue = Mathf.Lerp(0.5f, 1f, Mathf.InverseLerp(walkReferenceSpeed, runReferenceSpeed, speed));
-            }
+            int wantedState = speed < walkThreshold
+                ? IdleHash
+                : speed < runThreshold
+                    ? WalkHash
+                    : RunHash;
 
+            if (wantedState != _currentState)
+                PlayState(wantedState, false);
+        }
+
+        private void PlayState(int stateHash, bool immediate)
+        {
+            _currentState = stateHash;
             animator.speed = 1f;
-            animator.SetFloat(SpeedHash, blendValue, damping, Time.deltaTime);
+
+            if (immediate)
+                animator.Play(stateHash, 0, 0f);
+            else
+                animator.CrossFade(stateHash, crossFadeDuration, 0, 0f);
         }
     }
 }
