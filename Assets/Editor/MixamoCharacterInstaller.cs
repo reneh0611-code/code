@@ -18,10 +18,8 @@ namespace CheatOnYourDayOnes.EditorTools
                 EnsureFolders();
                 EditorUtility.DisplayDialog(
                     "CYDOY · Mixamo Character",
-                    "Character file not found.\n\nPut Ch28_nonPBR.fbx here:\n" + CharacterPath +
-                    "\n\nUnity will automatically import it as a Humanoid. Then run this menu item again.",
+                    "Character file not found.\n\nPut Ch28_nonPBR.fbx here:\n" + CharacterPath,
                     "OK");
-                Selection.activeObject = AssetDatabase.LoadAssetAtPath<Object>("Assets/Models/Characters");
                 return;
             }
 
@@ -34,6 +32,8 @@ namespace CheatOnYourDayOnes.EditorTools
                     "OK");
                 return;
             }
+
+            ExtractEmbeddedMaterials();
 
             GameObject prefabRoot = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
             try
@@ -55,8 +55,16 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 RemoveModelColliders(model);
                 ConfigureAnimator(model);
-                NormalizeModelScale(model.transform);
-                GroundModel(model.transform);
+                NormalizeAndGround(model.transform);
+
+                CharacterController controller = prefabRoot.GetComponent<CharacterController>();
+                if (controller != null)
+                {
+                    controller.height = 1.9f;
+                    controller.radius = 0.34f;
+                    controller.center = new Vector3(0f, 0.95f, 0f);
+                    controller.stepOffset = 0.30f;
+                }
 
                 PrefabUtility.SaveAsPrefabAsset(prefabRoot, PlayerPrefabPath);
                 AssetDatabase.SaveAssets();
@@ -64,16 +72,46 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 EditorUtility.DisplayDialog(
                     "CYDOY · Mixamo Character",
-                    "Mixamo character installed successfully.\n\nYour Player prefab now uses the real character model while keeping the existing network controller, wallet, needs, interaction system and third-person camera.",
-                    "Let's go");
-
-                Selection.activeObject = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
-                EditorGUIUtility.PingObject(Selection.activeObject);
+                    "Character reinstalled with corrected scale, grounding and material extraction.",
+                    "Nice");
             }
             finally
             {
                 PrefabUtility.UnloadPrefabContents(prefabRoot);
             }
+        }
+
+        private static void ExtractEmbeddedMaterials()
+        {
+            ModelImporter importer = AssetImporter.GetAtPath(CharacterPath) as ModelImporter;
+            if (importer == null)
+                return;
+
+            string materialFolder = "Assets/Models/Characters/Materials";
+            if (!AssetDatabase.IsValidFolder("Assets/Models/Characters")) EnsureFolders();
+            if (!AssetDatabase.IsValidFolder(materialFolder))
+                AssetDatabase.CreateFolder("Assets/Models/Characters", "Materials");
+
+            importer.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
+            importer.materialLocation = ModelImporterMaterialLocation.External;
+            importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Everywhere);
+            importer.SaveAndReimport();
+
+            Object[] assets = AssetDatabase.LoadAllAssetsAtPath(CharacterPath);
+            foreach (Object asset in assets)
+            {
+                if (asset is not Material material)
+                    continue;
+
+                string targetPath = materialFolder + "/" + material.name + ".mat";
+                if (AssetDatabase.LoadAssetAtPath<Material>(targetPath) != null)
+                    continue;
+
+                AssetDatabase.ExtractAsset(material, targetPath);
+            }
+
+            importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Everywhere);
+            importer.SaveAndReimport();
         }
 
         private static void RemoveOldVisuals(Transform root)
@@ -93,8 +131,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static void RemoveModelColliders(GameObject model)
         {
-            Collider[] colliders = model.GetComponentsInChildren<Collider>(true);
-            foreach (Collider collider in colliders)
+            foreach (Collider collider in model.GetComponentsInChildren<Collider>(true))
                 Object.DestroyImmediate(collider);
         }
 
@@ -109,31 +146,27 @@ namespace CheatOnYourDayOnes.EditorTools
             animator.updateMode = AnimatorUpdateMode.Normal;
         }
 
-        private static void NormalizeModelScale(Transform modelRoot)
+        private static void NormalizeAndGround(Transform modelRoot)
         {
-            if (!TryGetRendererBounds(modelRoot.gameObject, out Bounds bounds))
+            if (!TryGetRendererBounds(modelRoot.gameObject, out Bounds initialBounds))
                 return;
 
-            float height = bounds.size.y;
-            if (height <= 0.001f)
+            float initialHeight = initialBounds.size.y;
+            if (initialHeight <= 0.001f)
                 return;
 
-            float factor = TargetHeight / height;
-            modelRoot.localScale *= factor;
-        }
+            float scaleFactor = TargetHeight / initialHeight;
+            modelRoot.localScale = Vector3.one * scaleFactor;
 
-        private static void GroundModel(Transform modelRoot)
-        {
-            if (!TryGetRendererBounds(modelRoot.gameObject, out Bounds bounds))
+            // Force Unity to update renderer bounds after scaling.
+            Physics.SyncTransforms();
+            if (!TryGetRendererBounds(modelRoot.gameObject, out Bounds scaledBounds))
                 return;
 
-            float bottomY = bounds.min.y;
-            Vector3 worldPosition = modelRoot.position;
-            worldPosition.y -= bottomY;
-            modelRoot.position = worldPosition;
-
-            // Player root is centered around the CharacterController. Put feet near its lower end.
-            modelRoot.localPosition += new Vector3(0f, -1.02f, 0f);
+            float feetWorldY = scaledBounds.min.y;
+            float desiredFeetWorldY = modelRoot.parent != null ? modelRoot.parent.position.y : 0f;
+            float deltaY = desiredFeetWorldY - feetWorldY;
+            modelRoot.position += Vector3.up * deltaY;
         }
 
         private static bool TryGetRendererBounds(GameObject root, out Bounds bounds)
