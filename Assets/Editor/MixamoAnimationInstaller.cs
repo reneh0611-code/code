@@ -5,6 +5,7 @@ using CheatOnYourDayOnes.Player;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
+using UObject = UnityEngine.Object;
 
 namespace CheatOnYourDayOnes.EditorTools
 {
@@ -106,9 +107,9 @@ namespace CheatOnYourDayOnes.EditorTools
             foreach (string path in fbxPaths)
             {
                 string fileName = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
-                Object[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
+                UObject[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
 
-                foreach (Object asset in assets)
+                foreach (UObject asset in assets)
                 {
                     if (asset is not AnimationClip clip || clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                         continue;
@@ -135,8 +136,8 @@ namespace CheatOnYourDayOnes.EditorTools
             foreach (string path in fbxPaths)
             {
                 var clipNames = new List<string>();
-                Object[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
-                foreach (Object asset in assets)
+                UObject[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
+                foreach (UObject asset in assets)
                 {
                     if (asset is AnimationClip clip && !clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                         clipNames.Add(clip.name);
