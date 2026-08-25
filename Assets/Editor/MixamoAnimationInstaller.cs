@@ -33,13 +33,9 @@ namespace CheatOnYourDayOnes.EditorTools
                 return;
             }
 
-            // Idle uses the new Humanoid path because that fixed Idle on AJ.
             AnimationClip idle = PrepareHumanoidClip(IdlePath, "Idle");
-
-            // Walk and Run intentionally use the old Generic path because those exact
-            // Mixamo motions looked correct before the Humanoid conversion changed them.
-            AnimationClip walk = PrepareGenericClip(WalkPath, "Walk");
-            AnimationClip run = PrepareGenericClip(RunPath, "Run");
+            AnimationClip walk = PrepareHumanoidClip(WalkPath, "Walk");
+            AnimationClip run = PrepareHumanoidClip(RunPath, "Run");
 
             if (idle == null || walk == null || run == null)
             {
@@ -50,8 +46,8 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 EditorUtility.DisplayDialog(
                     "CYDOY · Animation Import",
-                    "Could not prepare: " + missing.Trim() +
-                    "\n\nIdle is imported as Humanoid. Walk and Run are preserved from their original Generic Mixamo clips.",
+                    "Could not prepare Humanoid animation from: " + missing.Trim() +
+                    "\n\nAll three locomotion clips must be Humanoid so AJ can actually play them.",
                     "OK");
                 return;
             }
@@ -101,7 +97,10 @@ namespace CheatOnYourDayOnes.EditorTools
                 return null;
             }
 
-            ConfigureLoop(importer);
+            // Preserve the original Mixamo motion as much as possible.
+            // Do NOT bake/lock root position or root rotation here. The downloads are already In Place,
+            // and applyRootMotion is disabled on AJ, so extra root manipulation only distorts the pose.
+            ConfigureLoopOnly(importer);
             importer.SaveAndReimport();
 
             clip = FindBestHumanoidClip(path);
@@ -111,60 +110,13 @@ namespace CheatOnYourDayOnes.EditorTools
             AnimationClip stable = ExtractStableClip(clip, stateName + "_Humanoid");
             if (stable != null)
             {
-                Debug.Log($"[CYDOY] READY {stateName} HUMANOID: '{clip.name}', length={clip.length:F2}s");
+                Debug.Log($"[CYDOY] READY {stateName}: '{clip.name}', length={clip.length:F2}s, humanMotion={clip.humanMotion}");
             }
 
             return stable;
         }
 
-        private static AnimationClip PrepareGenericClip(string path, string stateName)
-        {
-            if (AssetDatabase.LoadMainAssetAtPath(path) == null)
-            {
-                Debug.LogError("[CYDOY] Missing FBX: " + path);
-                return null;
-            }
-
-            ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
-            if (importer == null)
-                return null;
-
-            importer.importAnimation = true;
-            importer.animationType = ModelImporterAnimationType.Generic;
-            importer.avatarSetup = ModelImporterAvatarSetup.NoAvatar;
-            importer.importCameras = false;
-            importer.importLights = false;
-            importer.materialImportMode = ModelImporterMaterialImportMode.None;
-            importer.SaveAndReimport();
-
-            importer = AssetImporter.GetAtPath(path) as ModelImporter;
-            if (importer == null)
-                return null;
-
-            AnimationClip clip = FindBestRealClip(path);
-            if (clip == null)
-            {
-                Debug.LogError("[CYDOY] No Generic clip found for " + stateName + " in " + path);
-                return null;
-            }
-
-            ConfigureLoop(importer);
-            importer.SaveAndReimport();
-
-            clip = FindBestRealClip(path);
-            if (clip == null)
-                return null;
-
-            AnimationClip stable = ExtractStableClip(clip, stateName + "_Original");
-            if (stable != null)
-            {
-                Debug.Log($"[CYDOY] READY {stateName} ORIGINAL: '{clip.name}', length={clip.length:F2}s");
-            }
-
-            return stable;
-        }
-
-        private static void ConfigureLoop(ModelImporter importer)
+        private static void ConfigureLoopOnly(ModelImporter importer)
         {
             ModelImporterClipAnimation[] clips = importer.defaultClipAnimations;
             if (clips == null || clips.Length == 0)
@@ -177,9 +129,6 @@ namespace CheatOnYourDayOnes.EditorTools
             {
                 clips[i].loopTime = true;
                 clips[i].loopPose = true;
-                clips[i].lockRootRotation = true;
-                clips[i].lockRootHeightY = true;
-                clips[i].lockRootPositionXZ = true;
             }
 
             importer.clipAnimations = clips;
@@ -214,24 +163,6 @@ namespace CheatOnYourDayOnes.EditorTools
                 if (clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                     continue;
                 if (!clip.humanMotion)
-                    continue;
-
-                if (best == null || clip.length > best.length)
-                    best = clip;
-            }
-
-            return best;
-        }
-
-        private static AnimationClip FindBestRealClip(string path)
-        {
-            AnimationClip best = null;
-
-            foreach (UObject asset in AssetDatabase.LoadAllAssetsAtPath(path))
-            {
-                if (asset is not AnimationClip clip)
-                    continue;
-                if (clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 if (best == null || clip.length > best.length)
