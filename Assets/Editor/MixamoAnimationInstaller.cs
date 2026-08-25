@@ -58,7 +58,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.DisplayDialog(
                 dialogTitle,
-                "AJ locomotion repaired using the original Humanoid FBX clips.\n\nIdle: " + idle.name +
+                "AJ locomotion repaired with Humanoid root motion baked into pose.\n\nIdle: " + idle.name +
                 "\nWalk: " + walk.name +
                 "\nRun: " + run.name,
                 "Let's go");
@@ -98,7 +98,7 @@ namespace CheatOnYourDayOnes.EditorTools
             EnsureControllerStillOnPlayer(controller);
             AssetDatabase.SaveAssets();
 
-            EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Run updated from the original Humanoid FBX clip. Idle and Walk unchanged.", "Nice");
+            EditorUtility.DisplayDialog("CYDOY · Run Refresh", "Run updated. Idle and Walk unchanged.", "Nice");
         }
 
         private static AnimationClip PrepareDirectHumanoidClip(string path, string stateName)
@@ -135,7 +135,18 @@ namespace CheatOnYourDayOnes.EditorTools
                 {
                     clips[i].loopTime = true;
                     clips[i].loopPose = true;
+
+                    // Mixamo locomotion is downloaded In Place and movement is handled by our
+                    // CharacterController. Bake all Humanoid root transforms into the pose so
+                    // Unity does not retarget extra hip/root translation or rotation onto AJ.
+                    clips[i].lockRootRotation = true;
+                    clips[i].lockRootHeightY = true;
+                    clips[i].lockRootPositionXZ = true;
+                    clips[i].keepOriginalOrientation = false;
+                    clips[i].keepOriginalPositionY = false;
+                    clips[i].keepOriginalPositionXZ = false;
                 }
+
                 importer.clipAnimations = clips;
                 importer.SaveAndReimport();
             }
@@ -147,7 +158,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 return null;
             }
 
-            Debug.Log($"[CYDOY] READY {stateName}: direct FBX clip '{clip.name}', length={clip.length:F2}s, humanMotion={clip.humanMotion}");
+            Debug.Log($"[CYDOY] READY {stateName}: '{clip.name}', length={clip.length:F2}s, humanMotion={clip.humanMotion}, root baked into pose");
             return clip;
         }
 
@@ -219,6 +230,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 if (animator == null)
                     throw new InvalidOperationException("AJ Animator not found in Player.prefab.");
 
+                // Keep the currently correct model height untouched except for the known neutral root position.
                 if (ajRoot != null)
                 {
                     Vector3 p = ajRoot.localPosition;
