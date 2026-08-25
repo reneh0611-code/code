@@ -10,7 +10,9 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private RuntimeAnimatorController fallbackController;
         [SerializeField] private float walkThreshold = 0.35f;
         [SerializeField] private float runThreshold = 5.1f;
-        [SerializeField] private float crossFadeDuration = 0f;
+        [SerializeField] private float idleWalkBlend = 0.10f;
+        [SerializeField] private float walkRunBlend = 0.08f;
+        [SerializeField] private float idleRunBlend = 0.10f;
 
         private static readonly int IdleHash = Animator.StringToHash("Base Layer.Idle");
         private static readonly int WalkHash = Animator.StringToHash("Base Layer.Walk");
@@ -74,7 +76,8 @@ namespace CheatOnYourDayOnes.Player
             }
 
             _ready = true;
-            PlayState(IdleHash);
+            animator.Play(IdleHash, 0, 0f);
+            _currentState = IdleHash;
         }
 
         private void Update()
@@ -93,19 +96,50 @@ namespace CheatOnYourDayOnes.Player
                     : RunHash;
 
             if (wantedState != _currentState)
-                PlayState(wantedState);
+                BlendToState(wantedState);
         }
 
-        private void PlayState(int stateHash)
+        private void BlendToState(int targetState)
         {
-            if (animator == null || !animator.HasState(0, stateHash))
+            if (animator == null || !animator.HasState(0, targetState))
                 return;
 
             animator.speed = 1f;
 
-            // Intentionally no CrossFade: blending would modify the source animation pose.
-            animator.Play(stateHash, 0, 0f);
-            _currentState = stateHash;
+            float blendDuration = GetBlendDuration(_currentState, targetState);
+
+            if (blendDuration <= 0.001f || _currentState == -1)
+                animator.Play(targetState, 0, 0f);
+            else
+                animator.CrossFadeInFixedTime(targetState, blendDuration, 0, 0f);
+
+            _currentState = targetState;
+        }
+
+        private float GetBlendDuration(int from, int to)
+        {
+            bool idleWalk =
+                (from == IdleHash && to == WalkHash) ||
+                (from == WalkHash && to == IdleHash);
+
+            if (idleWalk)
+                return idleWalkBlend;
+
+            bool walkRun =
+                (from == WalkHash && to == RunHash) ||
+                (from == RunHash && to == WalkHash);
+
+            if (walkRun)
+                return walkRunBlend;
+
+            bool idleRun =
+                (from == IdleHash && to == RunHash) ||
+                (from == RunHash && to == IdleHash);
+
+            if (idleRun)
+                return idleRunBlend;
+
+            return 0f;
         }
 
         private Animator FindAjAnimator()
