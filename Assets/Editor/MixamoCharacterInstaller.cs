@@ -72,8 +72,6 @@ namespace CheatOnYourDayOnes.EditorTools
                 runtimeSO.FindProperty("modelRoot").objectReferenceValue = model.transform;
                 runtimeSO.FindProperty("characterController").objectReferenceValue = controller;
                 runtimeSO.FindProperty("applyRelaxedPoseWithoutController").boolValue = true;
-                runtimeSO.FindProperty("forceGrounding").boolValue = true;
-                runtimeSO.FindProperty("visualGroundOffset").floatValue = 0.008f;
                 runtimeSO.ApplyModifiedPropertiesWithoutUndo();
 
                 ThirdPersonCamera camera = prefabRoot.GetComponentInChildren<ThirdPersonCamera>(true);
@@ -104,7 +102,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 EditorUtility.DisplayDialog(
                     "CYDOY · Mixamo Character",
-                    "AJ installed with the existing third-person framing, grounding and animation hooks.",
+                    "AJ installed with the existing third-person framing and animation hooks.",
                     "Nice");
             }
             finally
