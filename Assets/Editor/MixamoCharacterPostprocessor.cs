@@ -4,8 +4,8 @@ using UnityEngine;
 namespace CheatOnYourDayOnes.EditorTools
 {
     /// <summary>
-    /// Automatically configures AJ as the Humanoid base character.
-    /// Expected model path: Assets/Models/Characters/Aj.fbx
+    /// AJ uses the original Mixamo transform hierarchy directly.
+    /// Generic is intentional: no Humanoid retargeting or pose conversion.
     /// </summary>
     public sealed class MixamoCharacterPostprocessor : AssetPostprocessor
     {
@@ -19,8 +19,7 @@ namespace CheatOnYourDayOnes.EditorTools
             if (assetImporter is not ModelImporter importer)
                 return;
 
-            importer.animationType = ModelImporterAnimationType.Human;
-            importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+            importer.animationType = ModelImporterAnimationType.Generic;
             importer.importAnimation = true;
             importer.importCameras = false;
             importer.importLights = false;
@@ -41,7 +40,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>(CharacterPath);
                 if (model != null)
-                    Debug.Log("[CYDOY] AJ imported and configured as Humanoid: " + CharacterPath);
+                    Debug.Log("[CYDOY] AJ imported as Generic for direct Mixamo playback: " + CharacterPath);
             }
         }
     }
