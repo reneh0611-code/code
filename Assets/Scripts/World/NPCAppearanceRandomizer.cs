@@ -1,3 +1,4 @@
+using System.Linq;
 using UnityEngine;
 
 namespace CheatOnYourDayOnes.World
@@ -10,36 +11,45 @@ namespace CheatOnYourDayOnes.World
 
         private static readonly Color[] UpperPalette =
         {
-            new(0.03f, 0.03f, 0.04f), // black
-            new(0.10f, 0.12f, 0.16f), // charcoal
-            new(0.12f, 0.20f, 0.34f), // navy
-            new(0.20f, 0.12f, 0.10f), // burgundy
-            new(0.10f, 0.24f, 0.16f), // green
-            new(0.38f, 0.36f, 0.32f)  // warm grey
+            new(0.02f, 0.02f, 0.025f), // black
+            new(0.10f, 0.12f, 0.16f),
+            new(0.10f, 0.18f, 0.32f),
+            new(0.22f, 0.10f, 0.09f),
+            new(0.08f, 0.22f, 0.14f),
+            new(0.36f, 0.34f, 0.31f)
         };
 
         private static readonly Color[] PantsPalette =
         {
-            new(0.92f, 0.92f, 0.90f), // white/off-white
-            new(0.05f, 0.05f, 0.06f), // black
-            new(0.20f, 0.21f, 0.23f), // dark grey
-            new(0.18f, 0.26f, 0.36f), // denim blue
-            new(0.47f, 0.42f, 0.32f)  // beige
+            new(0.94f, 0.94f, 0.92f), // white/off-white
+            new(0.04f, 0.04f, 0.05f),
+            new(0.18f, 0.19f, 0.21f),
+            new(0.16f, 0.25f, 0.37f),
+            new(0.48f, 0.42f, 0.31f)
         };
 
         private static readonly Color[] ShoePalette =
         {
-            new(0.03f, 0.03f, 0.035f),
+            new(0.025f, 0.025f, 0.03f),
             new(0.92f, 0.92f, 0.90f),
-            new(0.18f, 0.18f, 0.19f)
+            new(0.17f, 0.17f, 0.18f)
         };
+
+        private enum PartType
+        {
+            Preserve,
+            Upper,
+            Pants,
+            Shoes,
+            Backpack
+        }
 
         private void Start()
         {
             if (visualRoot == null)
                 visualRoot = transform;
 
-            HideBackpackObjects();
+            HideBackpackObjectsAndRenderers();
             ApplyRandomizedAppearance();
         }
 
@@ -55,43 +65,49 @@ namespace CheatOnYourDayOnes.World
             Color pants = PantsPalette[Random.Range(0, PantsPalette.Length)];
             Color shoes = ShoePalette[Random.Range(0, ShoePalette.Length)];
 
-            foreach (Renderer renderer in visualRoot.GetComponentsInChildren<Renderer>(true))
+            SkinnedMeshRenderer[] renderers = visualRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+                .Where(r => r != null && r.enabled)
+                .ToArray();
+
+            if (renderers.Length == 0)
+                return;
+
+            Bounds fullBounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+                fullBounds.Encapsulate(renderers[i].bounds);
+
+            foreach (SkinnedMeshRenderer renderer in renderers)
             {
-                Material[] shared = renderer.sharedMaterials;
-                if (shared == null || shared.Length == 0)
+                PartType part = ClassifyRenderer(renderer, fullBounds);
+
+                if (part == PartType.Backpack)
+                {
+                    renderer.enabled = false;
+                    continue;
+                }
+
+                if (part == PartType.Preserve)
                     continue;
 
-                for (int i = 0; i < shared.Length; i++)
+                Color tint = part == PartType.Upper ? upper : part == PartType.Pants ? pants : shoes;
+                Material[] shared = renderer.sharedMaterials;
+
+                for (int slot = 0; slot < shared.Length; slot++)
                 {
-                    Material source = shared[i];
+                    Material source = shared[slot];
                     if (source == null)
                         continue;
 
-                    string key = (renderer.name + " " + source.name).ToLowerInvariant();
-
-                    // Never recolor skin, face or hair. Those keep AJ's original textured material exactly.
-                    if (IsSkinOrHair(key))
-                        continue;
-
-                    Color tint;
-                    if (IsUpperClothing(key))
-                        tint = upper;
-                    else if (IsLowerClothing(key))
-                        tint = pants;
-                    else if (IsShoes(key))
-                        tint = shoes;
-                    else
-                        continue; // ambiguous atlas/material: leave it untouched to protect face/skin textures.
-
+                    // Property blocks preserve AJ's original texture; only the material tint changes per NPC.
                     MaterialPropertyBlock block = new();
-                    renderer.GetPropertyBlock(block, i);
+                    renderer.GetPropertyBlock(block, slot);
 
                     if (source.HasProperty("_BaseColor"))
                         block.SetColor("_BaseColor", tint);
                     if (source.HasProperty("_Color"))
                         block.SetColor("_Color", tint);
 
-                    renderer.SetPropertyBlock(block, i);
+                    renderer.SetPropertyBlock(block, slot);
                 }
             }
 
@@ -99,43 +115,108 @@ namespace CheatOnYourDayOnes.World
                 CreateCap();
         }
 
-        private static bool IsSkinOrHair(string key)
+        private static PartType ClassifyRenderer(SkinnedMeshRenderer renderer, Bounds fullBounds)
         {
-            return key.Contains("skin") || key.Contains("face") || key.Contains("head") ||
-                   key.Contains("hand") || key.Contains("arm") || key.Contains("hair") ||
-                   key.Contains("eye") || key.Contains("mouth");
+            string materialNames = string.Join(" ", renderer.sharedMaterials.Where(m => m != null).Select(m => m.name));
+            string meshName = renderer.sharedMesh != null ? renderer.sharedMesh.name : string.Empty;
+            string key = (renderer.name + " " + meshName + " " + materialNames).ToLowerInvariant();
+
+            if (IsBackpackRenderer(renderer, key))
+                return PartType.Backpack;
+
+            if (ContainsAny(key, "skin", "face", "head", "hair", "eye", "mouth", "body", "hand", "arm"))
+                return PartType.Preserve;
+
+            if (ContainsAny(key, "shirt", "hoodie", "sweater", "jacket", "coat", "top", "torso", "upper", "vest", "pullover"))
+                return PartType.Upper;
+
+            if (ContainsAny(key, "pants", "pant", "trouser", "jeans", "shorts", "lower", "legwear"))
+                return PartType.Pants;
+
+            if (ContainsAny(key, "shoe", "sneaker", "boot", "footwear"))
+                return PartType.Shoes;
+
+            // Fallback for neutral Mixamo mesh names. Because AJ has four separate textured
+            // SkinnedMeshRenderers, their vertical location is enough to separate clothing
+            // without ever touching a renderer that spans most of the body.
+            float totalHeight = Mathf.Max(0.001f, fullBounds.size.y);
+            Bounds b = renderer.bounds;
+            float center01 = Mathf.InverseLerp(fullBounds.min.y, fullBounds.max.y, b.center.y);
+            float height01 = b.size.y / totalHeight;
+
+            // A renderer spanning most of the character is almost certainly body/skin.
+            if (height01 > 0.58f)
+                return PartType.Preserve;
+
+            if (center01 < 0.18f && height01 < 0.28f)
+                return PartType.Shoes;
+
+            if (center01 < 0.48f)
+                return PartType.Pants;
+
+            if (center01 < 0.86f)
+                return PartType.Upper;
+
+            return PartType.Preserve;
         }
 
-        private static bool IsUpperClothing(string key)
-        {
-            return key.Contains("shirt") || key.Contains("hoodie") || key.Contains("sweater") ||
-                   key.Contains("jacket") || key.Contains("coat") || key.Contains("top") ||
-                   key.Contains("torso") || key.Contains("upper") || key.Contains("vest");
-        }
-
-        private static bool IsLowerClothing(string key)
-        {
-            return key.Contains("pants") || key.Contains("pant") || key.Contains("trouser") ||
-                   key.Contains("jeans") || key.Contains("shorts") || key.Contains("lower") ||
-                   key.Contains("legwear");
-        }
-
-        private static bool IsShoes(string key)
-        {
-            return key.Contains("shoe") || key.Contains("sneaker") || key.Contains("boot") || key.Contains("footwear");
-        }
-
-        private void HideBackpackObjects()
+        private void HideBackpackObjectsAndRenderers()
         {
             foreach (Transform t in visualRoot.GetComponentsInChildren<Transform>(true))
             {
                 if (t == visualRoot)
                     continue;
 
-                string n = t.name.ToLowerInvariant();
-                if (n.Contains("backpack") || n.Contains("back_pack") || n.Contains("rucksack") || n == "bag" || n.Contains("shoulderbag"))
+                if (IsBackpackToken(t.name))
                     t.gameObject.SetActive(false);
             }
+
+            foreach (SkinnedMeshRenderer renderer in visualRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                string materialNames = string.Join(" ", renderer.sharedMaterials.Where(m => m != null).Select(m => m.name));
+                string meshName = renderer.sharedMesh != null ? renderer.sharedMesh.name : string.Empty;
+                string key = (renderer.name + " " + meshName + " " + materialNames).ToLowerInvariant();
+
+                if (IsBackpackRenderer(renderer, key))
+                    renderer.enabled = false;
+            }
+        }
+
+        private static bool IsBackpackRenderer(SkinnedMeshRenderer renderer, string key)
+        {
+            if (IsBackpackToken(key))
+                return true;
+
+            Transform[] bones = renderer.bones;
+            if (bones == null || bones.Length == 0)
+                return false;
+
+            int backpackBones = 0;
+            foreach (Transform bone in bones)
+            {
+                if (bone != null && IsBackpackToken(bone.name))
+                    backpackBones++;
+            }
+
+            return backpackBones >= 2 && backpackBones >= Mathf.CeilToInt(bones.Length * 0.12f);
+        }
+
+        private static bool IsBackpackToken(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return false;
+
+            string n = value.ToLowerInvariant();
+            return n.Contains("backpack") || n.Contains("back_pack") || n.Contains("rucksack") ||
+                   n.Contains("shoulderbag") || n.Contains("back bag") || n == "bag";
+        }
+
+        private static bool ContainsAny(string value, params string[] tokens)
+        {
+            foreach (string token in tokens)
+                if (value.Contains(token))
+                    return true;
+            return false;
         }
 
         private void CreateCap()
@@ -143,7 +224,9 @@ namespace CheatOnYourDayOnes.World
             if (visualRoot.Find("NPC_Cap") != null)
                 return;
 
-            Renderer[] renderers = visualRoot.GetComponentsInChildren<Renderer>(true);
+            Renderer[] renderers = visualRoot.GetComponentsInChildren<Renderer>(true)
+                .Where(r => r != null && r.enabled)
+                .ToArray();
             if (renderers.Length == 0)
                 return;
 
