@@ -6,7 +6,7 @@ namespace CheatOnYourDayOnes.EditorTools
     public sealed class MixamoAnimationPostprocessor : AssetPostprocessor
     {
         private const string AnimationFolder = "Assets/Models/Animations/";
-        private const string CharacterPath = "Assets/Models/Characters/Ch28_nonPBR.fbx";
+        private const string CharacterPath = "Assets/Models/Characters/Aj.fbx";
 
         private void OnPreprocessModel()
         {
