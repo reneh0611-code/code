@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Linq;
 using UnityEngine;
 
 namespace CheatOnYourDayOnes.Player
@@ -10,35 +8,20 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private Transform modelRoot;
         [SerializeField] private CharacterController characterController;
         [SerializeField] private bool applyRelaxedPoseWithoutController = true;
-        [SerializeField] private bool forceGrounding = true;
-        [SerializeField] private float visualGroundOffset = 0.01f;
-        [SerializeField] private float groundProbeHeight = 2.5f;
-        [SerializeField] private float groundProbeDistance = 6f;
 
         private Transform _leftUpperArm;
         private Transform _leftLowerArm;
         private Transform _rightUpperArm;
         private Transform _rightLowerArm;
-        private Transform _leftFoot;
-        private Transform _rightFoot;
 
-        private IEnumerator Start()
+        private void Start()
         {
             ResolveReferences();
-
-            // Let the Animator initialize and enter Idle before measuring the feet.
-            yield return null;
-            yield return new WaitForEndOfFrame();
-            yield return new WaitForEndOfFrame();
-
             CacheHumanoidBones();
 
             bool hasRealAnimation = animator != null && animator.runtimeAnimatorController != null;
             if (applyRelaxedPoseWithoutController && !hasRealAnimation)
                 ApplyNaturalStandingArms();
-
-            if (forceGrounding)
-                SnapFeetToGroundOnce();
         }
 
         private void ResolveReferences()
@@ -90,8 +73,6 @@ namespace CheatOnYourDayOnes.Player
             _leftLowerArm = animator.GetBoneTransform(HumanBodyBones.LeftLowerArm);
             _rightUpperArm = animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
             _rightLowerArm = animator.GetBoneTransform(HumanBodyBones.RightLowerArm);
-            _leftFoot = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
-            _rightFoot = animator.GetBoneTransform(HumanBodyBones.RightFoot);
         }
 
         private void ApplyNaturalStandingArms()
@@ -124,79 +105,6 @@ namespace CheatOnYourDayOnes.Player
                 Quaternion correction = Quaternion.FromToRotation(currentLowerDirection, desiredLowerDirection);
                 lowerArm.rotation = correction * lowerArm.rotation;
             }
-        }
-
-        private void SnapFeetToGroundOnce()
-        {
-            if (modelRoot == null)
-                return;
-
-            if (!TryGetGroundY(out float groundY))
-                return;
-
-            float currentFootY;
-            if (_leftFoot != null && _rightFoot != null)
-            {
-                currentFootY = Mathf.Min(_leftFoot.position.y, _rightFoot.position.y);
-            }
-            else if (TryGetVisualBounds(out Bounds bounds))
-            {
-                currentFootY = bounds.min.y;
-            }
-            else
-            {
-                return;
-            }
-
-            float deltaY = (groundY + visualGroundOffset) - currentFootY;
-            modelRoot.position += Vector3.up * deltaY;
-
-            Debug.Log($"[CYDOY] AJ grounded once by {deltaY:F3}m. No per-frame height correction will run.", this);
-        }
-
-        private bool TryGetGroundY(out float groundY)
-        {
-            groundY = 0f;
-
-            Vector3 probeOrigin = transform.position + Vector3.up * groundProbeHeight;
-            RaycastHit[] hits = Physics.RaycastAll(
-                    probeOrigin,
-                    Vector3.down,
-                    groundProbeDistance,
-                    ~0,
-                    QueryTriggerInteraction.Ignore)
-                .OrderBy(hit => hit.distance)
-                .ToArray();
-
-            foreach (RaycastHit hit in hits)
-            {
-                if (hit.transform == null)
-                    continue;
-
-                if (hit.transform == transform || hit.transform.IsChildOf(transform))
-                    continue;
-
-                groundY = hit.point.y;
-                return true;
-            }
-
-            return false;
-        }
-
-        private bool TryGetVisualBounds(out Bounds bounds)
-        {
-            Renderer[] renderers = modelRoot.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0)
-            {
-                bounds = default;
-                return false;
-            }
-
-            bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
-
-            return true;
         }
     }
 }
