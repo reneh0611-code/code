@@ -1,3 +1,4 @@
+using CheatOnYourDayOnes.Player;
 using UnityEditor;
 using UnityEngine;
 
@@ -54,17 +55,30 @@ namespace CheatOnYourDayOnes.EditorTools
                 model.transform.localScale = Vector3.one;
 
                 RemoveModelColliders(model);
-                ConfigureAnimator(model);
-                NormalizeAndGround(model.transform);
+                Animator animator = ConfigureAnimator(model);
+                NormalizeScale(model.transform);
+                ApplyFallbackMaterialsIfNeeded(model);
 
                 CharacterController controller = prefabRoot.GetComponent<CharacterController>();
                 if (controller != null)
                 {
-                    controller.height = 1.9f;
+                    controller.height = 1.90f;
                     controller.radius = 0.34f;
                     controller.center = new Vector3(0f, 0.95f, 0f);
                     controller.stepOffset = 0.30f;
                 }
+
+                MixamoRuntimePoseAndGrounder runtimeFix = prefabRoot.GetComponent<MixamoRuntimePoseAndGrounder>();
+                if (runtimeFix == null)
+                    runtimeFix = prefabRoot.AddComponent<MixamoRuntimePoseAndGrounder>();
+
+                SerializedObject runtimeSO = new(runtimeFix);
+                runtimeSO.FindProperty("animator").objectReferenceValue = animator;
+                runtimeSO.FindProperty("modelRoot").objectReferenceValue = model.transform;
+                runtimeSO.FindProperty("characterController").objectReferenceValue = controller;
+                runtimeSO.FindProperty("applyRelaxedPoseWithoutController").boolValue = true;
+                runtimeSO.FindProperty("forceGrounding").boolValue = true;
+                runtimeSO.ApplyModifiedPropertiesWithoutUndo();
 
                 PrefabUtility.SaveAsPrefabAsset(prefabRoot, PlayerPrefabPath);
                 AssetDatabase.SaveAssets();
@@ -72,7 +86,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 EditorUtility.DisplayDialog(
                     "CYDOY · Mixamo Character",
-                    "Character reinstalled with corrected scale, grounding and material extraction.",
+                    "Character updated: exact runtime grounding, relaxed idle pose and fallback colors are enabled. Real animations can be added next.",
                     "Nice");
             }
             finally
@@ -124,7 +138,7 @@ namespace CheatOnYourDayOnes.EditorTools
                     Object.DestroyImmediate(old.gameObject);
             }
 
-            var primitiveAnimator = root.GetComponent<CheatOnYourDayOnes.Player.StylizedCharacterAnimator>();
+            StylizedCharacterAnimator primitiveAnimator = root.GetComponent<StylizedCharacterAnimator>();
             if (primitiveAnimator != null)
                 Object.DestroyImmediate(primitiveAnimator);
         }
@@ -135,18 +149,19 @@ namespace CheatOnYourDayOnes.EditorTools
                 Object.DestroyImmediate(collider);
         }
 
-        private static void ConfigureAnimator(GameObject model)
+        private static Animator ConfigureAnimator(GameObject model)
         {
             Animator animator = model.GetComponentInChildren<Animator>(true);
             if (animator == null)
                 animator = model.AddComponent<Animator>();
 
             animator.applyRootMotion = false;
-            animator.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             animator.updateMode = AnimatorUpdateMode.Normal;
+            return animator;
         }
 
-        private static void NormalizeAndGround(Transform modelRoot)
+        private static void NormalizeScale(Transform modelRoot)
         {
             if (!TryGetRendererBounds(modelRoot.gameObject, out Bounds initialBounds))
                 return;
@@ -157,16 +172,69 @@ namespace CheatOnYourDayOnes.EditorTools
 
             float scaleFactor = TargetHeight / initialHeight;
             modelRoot.localScale = Vector3.one * scaleFactor;
+        }
 
-            // Force Unity to update renderer bounds after scaling.
-            Physics.SyncTransforms();
-            if (!TryGetRendererBounds(modelRoot.gameObject, out Bounds scaledBounds))
-                return;
+        private static void ApplyFallbackMaterialsIfNeeded(GameObject model)
+        {
+            Material skin = GetOrCreateFallbackMaterial("David_Skin_Fallback", new Color(0.38f, 0.22f, 0.15f));
+            Material cloth = GetOrCreateFallbackMaterial("David_Clothes_Fallback", new Color(0.07f, 0.08f, 0.10f));
+            Material shoes = GetOrCreateFallbackMaterial("David_Shoes_Fallback", new Color(0.025f, 0.025f, 0.03f));
 
-            float feetWorldY = scaledBounds.min.y;
-            float desiredFeetWorldY = modelRoot.parent != null ? modelRoot.parent.position.y : 0f;
-            float deltaY = desiredFeetWorldY - feetWorldY;
-            modelRoot.position += Vector3.up * deltaY;
+            Renderer[] renderers = model.GetComponentsInChildren<Renderer>(true);
+            foreach (Renderer renderer in renderers)
+            {
+                Material[] current = renderer.sharedMaterials;
+                for (int i = 0; i < current.Length; i++)
+                {
+                    Material existing = current[i];
+                    if (existing != null && HasUsefulTexture(existing))
+                        continue;
+
+                    string key = (renderer.name + " " + (existing != null ? existing.name : string.Empty)).ToLowerInvariant();
+                    if (key.Contains("skin") || key.Contains("body") || key.Contains("head") || key.Contains("face") || key.Contains("hand"))
+                        current[i] = skin;
+                    else if (key.Contains("shoe") || key.Contains("sneaker") || key.Contains("foot"))
+                        current[i] = shoes;
+                    else
+                        current[i] = cloth;
+                }
+                renderer.sharedMaterials = current;
+            }
+        }
+
+        private static bool HasUsefulTexture(Material material)
+        {
+            if (material == null)
+                return false;
+            if (material.HasProperty("_BaseMap") && material.GetTexture("_BaseMap") != null)
+                return true;
+            if (material.HasProperty("_MainTex") && material.GetTexture("_MainTex") != null)
+                return true;
+            return false;
+        }
+
+        private static Material GetOrCreateFallbackMaterial(string name, Color color)
+        {
+            string folder = "Assets/Models/Characters/Materials";
+            if (!AssetDatabase.IsValidFolder(folder))
+            {
+                EnsureFolders();
+                AssetDatabase.CreateFolder("Assets/Models/Characters", "Materials");
+            }
+
+            string path = folder + "/" + name + ".mat";
+            Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material == null)
+            {
+                Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+                material = new Material(shader) { name = name };
+                AssetDatabase.CreateAsset(material, path);
+            }
+
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+            if (material.HasProperty("_Color")) material.SetColor("_Color", color);
+            EditorUtility.SetDirty(material);
+            return material;
         }
 
         private static bool TryGetRendererBounds(GameObject root, out Bounds bounds)
