@@ -8,25 +8,30 @@ namespace CheatOnYourDayOnes.World
         [SerializeField] private bool child;
         [SerializeField] private bool addCap;
 
-        private static readonly Color[] ClothesPalette =
+        private static readonly Color[] UpperPalette =
         {
-            new(0.08f, 0.09f, 0.11f),
-            new(0.12f, 0.18f, 0.27f),
-            new(0.22f, 0.12f, 0.10f),
-            new(0.11f, 0.23f, 0.16f),
-            new(0.30f, 0.25f, 0.16f),
-            new(0.24f, 0.24f, 0.25f),
-            new(0.10f, 0.10f, 0.10f),
-            new(0.35f, 0.34f, 0.32f)
+            new(0.03f, 0.03f, 0.04f), // black
+            new(0.10f, 0.12f, 0.16f), // charcoal
+            new(0.12f, 0.20f, 0.34f), // navy
+            new(0.20f, 0.12f, 0.10f), // burgundy
+            new(0.10f, 0.24f, 0.16f), // green
+            new(0.38f, 0.36f, 0.32f)  // warm grey
         };
 
-        private static readonly Color[] SkinPalette =
+        private static readonly Color[] PantsPalette =
         {
-            new(0.76f, 0.58f, 0.44f),
-            new(0.62f, 0.43f, 0.31f),
-            new(0.46f, 0.30f, 0.22f),
-            new(0.84f, 0.67f, 0.52f),
-            new(0.34f, 0.22f, 0.17f)
+            new(0.92f, 0.92f, 0.90f), // white/off-white
+            new(0.05f, 0.05f, 0.06f), // black
+            new(0.20f, 0.21f, 0.23f), // dark grey
+            new(0.18f, 0.26f, 0.36f), // denim blue
+            new(0.47f, 0.42f, 0.32f)  // beige
+        };
+
+        private static readonly Color[] ShoePalette =
+        {
+            new(0.03f, 0.03f, 0.035f),
+            new(0.92f, 0.92f, 0.90f),
+            new(0.18f, 0.18f, 0.19f)
         };
 
         private void Start()
@@ -34,6 +39,7 @@ namespace CheatOnYourDayOnes.World
             if (visualRoot == null)
                 visualRoot = transform;
 
+            HideBackpackObjects();
             ApplyRandomizedAppearance();
         }
 
@@ -45,34 +51,47 @@ namespace CheatOnYourDayOnes.World
 
         private void ApplyRandomizedAppearance()
         {
-            Color clothes = ClothesPalette[Random.Range(0, ClothesPalette.Length)];
-            Color clothesSecondary = ClothesPalette[Random.Range(0, ClothesPalette.Length)];
-            Color skin = SkinPalette[Random.Range(0, SkinPalette.Length)];
+            Color upper = UpperPalette[Random.Range(0, UpperPalette.Length)];
+            Color pants = PantsPalette[Random.Range(0, PantsPalette.Length)];
+            Color shoes = ShoePalette[Random.Range(0, ShoePalette.Length)];
 
             foreach (Renderer renderer in visualRoot.GetComponentsInChildren<Renderer>(true))
             {
-                Material[] mats = renderer.materials;
-                for (int i = 0; i < mats.Length; i++)
+                Material[] shared = renderer.sharedMaterials;
+                if (shared == null || shared.Length == 0)
+                    continue;
+
+                for (int i = 0; i < shared.Length; i++)
                 {
-                    Material mat = mats[i];
-                    if (mat == null)
+                    Material source = shared[i];
+                    if (source == null)
                         continue;
 
-                    string key = (renderer.name + " " + mat.name).ToLowerInvariant();
-                    Color target;
+                    string key = (renderer.name + " " + source.name).ToLowerInvariant();
 
-                    if (key.Contains("skin") || key.Contains("head") || key.Contains("face") || key.Contains("hand") || key.Contains("body"))
-                        target = skin;
-                    else if (key.Contains("shoe") || key.Contains("foot"))
-                        target = new Color(0.04f, 0.04f, 0.05f);
+                    // Never recolor skin, face or hair. Those keep AJ's original textured material exactly.
+                    if (IsSkinOrHair(key))
+                        continue;
+
+                    Color tint;
+                    if (IsUpperClothing(key))
+                        tint = upper;
+                    else if (IsLowerClothing(key))
+                        tint = pants;
+                    else if (IsShoes(key))
+                        tint = shoes;
                     else
-                        target = i % 2 == 0 ? clothes : clothesSecondary;
+                        continue; // ambiguous atlas/material: leave it untouched to protect face/skin textures.
 
-                    // Preserve any real texture. We only tint the material color.
-                    if (mat.HasProperty("_BaseColor"))
-                        mat.SetColor("_BaseColor", target);
-                    if (mat.HasProperty("_Color"))
-                        mat.SetColor("_Color", target);
+                    MaterialPropertyBlock block = new();
+                    renderer.GetPropertyBlock(block, i);
+
+                    if (source.HasProperty("_BaseColor"))
+                        block.SetColor("_BaseColor", tint);
+                    if (source.HasProperty("_Color"))
+                        block.SetColor("_Color", tint);
+
+                    renderer.SetPropertyBlock(block, i);
                 }
             }
 
@@ -80,9 +99,48 @@ namespace CheatOnYourDayOnes.World
                 CreateCap();
         }
 
+        private static bool IsSkinOrHair(string key)
+        {
+            return key.Contains("skin") || key.Contains("face") || key.Contains("head") ||
+                   key.Contains("hand") || key.Contains("arm") || key.Contains("hair") ||
+                   key.Contains("eye") || key.Contains("mouth");
+        }
+
+        private static bool IsUpperClothing(string key)
+        {
+            return key.Contains("shirt") || key.Contains("hoodie") || key.Contains("sweater") ||
+                   key.Contains("jacket") || key.Contains("coat") || key.Contains("top") ||
+                   key.Contains("torso") || key.Contains("upper") || key.Contains("vest");
+        }
+
+        private static bool IsLowerClothing(string key)
+        {
+            return key.Contains("pants") || key.Contains("pant") || key.Contains("trouser") ||
+                   key.Contains("jeans") || key.Contains("shorts") || key.Contains("lower") ||
+                   key.Contains("legwear");
+        }
+
+        private static bool IsShoes(string key)
+        {
+            return key.Contains("shoe") || key.Contains("sneaker") || key.Contains("boot") || key.Contains("footwear");
+        }
+
+        private void HideBackpackObjects()
+        {
+            foreach (Transform t in visualRoot.GetComponentsInChildren<Transform>(true))
+            {
+                if (t == visualRoot)
+                    continue;
+
+                string n = t.name.ToLowerInvariant();
+                if (n.Contains("backpack") || n.Contains("back_pack") || n.Contains("rucksack") || n == "bag" || n.Contains("shoulderbag"))
+                    t.gameObject.SetActive(false);
+            }
+        }
+
         private void CreateCap()
         {
-            if (transform.Find("NPC_Cap") != null)
+            if (visualRoot.Find("NPC_Cap") != null)
                 return;
 
             Renderer[] renderers = visualRoot.GetComponentsInChildren<Renderer>(true);
@@ -105,7 +163,6 @@ namespace CheatOnYourDayOnes.World
             crown.name = "Crown";
             crown.transform.SetParent(capRoot.transform, false);
             crown.transform.localScale = new Vector3(headWidth, 0.035f, headWidth);
-            crown.transform.localPosition = Vector3.zero;
 
             GameObject brim = GameObject.CreatePrimitive(PrimitiveType.Cube);
             brim.name = "Brim";
@@ -115,12 +172,12 @@ namespace CheatOnYourDayOnes.World
 
             Material capMaterial = new(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
             capMaterial.name = "NPC_BlackCap_Runtime";
-            if (capMaterial.HasProperty("_BaseColor")) capMaterial.SetColor("_BaseColor", new Color(0.025f, 0.025f, 0.03f));
-            if (capMaterial.HasProperty("_Color")) capMaterial.SetColor("_Color", new Color(0.025f, 0.025f, 0.03f));
+            Color black = new(0.02f, 0.02f, 0.025f);
+            if (capMaterial.HasProperty("_BaseColor")) capMaterial.SetColor("_BaseColor", black);
+            if (capMaterial.HasProperty("_Color")) capMaterial.SetColor("_Color", black);
 
             crown.GetComponent<Renderer>().material = capMaterial;
             brim.GetComponent<Renderer>().material = capMaterial;
-
             Object.Destroy(crown.GetComponent<Collider>());
             Object.Destroy(brim.GetComponent<Collider>());
         }
