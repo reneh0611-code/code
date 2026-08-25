@@ -4,12 +4,12 @@ using UnityEngine;
 namespace CheatOnYourDayOnes.EditorTools
 {
     /// <summary>
-    /// Automatically configures the selected Mixamo base character as a Humanoid rig.
-    /// The expected model path is Assets/Models/Characters/Ch28_nonPBR.fbx.
+    /// Automatically configures AJ as the Humanoid base character.
+    /// Expected model path: Assets/Models/Characters/Aj.fbx
     /// </summary>
     public sealed class MixamoCharacterPostprocessor : AssetPostprocessor
     {
-        private const string CharacterPath = "Assets/Models/Characters/Ch28_nonPBR.fbx";
+        private const string CharacterPath = "Assets/Models/Characters/Aj.fbx";
 
         private void OnPreprocessModel()
         {
@@ -41,7 +41,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>(CharacterPath);
                 if (model != null)
-                    Debug.Log("[CYDOY] Mixamo character imported and configured as Humanoid: " + CharacterPath);
+                    Debug.Log("[CYDOY] AJ imported and configured as Humanoid: " + CharacterPath);
             }
         }
     }
