@@ -10,7 +10,7 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private RuntimeAnimatorController fallbackController;
         [SerializeField] private float walkThreshold = 0.35f;
         [SerializeField] private float runThreshold = 5.1f;
-        [SerializeField] private float crossFadeDuration = 0.10f;
+        [SerializeField] private float crossFadeDuration = 0f;
 
         private static readonly int IdleHash = Animator.StringToHash("Base Layer.Idle");
         private static readonly int WalkHash = Animator.StringToHash("Base Layer.Walk");
@@ -31,10 +31,7 @@ namespace CheatOnYourDayOnes.Player
                 fallbackController = Resources.Load<RuntimeAnimatorController>("AJ_Locomotion");
 
             if (animator != null && animator.runtimeAnimatorController == null && fallbackController != null)
-            {
                 animator.runtimeAnimatorController = fallbackController;
-                Debug.Log("[CYDOY] AJ runtime controller self-healed from Resources/AJ_Locomotion.", animator);
-            }
 
             ConfigureAnimator();
         }
@@ -58,7 +55,7 @@ namespace CheatOnYourDayOnes.Player
 
             if (animator.runtimeAnimatorController == null)
             {
-                Debug.LogError("[CYDOY] CharacterAnimationDriver: AJ has no RuntimeAnimatorController and Resources/AJ_Locomotion was not found.", animator);
+                Debug.LogError("[CYDOY] CharacterAnimationDriver: AJ has no RuntimeAnimatorController.", animator);
                 return;
             }
 
@@ -70,23 +67,14 @@ namespace CheatOnYourDayOnes.Player
             bool walkExists = animator.HasState(0, WalkHash);
             bool runExists = animator.HasState(0, RunHash);
 
-            Debug.Log(
-                $"[CYDOY] AJ Animator ready. Object='{animator.gameObject.name}', " +
-                $"Controller='{animator.runtimeAnimatorController.name}', " +
-                $"Avatar='{(animator.avatar != null ? animator.avatar.name : "NULL")}', " +
-                $"States: Idle={idleExists}, Walk={walkExists}, Run={runExists}",
-                animator);
-
             if (!idleExists || !walkExists || !runExists)
             {
-                Debug.LogError(
-                    "[CYDOY] AJ AnimatorController is missing required states. Expected Base Layer.Idle, Walk and Run.",
-                    animator);
+                Debug.LogError("[CYDOY] AJ AnimatorController is missing Idle, Walk or Run.", animator);
                 return;
             }
 
             _ready = true;
-            PlayState(IdleHash, true);
+            PlayState(IdleHash);
         }
 
         private void Update()
@@ -105,21 +93,18 @@ namespace CheatOnYourDayOnes.Player
                     : RunHash;
 
             if (wantedState != _currentState)
-                PlayState(wantedState, false);
+                PlayState(wantedState);
         }
 
-        private void PlayState(int stateHash, bool immediate)
+        private void PlayState(int stateHash)
         {
             if (animator == null || !animator.HasState(0, stateHash))
                 return;
 
             animator.speed = 1f;
 
-            if (immediate)
-                animator.Play(stateHash, 0, 0f);
-            else
-                animator.CrossFadeInFixedTime(stateHash, crossFadeDuration, 0);
-
+            // Intentionally no CrossFade: blending would modify the source animation pose.
+            animator.Play(stateHash, 0, 0f);
             _currentState = stateHash;
         }
 
