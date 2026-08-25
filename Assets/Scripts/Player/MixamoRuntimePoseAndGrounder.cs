@@ -12,14 +12,20 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private bool applyRelaxedPoseWithoutController = true;
         [SerializeField] private bool forceGrounding = true;
         [SerializeField] private bool lockVisualRootXZ = true;
-        [SerializeField] private float visualGroundOffset = 0.008f;
+        [SerializeField] private float visualGroundOffset = 0.015f;
         [SerializeField] private float groundProbeHeight = 2.5f;
         [SerializeField] private float groundProbeDistance = 6f;
+        [SerializeField] private float downwardCorrectionSpeed = 18f;
+        [SerializeField] private float upwardCorrectionSpeed = 8f;
+        [SerializeField] private float maxVerticalCorrection = 0.75f;
 
         private Transform _leftUpperArm;
         private Transform _leftLowerArm;
         private Transform _rightUpperArm;
         private Transform _rightLowerArm;
+        private Transform _leftFoot;
+        private Transform _rightFoot;
+
         private bool _ready;
         private float _baseLocalX;
         private float _baseLocalY;
@@ -33,14 +39,10 @@ namespace CheatOnYourDayOnes.Player
             yield return new WaitForEndOfFrame();
             yield return new WaitForEndOfFrame();
 
-            bool hasRealAnimation = animator != null && animator.runtimeAnimatorController != null;
-            if (applyRelaxedPoseWithoutController && !hasRealAnimation)
-                ApplyNaturalStandingArms();
+            CacheHumanoidBones();
 
-            // Ground the visual ONCE. Re-grounding every animation frame from renderer
-            // bounds makes the complete character bob because the animated feet change bounds.min.y.
             if (forceGrounding)
-                SnapFeetExactlyToGround();
+                SnapInitialFeetToGround();
 
             if (modelRoot != null)
             {
@@ -49,7 +51,6 @@ namespace CheatOnYourDayOnes.Player
                 _baseLocalZ = modelRoot.localPosition.z;
             }
 
-            CacheArmBones();
             _ready = true;
         }
 
@@ -64,7 +65,10 @@ namespace CheatOnYourDayOnes.Player
                 ApplyNaturalStandingArms();
 
             if (lockVisualRootXZ)
-                LockModelRootPosition();
+                LockModelRootXZ();
+
+            if (forceGrounding && hasRealAnimation)
+                KeepAnimatedFeetOnGround();
         }
 
         private void ResolveReferences()
@@ -77,7 +81,7 @@ namespace CheatOnYourDayOnes.Player
                 modelRoot = animator.transform;
         }
 
-        private void CacheArmBones()
+        private void CacheHumanoidBones()
         {
             if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
                 return;
@@ -86,6 +90,8 @@ namespace CheatOnYourDayOnes.Player
             _leftLowerArm = animator.GetBoneTransform(HumanBodyBones.LeftLowerArm);
             _rightUpperArm = animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
             _rightLowerArm = animator.GetBoneTransform(HumanBodyBones.RightLowerArm);
+            _leftFoot = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+            _rightFoot = animator.GetBoneTransform(HumanBodyBones.RightFoot);
         }
 
         private void ApplyNaturalStandingArms()
@@ -120,29 +126,72 @@ namespace CheatOnYourDayOnes.Player
             }
         }
 
-        private void LockModelRootPosition()
+        private void LockModelRootXZ()
         {
             if (modelRoot == null)
                 return;
 
-            // Player/world movement happens on the parent CharacterController. The visual child
-            // therefore does not need animation-driven root translation on any axis.
-            modelRoot.localPosition = new Vector3(_baseLocalX, _baseLocalY, _baseLocalZ);
+            Vector3 local = modelRoot.localPosition;
+            local.x = _baseLocalX;
+            local.z = _baseLocalZ;
+            modelRoot.localPosition = local;
         }
 
-        public void SnapFeetExactlyToGround()
+        private void KeepAnimatedFeetOnGround()
+        {
+            if (modelRoot == null || _leftFoot == null || _rightFoot == null)
+                return;
+
+            if (!TryGetGroundY(out float groundY))
+                return;
+
+            // Use the lower of the two actual humanoid feet. Unlike renderer bounds,
+            // this does not jump when hands/clothes/other mesh parts change the bounds.
+            float lowerFootY = Mathf.Min(_leftFoot.position.y, _rightFoot.position.y);
+            float desiredFootY = groundY + visualGroundOffset;
+            float worldCorrection = desiredFootY - lowerFootY;
+
+            // Prevent a broken clip/root transform from ever throwing the visual model far away.
+            worldCorrection = Mathf.Clamp(worldCorrection, -maxVerticalCorrection, maxVerticalCorrection);
+
+            Vector3 local = modelRoot.localPosition;
+            float targetLocalY = local.y + worldCorrection / Mathf.Max(0.0001f, transform.lossyScale.y);
+
+            float minAllowedY = _baseLocalY - maxVerticalCorrection;
+            float maxAllowedY = _baseLocalY + maxVerticalCorrection;
+            targetLocalY = Mathf.Clamp(targetLocalY, minAllowedY, maxAllowedY);
+
+            // Falling back toward the floor must be quick so Walk/Run never hover.
+            // Moving upward is intentionally slower to avoid visible pumping each stride.
+            float speed = worldCorrection < 0f ? downwardCorrectionSpeed : upwardCorrectionSpeed;
+            local.y = Mathf.Lerp(local.y, targetLocalY, 1f - Mathf.Exp(-speed * Time.deltaTime));
+            modelRoot.localPosition = local;
+        }
+
+        private void SnapInitialFeetToGround()
         {
             if (modelRoot == null)
                 return;
 
-            if (!TryGetVisualBounds(out Bounds bounds))
+            if (_leftFoot != null && _rightFoot != null && TryGetGroundY(out float groundY))
+            {
+                float lowerFootY = Mathf.Min(_leftFoot.position.y, _rightFoot.position.y);
+                modelRoot.position += Vector3.up * ((groundY + visualGroundOffset) - lowerFootY);
+                return;
+            }
+
+            // Fallback only for a non-humanoid/unavailable-foot setup.
+            if (!TryGetVisualBounds(out Bounds bounds) || !TryGetGroundY(out float fallbackGroundY))
                 return;
 
-            Vector3 probeOrigin = new(
-                transform.position.x,
-                Mathf.Max(bounds.max.y + 0.20f, transform.position.y + groundProbeHeight),
-                transform.position.z);
+            modelRoot.position += Vector3.up * ((fallbackGroundY + visualGroundOffset) - bounds.min.y);
+        }
 
+        private bool TryGetGroundY(out float groundY)
+        {
+            groundY = 0f;
+
+            Vector3 probeOrigin = transform.position + Vector3.up * groundProbeHeight;
             RaycastHit[] hits = Physics.RaycastAll(
                     probeOrigin,
                     Vector3.down,
@@ -160,14 +209,11 @@ namespace CheatOnYourDayOnes.Player
                 if (hit.transform == transform || hit.transform.IsChildOf(transform))
                     continue;
 
-                float desiredSoleY = hit.point.y + visualGroundOffset;
-                float deltaY = desiredSoleY - bounds.min.y;
-
-                if (Mathf.Abs(deltaY) > 0.0005f)
-                    modelRoot.position += Vector3.up * deltaY;
-
-                return;
+                groundY = hit.point.y;
+                return true;
             }
+
+            return false;
         }
 
         private bool TryGetVisualBounds(out Bounds bounds)
