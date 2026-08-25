@@ -20,9 +20,9 @@ namespace CheatOnYourDayOnes.EditorTools
         {
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 
-            AnimationClip idle = PrepareAndLoadClip(IdlePath, "Idle");
-            AnimationClip walk = PrepareAndLoadClip(WalkPath, "Walk");
-            AnimationClip run = PrepareAndLoadClip(RunPath, "Run");
+            AnimationClip idle = PrepareClip(IdlePath, "Idle");
+            AnimationClip walk = PrepareClip(WalkPath, "Walk");
+            AnimationClip run = PrepareClip(RunPath, "Run");
 
             if (idle == null || walk == null || run == null)
             {
@@ -33,8 +33,8 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 EditorUtility.DisplayDialog(
                     "CYDOY · Animation Import",
-                    "Could not create a readable AnimationClip from: " + missing.Trim() +
-                    "\n\nThe installer now performs a clean two-pass FBX import before reading the Mixamo take data.\n\nCheck the Console for the exact importer report.",
+                    "No readable AnimationClip found in: " + missing.Trim() +
+                    "\n\nThe importer no longer rewrites Mixamo take data. If one of these still fails, that FBX was exported without an animation clip or Unity still has a broken cached import for it.",
                     "OK");
                 return;
             }
@@ -53,98 +53,78 @@ namespace CheatOnYourDayOnes.EditorTools
                 "Let's go");
         }
 
-        private static AnimationClip PrepareAndLoadClip(string path, string forcedName)
+        private static AnimationClip PrepareClip(string path, string expectedStateName)
         {
             if (AssetDatabase.LoadMainAssetAtPath(path) == null)
             {
-                Debug.LogError("[CYDOY] Missing FBX at exact path: " + path);
+                Debug.LogError("[CYDOY] Missing FBX: " + path);
                 return null;
             }
 
-            // PASS 1: configure the FBX as a humanoid animation and let Unity import it fully.
             ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
             if (importer == null)
             {
-                Debug.LogError("[CYDOY] No ModelImporter available for: " + path);
+                Debug.LogError("[CYDOY] No ModelImporter: " + path);
                 return null;
             }
 
+            // First import: preserve the FBX's original take data.
             importer.importAnimation = true;
             importer.animationType = ModelImporterAnimationType.Human;
             importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
             importer.importCameras = false;
             importer.importLights = false;
             importer.materialImportMode = ModelImporterMaterialImportMode.None;
-
-            // Clear custom clips before the first pass so newly replaced FBXs are read from their own take data.
-            importer.clipAnimations = Array.Empty<ModelImporterClipAnimation>();
             importer.SaveAndReimport();
 
-            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
 
-            // PASS 2: reload importer AFTER Unity has parsed the new FBX file.
+            AnimationClip clip = FindFirstRealClip(path);
+            if (clip == null)
+            {
+                Debug.LogError("[CYDOY] No AnimationClip sub-asset after clean import: " + path);
+                return null;
+            }
+
+            // Only after the actual Mixamo clip exists do we configure looping/root lock.
             importer = AssetImporter.GetAtPath(path) as ModelImporter;
-            if (importer == null)
+            if (importer != null)
             {
-                Debug.LogError("[CYDOY] ModelImporter disappeared after first import: " + path);
-                return null;
-            }
-
-            ModelImporterClipAnimation[] sourceClips = importer.defaultClipAnimations;
-            if (sourceClips == null || sourceClips.Length == 0)
-            {
-                Debug.LogError("[CYDOY] No default animation takes after clean import: " + path);
-                DumpSubAssets(path);
-                return null;
-            }
-
-            ModelImporterClipAnimation source = sourceClips[0];
-            Debug.Log($"[CYDOY] Raw take found in {path}: name='{source.name}', take='{source.takeName}', frames={source.firstFrame:F0}-{source.lastFrame:F0}");
-
-            ModelImporterClipAnimation clip = new()
-            {
-                name = forcedName,
-                takeName = source.takeName,
-                firstFrame = source.firstFrame,
-                lastFrame = source.lastFrame,
-                loopTime = true,
-                loopPose = true,
-                lockRootRotation = true,
-                lockRootHeightY = true,
-                lockRootPositionXZ = true,
-                keepOriginalOrientation = true,
-                keepOriginalPositionY = true,
-                keepOriginalPositionXZ = true
-            };
-
-            importer.clipAnimations = new[] { clip };
-            importer.SaveAndReimport();
-
-            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-
-            UObject[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
-            foreach (UObject asset in assets)
-            {
-                if (asset is AnimationClip animationClip &&
-                    !animationClip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
+                ModelImporterClipAnimation[] clips = importer.defaultClipAnimations;
+                if (clips != null && clips.Length > 0)
                 {
-                    Debug.Log($"[CYDOY] READY {path} → clip '{animationClip.name}', length={animationClip.length:F2}s");
-                    return animationClip;
+                    for (int i = 0; i < clips.Length; i++)
+                    {
+                        clips[i].loopTime = true;
+                        clips[i].loopPose = true;
+                        clips[i].lockRootRotation = true;
+                        clips[i].lockRootHeightY = true;
+                        clips[i].lockRootPositionXZ = true;
+                    }
+
+                    importer.clipAnimations = clips;
+                    importer.SaveAndReimport();
+                    clip = FindFirstRealClip(path);
                 }
             }
 
-            Debug.LogError("[CYDOY] Take existed, but Unity exposed no AnimationClip sub-asset after second import: " + path);
-            DumpSubAssets(path);
-            return null;
+            if (clip != null)
+                Debug.Log($"[CYDOY] READY {expectedStateName}: '{clip.name}' from {path}, length={clip.length:F2}s");
+
+            return clip;
         }
 
-        private static void DumpSubAssets(string path)
+        private static AnimationClip FindFirstRealClip(string path)
         {
             UObject[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
-            Debug.Log("[CYDOY] Sub-assets for " + path + ":");
             foreach (UObject asset in assets)
-                Debug.Log($"[CYDOY]   {asset.GetType().Name} : {asset.name}");
+            {
+                if (asset is AnimationClip clip &&
+                    !clip.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
+                    return clip;
+            }
+
+            return null;
         }
 
         private static AnimatorController BuildDirectController(AnimationClip idle, AnimationClip walk, AnimationClip run)
