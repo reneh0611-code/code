@@ -11,12 +11,44 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private CharacterController characterController;
         [SerializeField] private bool applyRelaxedPoseWithoutController = true;
         [SerializeField] private bool forceGrounding = true;
-        [SerializeField] private float groundEpsilon = 0.002f;
-        [SerializeField] private float visualGroundOffset = 0.005f;
-        [SerializeField] private float groundProbeHeight = 3f;
-        [SerializeField] private float groundProbeDistance = 8f;
+        [SerializeField] private float visualGroundOffset = 0.008f;
+        [SerializeField] private float groundProbeHeight = 2.5f;
+        [SerializeField] private float groundProbeDistance = 6f;
+
+        private Transform _leftUpperArm;
+        private Transform _leftLowerArm;
+        private Transform _rightUpperArm;
+        private Transform _rightLowerArm;
+        private bool _ready;
 
         private IEnumerator Start()
+        {
+            ResolveReferences();
+
+            // Humanoid and skinned bounds are not fully valid immediately after spawn.
+            yield return null;
+            yield return new WaitForEndOfFrame();
+            yield return new WaitForEndOfFrame();
+
+            CacheArmBones();
+            _ready = true;
+        }
+
+        private void LateUpdate()
+        {
+            if (!_ready)
+                return;
+
+            bool hasRealAnimation = animator != null && animator.runtimeAnimatorController != null;
+
+            if (applyRelaxedPoseWithoutController && !hasRealAnimation)
+                ApplyNaturalStandingArms();
+
+            if (forceGrounding)
+                SnapFeetExactlyToGround();
+        }
+
+        private void ResolveReferences()
         {
             if (animator == null)
                 animator = GetComponentInChildren<Animator>(true);
@@ -24,49 +56,53 @@ namespace CheatOnYourDayOnes.Player
                 characterController = GetComponent<CharacterController>();
             if (modelRoot == null && animator != null)
                 modelRoot = animator.transform;
-
-            // Skinned renderer bounds are not reliable on the first frame.
-            yield return null;
-            yield return new WaitForEndOfFrame();
-
-            if (applyRelaxedPoseWithoutController && animator != null && animator.runtimeAnimatorController == null)
-                ApplyRelaxedPose();
-
-            // Wait one more frame because changing humanoid bones also changes mesh bounds.
-            yield return new WaitForEndOfFrame();
-
-            if (forceGrounding)
-                SnapVisualFeetToRealGround();
         }
 
-        private void ApplyRelaxedPose()
+        private void CacheArmBones()
         {
             if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
                 return;
 
-            // Mixamo imports in a T-pose. Rotate the upper arms much farther down
-            // so the placeholder stance reads like a normal relaxed idle pose.
-            RotateBone(HumanBodyBones.LeftUpperArm, new Vector3(0f, 0f, 82f));
-            RotateBone(HumanBodyBones.RightUpperArm, new Vector3(0f, 0f, -82f));
-            RotateBone(HumanBodyBones.LeftLowerArm, new Vector3(0f, -4f, 7f));
-            RotateBone(HumanBodyBones.RightLowerArm, new Vector3(0f, 4f, -7f));
-
-            RotateBone(HumanBodyBones.LeftUpperLeg, new Vector3(1f, 0f, -2f));
-            RotateBone(HumanBodyBones.RightUpperLeg, new Vector3(-1f, 0f, 2f));
-            RotateBone(HumanBodyBones.LeftLowerLeg, new Vector3(-1f, 0f, 0f));
-            RotateBone(HumanBodyBones.RightLowerLeg, new Vector3(-1f, 0f, 0f));
+            _leftUpperArm = animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+            _leftLowerArm = animator.GetBoneTransform(HumanBodyBones.LeftLowerArm);
+            _rightUpperArm = animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+            _rightLowerArm = animator.GetBoneTransform(HumanBodyBones.RightLowerArm);
         }
 
-        private void RotateBone(HumanBodyBones bone, Vector3 localEulerDelta)
+        private void ApplyNaturalStandingArms()
         {
-            Transform boneTransform = animator.GetBoneTransform(bone);
-            if (boneTransform == null)
+            // Aim the upper arms almost straight down, with a very small outward/forward angle.
+            PoseArm(_leftUpperArm, _leftLowerArm, new Vector3(-0.08f, -1f, 0.07f), new Vector3(-0.03f, -1f, 0.12f));
+            PoseArm(_rightUpperArm, _rightLowerArm, new Vector3(0.08f, -1f, 0.07f), new Vector3(0.03f, -1f, 0.12f));
+        }
+
+        private void PoseArm(Transform upperArm, Transform lowerArm, Vector3 upperDesiredLocal, Vector3 lowerDesiredLocal)
+        {
+            if (upperArm == null || lowerArm == null)
                 return;
 
-            boneTransform.localRotation *= Quaternion.Euler(localEulerDelta);
+            Vector3 currentUpperDirection = (lowerArm.position - upperArm.position).normalized;
+            Vector3 desiredUpperDirection = transform.TransformDirection(upperDesiredLocal.normalized);
+            if (currentUpperDirection.sqrMagnitude > 0.001f)
+            {
+                Quaternion correction = Quaternion.FromToRotation(currentUpperDirection, desiredUpperDirection);
+                upperArm.rotation = correction * upperArm.rotation;
+            }
+
+            Transform hand = lowerArm.childCount > 0 ? lowerArm.GetChild(0) : null;
+            if (hand == null)
+                return;
+
+            Vector3 currentLowerDirection = (hand.position - lowerArm.position).normalized;
+            Vector3 desiredLowerDirection = transform.TransformDirection(lowerDesiredLocal.normalized);
+            if (currentLowerDirection.sqrMagnitude > 0.001f)
+            {
+                Quaternion correction = Quaternion.FromToRotation(currentLowerDirection, desiredLowerDirection);
+                lowerArm.rotation = correction * lowerArm.rotation;
+            }
         }
 
-        public void SnapVisualFeetToRealGround()
+        public void SnapFeetExactlyToGround()
         {
             if (modelRoot == null)
                 return;
@@ -74,10 +110,10 @@ namespace CheatOnYourDayOnes.Player
             if (!TryGetVisualBounds(out Bounds bounds))
                 return;
 
-            Vector3 probeOrigin = new Vector3(
-                bounds.center.x,
-                Mathf.Max(bounds.max.y + 0.25f, transform.position.y + groundProbeHeight),
-                bounds.center.z);
+            Vector3 probeOrigin = new(
+                transform.position.x,
+                Mathf.Max(bounds.max.y + 0.20f, transform.position.y + groundProbeHeight),
+                transform.position.z);
 
             RaycastHit[] hits = Physics.RaycastAll(
                     probeOrigin,
@@ -88,36 +124,24 @@ namespace CheatOnYourDayOnes.Player
                 .OrderBy(hit => hit.distance)
                 .ToArray();
 
-            bool foundGround = false;
-            float groundY = 0f;
-
             foreach (RaycastHit hit in hits)
             {
-                Transform hitTransform = hit.transform;
-                if (hitTransform == null)
+                if (hit.transform == null)
                     continue;
 
-                // Skip our own CharacterController/player hierarchy.
-                if (hitTransform == transform || hitTransform.IsChildOf(transform))
+                // Ignore everything belonging to this player.
+                if (hit.transform == transform || hit.transform.IsChildOf(transform))
                     continue;
 
-                groundY = hit.point.y;
-                foundGround = true;
-                break;
-            }
+                float desiredSoleY = hit.point.y + visualGroundOffset;
+                float deltaY = desiredSoleY - bounds.min.y;
 
-            if (!foundGround)
-            {
-                Debug.LogWarning("[CYDOY] Could not find ground below Mixamo character.", this);
+                // Move only the visual model. Gameplay collision stays untouched.
+                if (Mathf.Abs(deltaY) > 0.0005f)
+                    modelRoot.position += Vector3.up * deltaY;
+
                 return;
             }
-
-            float targetFeetY = groundY + visualGroundOffset;
-            float deltaY = targetFeetY - bounds.min.y;
-            if (Mathf.Abs(deltaY) <= groundEpsilon)
-                return;
-
-            modelRoot.position += Vector3.up * deltaY;
         }
 
         private bool TryGetVisualBounds(out Bounds bounds)
