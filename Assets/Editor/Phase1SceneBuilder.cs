@@ -27,24 +27,16 @@ namespace CheatOnYourDayOnes.EditorTools
             EnsureFolder("Assets", "Scenes");
             EnsureFolder("Assets", "Prefabs");
             EnsureFolder("Assets/Prefabs", "Player");
-
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-
             CreateLighting();
             CreateGround();
-
             GameObject playerPrefab = CreateOrReplacePlayerPrefab();
             CreateNetworkRoot(playerPrefab);
             CreateTestJob();
-
             EditorSceneManager.SaveScene(scene, ScenePath);
             Selection.activeObject = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath);
             EditorGUIUtility.PingObject(Selection.activeObject);
-
-            EditorUtility.DisplayDialog(
-                "CYDOY Phase 1",
-                "Phase 1 scene created.\n\nOpen Prototype_Street, press Play and click Start Host.",
-                "Let's go");
+            EditorUtility.DisplayDialog("CYDOY Phase 1", "Phase 1 scene created.\n\nPress Play and click Start Host.", "Let's go");
         }
 
         private static void CreateLighting()
@@ -60,28 +52,24 @@ namespace CheatOnYourDayOnes.EditorTools
         {
             GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
-            ground.transform.position = Vector3.zero;
             ground.transform.localScale = new Vector3(10f, 1f, 10f);
         }
 
         private static GameObject CreateOrReplacePlayerPrefab()
         {
-            GameObject existingPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
-            if (existingPrefab != null)
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath) != null)
                 AssetDatabase.DeleteAsset(PlayerPrefabPath);
 
             GameObject player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             player.name = "Player";
             player.transform.position = new Vector3(0f, 1f, 0f);
-
             CapsuleCollider capsuleCollider = player.GetComponent<CapsuleCollider>();
-            if (capsuleCollider != null)
-                Object.DestroyImmediate(capsuleCollider);
+            if (capsuleCollider != null) Object.DestroyImmediate(capsuleCollider);
 
-            CharacterController characterController = player.AddComponent<CharacterController>();
-            characterController.center = new Vector3(0f, 1f, 0f);
-            characterController.radius = 0.4f;
-            characterController.height = 2f;
+            CharacterController cc = player.AddComponent<CharacterController>();
+            cc.center = Vector3.zero;
+            cc.radius = 0.4f;
+            cc.height = 2f;
 
             player.AddComponent<NetworkObject>();
             player.AddComponent<PlayerData>();
@@ -95,13 +83,9 @@ namespace CheatOnYourDayOnes.EditorTools
 
             GameObject cameraRoot = new("CameraRoot");
             cameraRoot.transform.SetParent(player.transform);
-            cameraRoot.transform.localPosition = new Vector3(0f, 1.6f, 0f);
-
+            cameraRoot.transform.localPosition = new Vector3(0f, 1.2f, 0f);
             GameObject cameraObject = new("PlayerCamera");
             cameraObject.transform.SetParent(cameraRoot.transform);
-            cameraObject.transform.localPosition = Vector3.zero;
-            cameraObject.transform.localRotation = Quaternion.identity;
-
             Camera playerCamera = cameraObject.AddComponent<Camera>();
             AudioListener listener = cameraObject.AddComponent<AudioListener>();
             ThirdPersonCamera thirdPersonCamera = cameraObject.AddComponent<ThirdPersonCamera>();
@@ -109,13 +93,11 @@ namespace CheatOnYourDayOnes.EditorTools
             SerializedObject cameraSO = new(thirdPersonCamera);
             cameraSO.FindProperty("target").objectReferenceValue = player.transform;
             cameraSO.ApplyModifiedPropertiesWithoutUndo();
-
             SerializedObject controllerSO = new(controller);
             controllerSO.FindProperty("cameraTarget").objectReferenceValue = cameraRoot.transform;
             controllerSO.FindProperty("playerCamera").objectReferenceValue = playerCamera;
             controllerSO.FindProperty("audioListener").objectReferenceValue = listener;
             controllerSO.ApplyModifiedPropertiesWithoutUndo();
-
             SerializedObject interactorSO = new(interactor);
             interactorSO.FindProperty("playerCamera").objectReferenceValue = playerCamera;
             interactorSO.ApplyModifiedPropertiesWithoutUndo();
@@ -123,7 +105,6 @@ namespace CheatOnYourDayOnes.EditorTools
             GameObject prefab = PrefabUtility.SaveAsPrefabAsset(player, PlayerPrefabPath);
             Object.DestroyImmediate(player);
             AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
             return prefab;
         }
 
@@ -131,11 +112,13 @@ namespace CheatOnYourDayOnes.EditorTools
         {
             GameObject networkRoot = new("NetworkRoot");
             NetworkManager networkManager = networkRoot.AddComponent<NetworkManager>();
-            networkRoot.AddComponent<UnityTransport>();
+            UnityTransport transport = networkRoot.AddComponent<UnityTransport>();
             networkRoot.AddComponent<DevNetworkLauncher>();
 
-            if (networkManager.NetworkConfig != null)
-                networkManager.NetworkConfig.PlayerPrefab = playerPrefab;
+            // NGO does not automatically choose a transport merely because one is on the GameObject.
+            networkManager.NetworkConfig.NetworkTransport = transport;
+            networkManager.NetworkConfig.PlayerPrefab = playerPrefab;
+            EditorUtility.SetDirty(networkManager);
         }
 
         private static void CreateTestJob()
@@ -143,7 +126,6 @@ namespace CheatOnYourDayOnes.EditorTools
             GameObject testJob = GameObject.CreatePrimitive(PrimitiveType.Cube);
             testJob.name = "TestJob";
             testJob.transform.position = new Vector3(3f, 0.5f, 2f);
-            testJob.transform.localScale = new Vector3(1f, 1f, 1f);
             testJob.AddComponent<NetworkObject>();
             testJob.AddComponent<TestCashInteractable>();
         }
@@ -151,8 +133,7 @@ namespace CheatOnYourDayOnes.EditorTools
         private static void EnsureFolder(string parent, string child)
         {
             string path = parent + "/" + child;
-            if (!AssetDatabase.IsValidFolder(path))
-                AssetDatabase.CreateFolder(parent, child);
+            if (!AssetDatabase.IsValidFolder(path)) AssetDatabase.CreateFolder(parent, child);
         }
     }
 }
