@@ -1,3 +1,4 @@
+using CheatOnYourDayOnes.CameraSystem;
 using CheatOnYourDayOnes.Player;
 using UnityEditor;
 using UnityEngine;
@@ -17,20 +18,14 @@ namespace CheatOnYourDayOnes.EditorTools
             if (characterAsset == null)
             {
                 EnsureFolders();
-                EditorUtility.DisplayDialog(
-                    "CYDOY · Mixamo Character",
-                    "Character file not found.\n\nPut Ch28_nonPBR.fbx here:\n" + CharacterPath,
-                    "OK");
+                EditorUtility.DisplayDialog("CYDOY · Mixamo Character", "Character file not found.\n\nPut Ch28_nonPBR.fbx here:\n" + CharacterPath, "OK");
                 return;
             }
 
             GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
             if (playerPrefab == null)
             {
-                EditorUtility.DisplayDialog(
-                    "CYDOY · Mixamo Character",
-                    "Player prefab not found. Run Tools → CYDOY → Build Phase 1 Scene first.",
-                    "OK");
+                EditorUtility.DisplayDialog("CYDOY · Mixamo Character", "Player prefab not found. Run Tools → CYDOY → Build Phase 1 Scene first.", "OK");
                 return;
             }
 
@@ -78,7 +73,30 @@ namespace CheatOnYourDayOnes.EditorTools
                 runtimeSO.FindProperty("characterController").objectReferenceValue = controller;
                 runtimeSO.FindProperty("applyRelaxedPoseWithoutController").boolValue = true;
                 runtimeSO.FindProperty("forceGrounding").boolValue = true;
+                runtimeSO.FindProperty("visualGroundOffset").floatValue = 0.008f;
                 runtimeSO.ApplyModifiedPropertiesWithoutUndo();
+
+                ThirdPersonCamera camera = prefabRoot.GetComponentInChildren<ThirdPersonCamera>(true);
+                if (camera != null)
+                {
+                    SerializedObject cameraSO = new(camera);
+                    cameraSO.FindProperty("target").objectReferenceValue = prefabRoot.transform;
+                    cameraSO.FindProperty("pivotOffset").vector3Value = new Vector3(0.28f, 1.48f, 0f);
+                    cameraSO.FindProperty("distance").floatValue = 1.85f;
+                    cameraSO.FindProperty("pitch").floatValue = 7f;
+                    cameraSO.FindProperty("followSmooth").floatValue = 20f;
+                    cameraSO.FindProperty("rotationSmooth").floatValue = 18f;
+                    cameraSO.FindProperty("collisionRadius").floatValue = 0.18f;
+                    cameraSO.FindProperty("minimumDistance").floatValue = 0.75f;
+                    cameraSO.ApplyModifiedPropertiesWithoutUndo();
+
+                    Camera unityCamera = camera.GetComponent<Camera>();
+                    if (unityCamera != null)
+                    {
+                        unityCamera.fieldOfView = 60f;
+                        unityCamera.nearClipPlane = 0.06f;
+                    }
+                }
 
                 PrefabUtility.SaveAsPrefabAsset(prefabRoot, PlayerPrefabPath);
                 AssetDatabase.SaveAssets();
@@ -86,7 +104,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 EditorUtility.DisplayDialog(
                     "CYDOY · Mixamo Character",
-                    "Character updated: exact runtime grounding, relaxed idle pose and fallback colors are enabled. Real animations can be added next.",
+                    "Character updated with close third-person framing, exact ground alignment and natural arm posture.",
                     "Nice");
             }
             finally
@@ -98,8 +116,7 @@ namespace CheatOnYourDayOnes.EditorTools
         private static void ExtractEmbeddedMaterials()
         {
             ModelImporter importer = AssetImporter.GetAtPath(CharacterPath) as ModelImporter;
-            if (importer == null)
-                return;
+            if (importer == null) return;
 
             string materialFolder = "Assets/Models/Characters/Materials";
             if (!AssetDatabase.IsValidFolder("Assets/Models/Characters")) EnsureFolders();
@@ -114,14 +131,10 @@ namespace CheatOnYourDayOnes.EditorTools
             Object[] assets = AssetDatabase.LoadAllAssetsAtPath(CharacterPath);
             foreach (Object asset in assets)
             {
-                if (asset is not Material material)
-                    continue;
-
+                if (asset is not Material material) continue;
                 string targetPath = materialFolder + "/" + material.name + ".mat";
-                if (AssetDatabase.LoadAssetAtPath<Material>(targetPath) != null)
-                    continue;
-
-                AssetDatabase.ExtractAsset(material, targetPath);
+                if (AssetDatabase.LoadAssetAtPath<Material>(targetPath) == null)
+                    AssetDatabase.ExtractAsset(material, targetPath);
             }
 
             importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Everywhere);
@@ -134,13 +147,11 @@ namespace CheatOnYourDayOnes.EditorTools
             foreach (string candidate in candidates)
             {
                 Transform old = root.Find(candidate);
-                if (old != null)
-                    Object.DestroyImmediate(old.gameObject);
+                if (old != null) Object.DestroyImmediate(old.gameObject);
             }
 
             StylizedCharacterAnimator primitiveAnimator = root.GetComponent<StylizedCharacterAnimator>();
-            if (primitiveAnimator != null)
-                Object.DestroyImmediate(primitiveAnimator);
+            if (primitiveAnimator != null) Object.DestroyImmediate(primitiveAnimator);
         }
 
         private static void RemoveModelColliders(GameObject model)
@@ -152,9 +163,7 @@ namespace CheatOnYourDayOnes.EditorTools
         private static Animator ConfigureAnimator(GameObject model)
         {
             Animator animator = model.GetComponentInChildren<Animator>(true);
-            if (animator == null)
-                animator = model.AddComponent<Animator>();
-
+            if (animator == null) animator = model.AddComponent<Animator>();
             animator.applyRootMotion = false;
             animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             animator.updateMode = AnimatorUpdateMode.Normal;
@@ -163,15 +172,10 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static void NormalizeScale(Transform modelRoot)
         {
-            if (!TryGetRendererBounds(modelRoot.gameObject, out Bounds initialBounds))
-                return;
-
+            if (!TryGetRendererBounds(modelRoot.gameObject, out Bounds initialBounds)) return;
             float initialHeight = initialBounds.size.y;
-            if (initialHeight <= 0.001f)
-                return;
-
-            float scaleFactor = TargetHeight / initialHeight;
-            modelRoot.localScale = Vector3.one * scaleFactor;
+            if (initialHeight <= 0.001f) return;
+            modelRoot.localScale = Vector3.one * (TargetHeight / initialHeight);
         }
 
         private static void ApplyFallbackMaterialsIfNeeded(GameObject model)
@@ -180,23 +184,18 @@ namespace CheatOnYourDayOnes.EditorTools
             Material cloth = GetOrCreateFallbackMaterial("David_Clothes_Fallback", new Color(0.07f, 0.08f, 0.10f));
             Material shoes = GetOrCreateFallbackMaterial("David_Shoes_Fallback", new Color(0.025f, 0.025f, 0.03f));
 
-            Renderer[] renderers = model.GetComponentsInChildren<Renderer>(true);
-            foreach (Renderer renderer in renderers)
+            foreach (Renderer renderer in model.GetComponentsInChildren<Renderer>(true))
             {
                 Material[] current = renderer.sharedMaterials;
                 for (int i = 0; i < current.Length; i++)
                 {
                     Material existing = current[i];
-                    if (existing != null && HasUsefulTexture(existing))
-                        continue;
+                    if (existing != null && HasUsefulTexture(existing)) continue;
 
                     string key = (renderer.name + " " + (existing != null ? existing.name : string.Empty)).ToLowerInvariant();
-                    if (key.Contains("skin") || key.Contains("body") || key.Contains("head") || key.Contains("face") || key.Contains("hand"))
-                        current[i] = skin;
-                    else if (key.Contains("shoe") || key.Contains("sneaker") || key.Contains("foot"))
-                        current[i] = shoes;
-                    else
-                        current[i] = cloth;
+                    if (key.Contains("skin") || key.Contains("body") || key.Contains("head") || key.Contains("face") || key.Contains("hand")) current[i] = skin;
+                    else if (key.Contains("shoe") || key.Contains("sneaker") || key.Contains("foot")) current[i] = shoes;
+                    else current[i] = cloth;
                 }
                 renderer.sharedMaterials = current;
             }
@@ -204,12 +203,9 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static bool HasUsefulTexture(Material material)
         {
-            if (material == null)
-                return false;
-            if (material.HasProperty("_BaseMap") && material.GetTexture("_BaseMap") != null)
-                return true;
-            if (material.HasProperty("_MainTex") && material.GetTexture("_MainTex") != null)
-                return true;
+            if (material == null) return false;
+            if (material.HasProperty("_BaseMap") && material.GetTexture("_BaseMap") != null) return true;
+            if (material.HasProperty("_MainTex") && material.GetTexture("_MainTex") != null) return true;
             return false;
         }
 
@@ -247,18 +243,14 @@ namespace CheatOnYourDayOnes.EditorTools
             }
 
             bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
-
+            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
             return true;
         }
 
         private static void EnsureFolders()
         {
-            if (!AssetDatabase.IsValidFolder("Assets/Models"))
-                AssetDatabase.CreateFolder("Assets", "Models");
-            if (!AssetDatabase.IsValidFolder("Assets/Models/Characters"))
-                AssetDatabase.CreateFolder("Assets/Models", "Characters");
+            if (!AssetDatabase.IsValidFolder("Assets/Models")) AssetDatabase.CreateFolder("Assets", "Models");
+            if (!AssetDatabase.IsValidFolder("Assets/Models/Characters")) AssetDatabase.CreateFolder("Assets/Models", "Characters");
         }
     }
 }
