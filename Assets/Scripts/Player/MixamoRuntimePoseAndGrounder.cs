@@ -22,6 +22,7 @@ namespace CheatOnYourDayOnes.Player
         private Transform _rightLowerArm;
         private bool _ready;
         private float _baseLocalX;
+        private float _baseLocalY;
         private float _baseLocalZ;
 
         private IEnumerator Start()
@@ -32,9 +33,19 @@ namespace CheatOnYourDayOnes.Player
             yield return new WaitForEndOfFrame();
             yield return new WaitForEndOfFrame();
 
+            bool hasRealAnimation = animator != null && animator.runtimeAnimatorController != null;
+            if (applyRelaxedPoseWithoutController && !hasRealAnimation)
+                ApplyNaturalStandingArms();
+
+            // Ground the visual ONCE. Re-grounding every animation frame from renderer
+            // bounds makes the complete character bob because the animated feet change bounds.min.y.
+            if (forceGrounding)
+                SnapFeetExactlyToGround();
+
             if (modelRoot != null)
             {
                 _baseLocalX = modelRoot.localPosition.x;
+                _baseLocalY = modelRoot.localPosition.y;
                 _baseLocalZ = modelRoot.localPosition.z;
             }
 
@@ -53,10 +64,7 @@ namespace CheatOnYourDayOnes.Player
                 ApplyNaturalStandingArms();
 
             if (lockVisualRootXZ)
-                LockModelRootXZ();
-
-            if (forceGrounding)
-                SnapFeetExactlyToGround();
+                LockModelRootPosition();
         }
 
         private void ResolveReferences()
@@ -112,15 +120,14 @@ namespace CheatOnYourDayOnes.Player
             }
         }
 
-        private void LockModelRootXZ()
+        private void LockModelRootPosition()
         {
             if (modelRoot == null)
                 return;
 
-            Vector3 local = modelRoot.localPosition;
-            local.x = _baseLocalX;
-            local.z = _baseLocalZ;
-            modelRoot.localPosition = local;
+            // Player/world movement happens on the parent CharacterController. The visual child
+            // therefore does not need animation-driven root translation on any axis.
+            modelRoot.localPosition = new Vector3(_baseLocalX, _baseLocalY, _baseLocalZ);
         }
 
         public void SnapFeetExactlyToGround()
