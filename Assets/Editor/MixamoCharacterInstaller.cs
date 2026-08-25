@@ -71,7 +71,8 @@ namespace CheatOnYourDayOnes.EditorTools
                 runtimeSO.FindProperty("animator").objectReferenceValue = animator;
                 runtimeSO.FindProperty("modelRoot").objectReferenceValue = model.transform;
                 runtimeSO.FindProperty("characterController").objectReferenceValue = controller;
-                runtimeSO.FindProperty("applyRelaxedPoseWithoutController").boolValue = true;
+                runtimeSO.FindProperty("settleFrames").intValue = 2;
+                runtimeSO.FindProperty("soleOffset").floatValue = 0f;
                 runtimeSO.ApplyModifiedPropertiesWithoutUndo();
 
                 ThirdPersonCamera camera = prefabRoot.GetComponentInChildren<ThirdPersonCamera>(true);
@@ -102,7 +103,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 EditorUtility.DisplayDialog(
                     "CYDOY · Mixamo Character",
-                    "AJ installed with the existing third-person framing and animation hooks.",
+                    "AJ installed as a direct Mixamo visual. Ground position is calibrated once at runtime; animation bones are never modified.",
                     "Nice");
             }
             finally
@@ -121,6 +122,7 @@ namespace CheatOnYourDayOnes.EditorTools
             if (!AssetDatabase.IsValidFolder(materialFolder))
                 AssetDatabase.CreateFolder("Assets/Models/Characters", "Materials");
 
+            importer.animationType = ModelImporterAnimationType.Generic;
             importer.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
             importer.materialLocation = ModelImporterMaterialLocation.External;
             importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Everywhere);
