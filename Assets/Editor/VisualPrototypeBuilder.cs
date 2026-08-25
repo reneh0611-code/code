@@ -15,65 +15,138 @@ namespace CheatOnYourDayOnes.EditorTools
             Scene scene = SceneManager.GetActiveScene();
             if (!scene.IsValid()) return;
 
-            ClearGeneratedRoot();
+            GameObject existing = GameObject.Find("VisualPrototype");
+            if (existing != null) Object.DestroyImmediate(existing);
+
             GameObject root = new("VisualPrototype");
 
-            Material roadMat = MakeMaterial("RoadMat", new Color(0.13f, 0.14f, 0.16f));
-            Material sidewalkMat = MakeMaterial("SidewalkMat", new Color(0.42f, 0.43f, 0.45f));
-            Material grassMat = MakeMaterial("GrassMat", new Color(0.22f, 0.36f, 0.24f));
-            Material creamMat = MakeMaterial("CreamMat", new Color(0.78f, 0.73f, 0.63f));
-            Material darkMat = MakeMaterial("DarkMat", new Color(0.08f, 0.09f, 0.11f));
-            Material brickMat = MakeMaterial("BrickMat", new Color(0.42f, 0.19f, 0.14f));
-            Material blueMat = MakeMaterial("BlueMat", new Color(0.15f, 0.32f, 0.50f));
-            Material redMat = MakeMaterial("RedMat", new Color(0.58f, 0.12f, 0.10f));
-            Material whiteMat = MakeMaterial("WhiteMat", new Color(0.90f, 0.90f, 0.86f));
-            Material glassMat = MakeMaterial("GlassMat", new Color(0.12f, 0.18f, 0.22f));
-            Material yellowMat = MakeMaterial("YellowMat", new Color(0.88f, 0.63f, 0.10f));
+            Material road = Mat("Road", new Color(0.10f, 0.11f, 0.13f));
+            Material pavement = Mat("Pavement", new Color(0.42f, 0.44f, 0.46f));
+            Material grass = Mat("Grass", new Color(0.19f, 0.32f, 0.22f));
+            Material cream = Mat("Cream", new Color(0.78f, 0.71f, 0.59f));
+            Material brick = Mat("Brick", new Color(0.40f, 0.18f, 0.13f));
+            Material blue = Mat("Blue", new Color(0.13f, 0.28f, 0.43f));
+            Material dark = Mat("Dark", new Color(0.055f, 0.065f, 0.08f));
+            Material red = Mat("Red", new Color(0.57f, 0.10f, 0.09f));
+            Material white = Mat("White", new Color(0.89f, 0.88f, 0.83f));
+            Material glass = Mat("Glass", new Color(0.11f, 0.19f, 0.24f));
+            Material wood = Mat("Wood", new Color(0.36f, 0.21f, 0.12f));
+            Material yellow = Mat("Yellow", new Color(0.91f, 0.63f, 0.09f));
 
-            CreateBox(root.transform, "GroundBase", new Vector3(0, -0.35f, 0), new Vector3(50, 0.5f, 36), grassMat);
-            CreateBox(root.transform, "Road", new Vector3(0, 0, 0), new Vector3(50, 0.12f, 10), roadMat);
-            CreateBox(root.transform, "SidewalkLeft", new Vector3(0, 0.08f, -7), new Vector3(50, 0.22f, 4), sidewalkMat);
-            CreateBox(root.transform, "SidewalkRight", new Vector3(0, 0.08f, 7), new Vector3(50, 0.22f, 4), sidewalkMat);
+            Box(root.transform, "Ground", new Vector3(0, -0.4f, 0), new Vector3(58, 0.6f, 40), grass);
+            Box(root.transform, "Road", new Vector3(0, 0, 0), new Vector3(58, 0.12f, 10), road);
+            Box(root.transform, "SidewalkNorth", new Vector3(0, 0.10f, -7), new Vector3(58, 0.24f, 4), pavement);
+            Box(root.transform, "SidewalkSouth", new Vector3(0, 0.10f, 7), new Vector3(58, 0.24f, 4), pavement);
 
-            for (int x = -22; x <= 22; x += 4)
-                CreateBox(root.transform, "RoadDash", new Vector3(x, 0.08f, 0), new Vector3(2f, 0.03f, 0.12f), whiteMat);
+            for (int x = -26; x <= 26; x += 4)
+                Box(root.transform, "LaneMark", new Vector3(x, 0.08f, 0), new Vector3(2f, 0.025f, 0.12f), white);
 
-            CreateBuilding(root.transform, new Vector3(-15, 3, -11), new Vector3(8, 6, 5), creamMat, darkMat, "APARTMENTS");
-            CreateBuilding(root.transform, new Vector3(-5, 2.6f, -11), new Vector3(7, 5.2f, 5), brickMat, darkMat, "DINER");
-            CreateBuilding(root.transform, new Vector3(6, 3.5f, -11), new Vector3(9, 7, 5), blueMat, darkMat, "CITY BANK");
-            CreateBuilding(root.transform, new Vector3(17, 2.8f, -11), new Vector3(8, 5.6f, 5), darkMat, redMat, "PUB");
+            // Walkable interiors: front wall has a real doorway gap.
+            WalkableBuilding(root.transform, "APARTMENTS", new Vector3(-18, 0.2f, -12), new Vector3(8, 5.6f, 6), cream, dark, glass, false);
+            WalkableBuilding(root.transform, "DINER", new Vector3(-7.5f, 0.2f, -12), new Vector3(8, 4.6f, 6), brick, red, glass, true);
+            WalkableBuilding(root.transform, "CITY BANK", new Vector3(3, 0.2f, -12), new Vector3(9, 5.5f, 6), blue, white, glass, true);
+            WalkableBuilding(root.transform, "PUB", new Vector3(15, 0.2f, -12), new Vector3(9, 4.8f, 6), dark, red, glass, true);
 
-            CreateBuilding(root.transform, new Vector3(-17, 2.6f, 11), new Vector3(8, 5.2f, 5), brickMat, creamMat, "MARKET");
-            CreateKiosk(root.transform, new Vector3(-6, 0, 10.5f), creamMat, redMat, darkMat, glassMat);
-            CreateGasStation(root.transform, new Vector3(8, 0, 10.5f), whiteMat, redMat, darkMat, yellowMat);
-            CreateBuilding(root.transform, new Vector3(18, 3.2f, 11), new Vector3(8, 6.4f, 5), creamMat, blueMat, "LOFTS");
+            WalkableBuilding(root.transform, "MARKET", new Vector3(-19, 0.2f, 12), new Vector3(9, 4.7f, 6), brick, cream, glass, true);
+            WalkableBuilding(root.transform, "KIOSK", new Vector3(-7, 0.2f, 12), new Vector3(7, 4.1f, 6), cream, red, glass, true);
+            GasStation(root.transform, new Vector3(7, 0.2f, 12), white, red, dark, yellow, glass);
+            WalkableBuilding(root.transform, "LOFTS", new Vector3(20, 0.2f, 12), new Vector3(8, 5.8f, 6), cream, blue, glass, false);
 
-            for (int x = -20; x <= 20; x += 8)
+            for (int x = -24; x <= 24; x += 8)
             {
-                CreateStreetLamp(root.transform, new Vector3(x, 0, -5.4f), darkMat, yellowMat);
-                CreateStreetLamp(root.transform, new Vector3(x + 4, 0, 5.4f), darkMat, yellowMat);
+                Lamp(root.transform, new Vector3(x, 0, -5.5f), dark, yellow);
+                Lamp(root.transform, new Vector3(x + 4, 0, 5.5f), dark, yellow);
             }
 
-            CreateParking(root.transform, new Vector3(12, 0.14f, 7.1f), whiteMat);
-            CreateBench(root.transform, new Vector3(-10, 0.2f, -5.8f), darkMat, creamMat);
-            CreateBench(root.transform, new Vector3(2, 0.2f, 5.8f), darkMat, creamMat);
-            CreateTrashCan(root.transform, new Vector3(-3, 0.35f, -5.7f), darkMat);
-            CreateTrashCan(root.transform, new Vector3(15, 0.35f, 5.7f), darkMat);
+            Bench(root.transform, new Vector3(-12, 0.15f, -5.7f), dark, wood);
+            Bench(root.transform, new Vector3(1, 0.15f, 5.7f), dark, wood);
+            Trash(root.transform, new Vector3(-2, 0.55f, -5.7f), dark);
+            Trash(root.transform, new Vector3(16, 0.55f, 5.7f), dark);
 
             ImproveLighting();
             EditorSceneManager.MarkSceneDirty(scene);
             if (scene.path == ScenePath) EditorSceneManager.SaveScene(scene);
-
-            EditorUtility.DisplayDialog("CYDOY", "Visual Prototype built.\n\nOpen Scene view or press Play + Start Host.", "Nice");
+            EditorUtility.DisplayDialog("CYDOY", "Visual Prototype V2 built. Buildings are now walkable through the front entrances.", "Nice");
         }
 
-        private static void ClearGeneratedRoot()
+        private static void WalkableBuilding(Transform parent, string name, Vector3 origin, Vector3 size, Material wall, Material accent, Material glass, bool furnished)
         {
-            GameObject existing = GameObject.Find("VisualPrototype");
-            if (existing != null) Object.DestroyImmediate(existing);
+            GameObject b = new(name); b.transform.SetParent(parent);
+            float w = size.x; float h = size.y; float d = size.z; float t = 0.22f; float doorW = 1.7f; float doorH = 2.5f;
+
+            Box(b.transform, "Floor", origin + new Vector3(0, 0.08f, 0), new Vector3(w, 0.16f, d), Mat("InteriorFloor", new Color(0.24f,0.25f,0.26f)));
+            Box(b.transform, "BackWall", origin + new Vector3(0, h/2f, d/2f), new Vector3(w, h, t), wall);
+            Box(b.transform, "LeftWall", origin + new Vector3(-w/2f, h/2f, 0), new Vector3(t, h, d), wall);
+            Box(b.transform, "RightWall", origin + new Vector3(w/2f, h/2f, 0), new Vector3(t, h, d), wall);
+            Box(b.transform, "Roof", origin + new Vector3(0, h, 0), new Vector3(w + .25f, .22f, d + .25f), accent);
+
+            float sideWidth = (w - doorW) / 2f;
+            Box(b.transform, "FrontLeft", origin + new Vector3(-(doorW/2f + sideWidth/2f), h/2f, -d/2f), new Vector3(sideWidth, h, t), wall);
+            Box(b.transform, "FrontRight", origin + new Vector3((doorW/2f + sideWidth/2f), h/2f, -d/2f), new Vector3(sideWidth, h, t), wall);
+            Box(b.transform, "DoorHeader", origin + new Vector3(0, doorH + (h-doorH)/2f, -d/2f), new Vector3(doorW, h-doorH, t), wall);
+
+            Box(b.transform, "Sign", origin + new Vector3(0, h - 0.65f, -d/2f - 0.15f), new Vector3(Mathf.Min(w*0.55f, 4.2f), 0.55f, 0.15f), accent);
+            Box(b.transform, "WindowL", origin + new Vector3(-w*0.28f, 1.65f, -d/2f - 0.13f), new Vector3(1.5f, 1.25f, 0.08f), glass);
+            Box(b.transform, "WindowR", origin + new Vector3(w*0.28f, 1.65f, -d/2f - 0.13f), new Vector3(1.5f, 1.25f, 0.08f), glass);
+
+            // Small entrance step makes the threshold readable.
+            Box(b.transform, "Step", origin + new Vector3(0, 0.12f, -d/2f - 0.6f), new Vector3(2.3f, 0.18f, 1f), accent);
+
+            if (furnished)
+            {
+                Box(b.transform, "Counter", origin + new Vector3(0, 0.65f, d*0.23f), new Vector3(w*0.55f, 1.1f, 0.7f), accent);
+                Box(b.transform, "ShelfL", origin + new Vector3(-w*0.3f, 0.8f, 0.2f), new Vector3(0.45f, 1.6f, 2.2f), wall);
+                Box(b.transform, "ShelfR", origin + new Vector3(w*0.3f, 0.8f, 0.2f), new Vector3(0.45f, 1.6f, 2.2f), wall);
+            }
         }
 
-        private static Material MakeMaterial(string name, Color color)
+        private static void GasStation(Transform parent, Vector3 origin, Material body, Material accent, Material dark, Material yellow, Material glass)
+        {
+            GameObject g = new("GAS STATION"); g.transform.SetParent(parent);
+            WalkableBuilding(g.transform, "SHOP", origin + new Vector3(4,0,0), new Vector3(6,4.2f,6), body, accent, glass, true);
+            Box(g.transform, "Canopy", origin + new Vector3(-2.8f, 3.2f, 0), new Vector3(9, 0.3f, 5.6f), accent);
+            Box(g.transform, "PillarL", origin + new Vector3(-6.2f, 1.6f, 1.8f), new Vector3(0.32f, 3.2f, 0.32f), dark);
+            Box(g.transform, "PillarR", origin + new Vector3(0.6f, 1.6f, 1.8f), new Vector3(0.32f, 3.2f, 0.32f), dark);
+            Pump(g.transform, origin + new Vector3(-4.2f, 0.8f, 0), dark, yellow);
+            Pump(g.transform, origin + new Vector3(-1.2f, 0.8f, 0), dark, yellow);
+        }
+
+        private static void Pump(Transform parent, Vector3 pos, Material dark, Material accent)
+        {
+            Box(parent, "Pump", pos, new Vector3(0.8f, 1.6f, 0.85f), dark);
+            Box(parent, "Display", pos + new Vector3(0,0.3f,-0.45f), new Vector3(0.45f,0.32f,0.06f), accent);
+        }
+
+        private static void Lamp(Transform parent, Vector3 p, Material dark, Material glow)
+        {
+            GameObject l = new("StreetLamp"); l.transform.SetParent(parent);
+            Box(l.transform, "Pole", p + new Vector3(0,2f,0), new Vector3(.12f,4f,.12f), dark);
+            Box(l.transform, "Arm", p + new Vector3(.35f,3.9f,0), new Vector3(.7f,.1f,.1f), dark);
+            Box(l.transform, "Lamp", p + new Vector3(.7f,3.75f,0), new Vector3(.35f,.18f,.28f), glow);
+        }
+
+        private static void Bench(Transform parent, Vector3 p, Material dark, Material wood)
+        {
+            GameObject b = new("Bench"); b.transform.SetParent(parent);
+            Box(b.transform, "Seat", p + new Vector3(0,.55f,0), new Vector3(2.2f,.18f,.7f), wood);
+            Box(b.transform, "Back", p + new Vector3(0,1.05f,.28f), new Vector3(2.2f,.8f,.14f), wood);
+            Box(b.transform, "LegL", p + new Vector3(-.75f,.25f,0), new Vector3(.12f,.5f,.12f), dark);
+            Box(b.transform, "LegR", p + new Vector3(.75f,.25f,0), new Vector3(.12f,.5f,.12f), dark);
+        }
+
+        private static void Trash(Transform parent, Vector3 p, Material mat)
+        {
+            GameObject t = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            t.name = "TrashCan"; t.transform.SetParent(parent); t.transform.position = p; t.transform.localScale = new Vector3(.45f,.55f,.45f); t.GetComponent<Renderer>().sharedMaterial = mat;
+        }
+
+        private static GameObject Box(Transform parent, string name, Vector3 pos, Vector3 scale, Material mat)
+        {
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = name; go.transform.SetParent(parent); go.transform.position = pos; go.transform.localScale = scale; go.GetComponent<Renderer>().sharedMaterial = mat; return go;
+        }
+
+        private static Material Mat(string name, Color color)
         {
             string folder = "Assets/Materials/Prototype";
             if (!AssetDatabase.IsValidFolder("Assets/Materials")) AssetDatabase.CreateFolder("Assets", "Materials");
@@ -92,100 +165,21 @@ namespace CheatOnYourDayOnes.EditorTools
             return mat;
         }
 
-        private static GameObject CreateBox(Transform parent, string name, Vector3 pos, Vector3 scale, Material mat)
-        {
-            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            go.name = name;
-            go.transform.SetParent(parent);
-            go.transform.position = pos;
-            go.transform.localScale = scale;
-            go.GetComponent<Renderer>().sharedMaterial = mat;
-            return go;
-        }
-
-        private static void CreateBuilding(Transform parent, Vector3 pos, Vector3 size, Material wall, Material accent, string sign)
-        {
-            GameObject b = new(sign);
-            b.transform.SetParent(parent);
-            CreateBox(b.transform, "Body", pos, size, wall);
-            CreateBox(b.transform, "Roof", pos + new Vector3(0, size.y / 2f + 0.2f, 0), new Vector3(size.x + 0.4f, 0.3f, size.z + 0.4f), accent);
-            CreateBox(b.transform, "Door", pos + new Vector3(0, -size.y / 2f + 1.2f, -size.z / 2f - 0.05f), new Vector3(1.4f, 2.4f, 0.15f), accent);
-            for (int i = -1; i <= 1; i += 2)
-                CreateBox(b.transform, "Window", pos + new Vector3(i * size.x * 0.25f, 0.4f, -size.z / 2f - 0.06f), new Vector3(1.5f, 1.3f, 0.12f), accent);
-            CreateBox(b.transform, "Sign_" + sign, pos + new Vector3(0, size.y * 0.18f, -size.z / 2f - 0.12f), new Vector3(size.x * 0.55f, 0.65f, 0.18f), accent);
-        }
-
-        private static void CreateKiosk(Transform parent, Vector3 origin, Material body, Material accent, Material dark, Material glass)
-        {
-            GameObject k = new("KIOSK"); k.transform.SetParent(parent);
-            CreateBox(k.transform, "KioskBody", origin + new Vector3(0, 1.5f, 0), new Vector3(5.5f, 3f, 4f), body);
-            CreateBox(k.transform, "KioskRoof", origin + new Vector3(0, 3.15f, 0), new Vector3(6.2f, 0.3f, 4.6f), accent);
-            CreateBox(k.transform, "FrontWindow", origin + new Vector3(0, 1.65f, -2.06f), new Vector3(3.3f, 1.35f, 0.12f), glass);
-            CreateBox(k.transform, "Door", origin + new Vector3(2f, 1.1f, -2.07f), new Vector3(1.1f, 2.2f, 0.14f), dark);
-            CreateBox(k.transform, "Sign", origin + new Vector3(0, 2.75f, -2.2f), new Vector3(3.4f, 0.6f, 0.2f), accent);
-        }
-
-        private static void CreateGasStation(Transform parent, Vector3 origin, Material body, Material accent, Material dark, Material yellow)
-        {
-            GameObject g = new("GAS STATION"); g.transform.SetParent(parent);
-            CreateBox(g.transform, "Shop", origin + new Vector3(3.5f, 1.6f, 0), new Vector3(5, 3.2f, 4), body);
-            CreateBox(g.transform, "ShopBand", origin + new Vector3(3.5f, 2.8f, -2.08f), new Vector3(5.2f, 0.45f, 0.15f), accent);
-            CreateBox(g.transform, "Canopy", origin + new Vector3(-2f, 3.2f, 0), new Vector3(8, 0.35f, 5), accent);
-            CreateBox(g.transform, "Pillar1", origin + new Vector3(-5f, 1.6f, 1.6f), new Vector3(0.35f, 3.2f, 0.35f), dark);
-            CreateBox(g.transform, "Pillar2", origin + new Vector3(1f, 1.6f, 1.6f), new Vector3(0.35f, 3.2f, 0.35f), dark);
-            CreateBox(g.transform, "Pump1", origin + new Vector3(-3.5f, 0.8f, 0), new Vector3(0.8f, 1.6f, 0.8f), dark);
-            CreateBox(g.transform, "Pump2", origin + new Vector3(-0.5f, 0.8f, 0), new Vector3(0.8f, 1.6f, 0.8f), dark);
-            CreateBox(g.transform, "PumpAccent1", origin + new Vector3(-3.5f, 1.05f, -0.42f), new Vector3(0.45f, 0.35f, 0.08f), yellow);
-            CreateBox(g.transform, "PumpAccent2", origin + new Vector3(-0.5f, 1.05f, -0.42f), new Vector3(0.45f, 0.35f, 0.08f), yellow);
-        }
-
-        private static void CreateStreetLamp(Transform parent, Vector3 origin, Material pole, Material lightMat)
-        {
-            GameObject l = new("StreetLamp"); l.transform.SetParent(parent);
-            CreateBox(l.transform, "Pole", origin + new Vector3(0, 2f, 0), new Vector3(0.12f, 4f, 0.12f), pole);
-            CreateBox(l.transform, "Arm", origin + new Vector3(0.35f, 3.9f, 0), new Vector3(0.7f, 0.1f, 0.1f), pole);
-            CreateBox(l.transform, "Lamp", origin + new Vector3(0.7f, 3.75f, 0), new Vector3(0.35f, 0.18f, 0.28f), lightMat);
-        }
-
-        private static void CreateParking(Transform parent, Vector3 center, Material white)
-        {
-            for (int i = 0; i < 4; i++)
-            {
-                float x = center.x - 4.5f + i * 3f;
-                CreateBox(parent, "ParkingLine", new Vector3(x, center.y, center.z), new Vector3(0.08f, 0.03f, 2.4f), white);
-            }
-        }
-
-        private static void CreateBench(Transform parent, Vector3 origin, Material dark, Material seat)
-        {
-            GameObject b = new("Bench"); b.transform.SetParent(parent);
-            CreateBox(b.transform, "Seat", origin + new Vector3(0, 0.55f, 0), new Vector3(2.2f, 0.18f, 0.7f), seat);
-            CreateBox(b.transform, "Back", origin + new Vector3(0, 1.05f, 0.28f), new Vector3(2.2f, 0.8f, 0.14f), seat);
-            CreateBox(b.transform, "LegL", origin + new Vector3(-0.75f, 0.25f, 0), new Vector3(0.12f, 0.5f, 0.12f), dark);
-            CreateBox(b.transform, "LegR", origin + new Vector3(0.75f, 0.25f, 0), new Vector3(0.12f, 0.5f, 0.12f), dark);
-        }
-
-        private static void CreateTrashCan(Transform parent, Vector3 origin, Material mat)
-        {
-            GameObject t = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            t.name = "TrashCan"; t.transform.SetParent(parent); t.transform.position = origin; t.transform.localScale = new Vector3(0.5f, 0.7f, 0.5f); t.GetComponent<Renderer>().sharedMaterial = mat;
-        }
-
         private static void ImproveLighting()
         {
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.55f, 0.58f, 0.65f);
+            RenderSettings.ambientLight = new Color(0.48f, 0.51f, 0.56f);
             RenderSettings.fog = true;
             RenderSettings.fogColor = new Color(0.62f, 0.70f, 0.78f);
-            RenderSettings.fogDensity = 0.0035f;
+            RenderSettings.fogDensity = 0.0028f;
 
-            Light sun = Object.FindFirstObjectByType<Light>();
+            Light sun = Object.FindAnyObjectByType<Light>();
             if (sun != null)
             {
                 sun.color = new Color(1f, 0.91f, 0.78f);
-                sun.intensity = 1.35f;
+                sun.intensity = 1.25f;
                 sun.shadows = LightShadows.Soft;
-                sun.transform.rotation = Quaternion.Euler(45f, -35f, 0f);
+                sun.transform.rotation = Quaternion.Euler(48f, -32f, 0f);
             }
         }
     }
