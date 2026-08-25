@@ -14,39 +14,15 @@ namespace CheatOnYourDayOnes.EditorTools
             if (assetImporter is not ModelImporter importer)
                 return;
 
+            // Keep the Mixamo animation itself untouched. We only tell Unity
+            // to import it as a Humanoid animation. Loop/root settings are
+            // applied later by the installer after the real clip exists.
+            importer.importAnimation = true;
             importer.animationType = ModelImporterAnimationType.Human;
             importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
-            importer.importAnimation = true;
             importer.importCameras = false;
             importer.importLights = false;
             importer.materialImportMode = ModelImporterMaterialImportMode.None;
-        }
-
-        private void OnPostprocessModel(UnityEngine.GameObject root)
-        {
-            if (!assetPath.StartsWith(AnimationFolder, System.StringComparison.OrdinalIgnoreCase))
-                return;
-
-            if (assetImporter is not ModelImporter importer)
-                return;
-
-            ModelImporterClipAnimation[] clips = importer.defaultClipAnimations;
-            if (clips == null || clips.Length == 0)
-                return;
-
-            for (int i = 0; i < clips.Length; i++)
-            {
-                clips[i].loopTime = true;
-                clips[i].loopPose = true;
-                clips[i].lockRootRotation = true;
-                clips[i].lockRootHeightY = true;
-                clips[i].lockRootPositionXZ = true;
-                clips[i].keepOriginalOrientation = true;
-                clips[i].keepOriginalPositionY = true;
-                clips[i].keepOriginalPositionXZ = true;
-            }
-
-            importer.clipAnimations = clips;
         }
     }
 }
