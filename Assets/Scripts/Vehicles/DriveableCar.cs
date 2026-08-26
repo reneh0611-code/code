@@ -1,3 +1,4 @@
+using CheatOnYourDayOnes.CameraSystem;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -12,15 +13,15 @@ namespace CheatOnYourDayOnes.Vehicles
         [SerializeField] private Transform centerOfMass;
 
         [Header("Driving")]
-        [SerializeField] private float acceleration = 11.5f;
-        [SerializeField] private float reverseAcceleration = 7f;
-        [SerializeField] private float brakeAcceleration = 22f;
-        [SerializeField] private float maxSpeedKmh = 145f;
-        [SerializeField] private float maxReverseKmh = 32f;
-        [SerializeField] private float steeringDegreesPerSecond = 72f;
-        [SerializeField] private float highSpeedSteeringMultiplier = 0.32f;
-        [SerializeField] private float lateralGrip = 6.5f;
-        [SerializeField] private float downforce = 18f;
+        [SerializeField] private float acceleration = 8.5f;
+        [SerializeField] private float reverseAcceleration = 5.5f;
+        [SerializeField] private float coastDeceleration = 2.4f;
+        [SerializeField] private float brakeDeceleration = 18f;
+        [SerializeField] private float maxSpeedKmh = 135f;
+        [SerializeField] private float maxReverseKmh = 30f;
+        [SerializeField] private float steeringDegreesPerSecond = 78f;
+        [SerializeField] private float highSpeedSteeringMultiplier = 0.28f;
+        [SerializeField] private float lateralGrip = 8f;
         [SerializeField] private float interactionDistance = 3.5f;
 
         private Rigidbody _rb;
@@ -31,6 +32,7 @@ namespace CheatOnYourDayOnes.Vehicles
         private bool[] _driverRendererStates;
         private Collider[] _driverColliders;
         private bool[] _driverColliderStates;
+        private ThirdPersonCamera _camera;
         private bool _occupied;
         private float _throttle;
         private float _steer;
@@ -41,19 +43,24 @@ namespace CheatOnYourDayOnes.Vehicles
         private void Awake()
         {
             _rb = GetComponent<Rigidbody>();
+            ConfigureRigidbody();
+            EnsureCollisionSetup();
+        }
+
+        private void ConfigureRigidbody()
+        {
             _rb.mass = Mathf.Max(_rb.mass, 1200f);
             _rb.useGravity = true;
             _rb.isKinematic = false;
             _rb.constraints = RigidbodyConstraints.None;
-            _rb.linearDamping = 0.06f;
-            _rb.angularDamping = 2.2f;
+            _rb.linearDamping = 0.04f;
+            _rb.angularDamping = 2.6f;
             _rb.interpolation = RigidbodyInterpolation.Interpolate;
             _rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             _rb.maxAngularVelocity = 5f;
             _rb.centerOfMass = centerOfMass != null
                 ? transform.InverseTransformPoint(centerOfMass.position)
-                : new Vector3(0f, -0.55f, 0f);
-            EnsureBodyCollider();
+                : new Vector3(0f, -0.50f, 0f);
         }
 
         private void Update()
@@ -77,33 +84,50 @@ namespace CheatOnYourDayOnes.Vehicles
             if (!_occupied) return;
 
             Vector3 localVelocity = transform.InverseTransformDirection(_rb.linearVelocity);
-            float forwardKmh = localVelocity.z * 3.6f;
-            float speedKmh = Mathf.Abs(forwardKmh);
+            float forwardSpeed = localVelocity.z;
+            float maxForwardMs = maxSpeedKmh / 3.6f;
+            float maxReverseMs = maxReverseKmh / 3.6f;
 
+            float targetForwardSpeed;
             if (_brake)
             {
-                Vector3 planar = Vector3.ProjectOnPlane(_rb.linearVelocity, transform.up);
-                _rb.AddForce(-planar * brakeAcceleration, ForceMode.Acceleration);
+                targetForwardSpeed = Mathf.MoveTowards(forwardSpeed, 0f, brakeDeceleration * Time.fixedDeltaTime);
             }
-            else if (_throttle > 0f && forwardKmh < maxSpeedKmh)
+            else if (_throttle > 0f)
             {
-                _rb.AddForce(transform.forward * acceleration * _throttle, ForceMode.Acceleration);
+                targetForwardSpeed = Mathf.MoveTowards(forwardSpeed, maxForwardMs, acceleration * Time.fixedDeltaTime);
             }
-            else if (_throttle < 0f && forwardKmh > -maxReverseKmh)
+            else if (_throttle < 0f)
             {
-                _rb.AddForce(transform.forward * reverseAcceleration * _throttle, ForceMode.Acceleration);
+                targetForwardSpeed = Mathf.MoveTowards(forwardSpeed, -maxReverseMs, reverseAcceleration * Time.fixedDeltaTime);
+            }
+            else
+            {
+                targetForwardSpeed = Mathf.MoveTowards(forwardSpeed, 0f, coastDeceleration * Time.fixedDeltaTime);
             }
 
-            float moving = Mathf.Clamp01(Mathf.Abs(localVelocity.z) / 0.8f);
-            float highSpeedFactor = Mathf.Lerp(1f, highSpeedSteeringMultiplier, Mathf.InverseLerp(20f, maxSpeedKmh, speedKmh));
-            float direction = localVelocity.z < -0.15f ? -1f : 1f;
-            float yawDelta = _steer * steeringDegreesPerSecond * highSpeedFactor * moving * direction * Time.fixedDeltaTime;
-            if (Mathf.Abs(yawDelta) > 0.0001f)
-                _rb.MoveRotation(_rb.rotation * Quaternion.Euler(0f, yawDelta, 0f));
+            float targetLateral = Mathf.MoveTowards(localVelocity.x, 0f, lateralGrip * Time.fixedDeltaTime * Mathf.Max(1f, Mathf.Abs(localVelocity.x)));
+            Vector3 newLocalVelocity = new Vector3(targetLateral, localVelocity.y, targetForwardSpeed);
+            _rb.linearVelocity = transform.TransformDirection(newLocalVelocity);
 
-            Vector3 lateralVelocity = transform.right * localVelocity.x;
-            _rb.AddForce(-lateralVelocity * lateralGrip, ForceMode.Acceleration);
-            _rb.AddForce(-transform.up * downforce * _rb.linearVelocity.sqrMagnitude * 0.02f, ForceMode.Acceleration);
+            float speedAbs = Mathf.Abs(targetForwardSpeed);
+            float steerAuthority = Mathf.Clamp01(speedAbs / 0.7f);
+            float speed01 = Mathf.InverseLerp(0f, maxForwardMs, speedAbs);
+            float steeringFactor = Mathf.Lerp(1f, highSpeedSteeringMultiplier, speed01);
+            float reverseSign = targetForwardSpeed < -0.05f ? -1f : 1f;
+            float yaw = _steer * steeringDegreesPerSecond * steeringFactor * steerAuthority * reverseSign * Time.fixedDeltaTime;
+
+            if (Mathf.Abs(yaw) > 0.0001f)
+            {
+                Quaternion targetRotation = _rb.rotation * Quaternion.Euler(0f, yaw, 0f);
+                _rb.MoveRotation(targetRotation);
+            }
+
+            // Keep the car stable without locking normal road pitch/roll completely.
+            Vector3 angular = _rb.angularVelocity;
+            angular.x *= 0.88f;
+            angular.z *= 0.88f;
+            _rb.angularVelocity = angular;
         }
 
         public float DistanceFrom(Vector3 worldPoint)
@@ -149,16 +173,19 @@ namespace CheatOnYourDayOnes.Vehicles
 
             if (_driverController != null) _driverController.enabled = false;
 
-            // Keep the player object attached to the car for now, but hide the standing avatar.
-            // A dedicated seated driving animation can replace this later without changing the vehicle physics.
             Transform seat = driverSeat != null ? driverSeat : transform;
             player.SetParent(seat, false);
             player.localPosition = Vector3.zero;
             player.localRotation = Quaternion.identity;
 
+            _camera = Object.FindFirstObjectByType<ThirdPersonCamera>(FindObjectsInactive.Include);
+            if (_camera != null) _camera.EnterVehicleMode(transform);
+
+            ConfigureRigidbody();
             _rb.WakeUp();
             _occupied = true;
-            Debug.Log($"[CYDOY] Entered vehicle {name}. Driving enabled: WASD, Space brake, E exit.", this);
+
+            Debug.Log($"[CYDOY] Vehicle active: {name} | rb.isKinematic={_rb.isKinematic} | mass={_rb.mass} | colliders={GetComponentsInChildren<Collider>(true).Length}", this);
             return true;
         }
 
@@ -170,6 +197,8 @@ namespace CheatOnYourDayOnes.Vehicles
             p.SetParent(null, true);
             p.position = exitPoint != null ? exitPoint.position : transform.position - transform.right * 1.8f + Vector3.up * 0.25f;
             p.rotation = Quaternion.Euler(0f, transform.eulerAngles.y, 0f);
+
+            if (_camera != null) _camera.ExitVehicleMode(p);
 
             if (_driverRenderers != null)
                 for (int i = 0; i < _driverRenderers.Length; i++) if (_driverRenderers[i] != null) _driverRenderers[i].enabled = _driverRendererStates[i];
@@ -186,27 +215,49 @@ namespace CheatOnYourDayOnes.Vehicles
             _driverRendererStates = null;
             _driverColliders = null;
             _driverColliderStates = null;
+            _camera = null;
             _occupied = false;
             _throttle = 0f;
             _steer = 0f;
             _brake = false;
         }
 
-        private void EnsureBodyCollider()
+        private void EnsureCollisionSetup()
         {
+            MeshCollider[] meshColliders = GetComponentsInChildren<MeshCollider>(true);
+            foreach (MeshCollider mc in meshColliders)
+            {
+                if (mc != null && !mc.convex)
+                {
+                    mc.enabled = false;
+                    Debug.LogWarning($"[CYDOY] Disabled non-convex MeshCollider '{mc.name}' on driveable car. Dynamic rigidbodies cannot use non-convex mesh colliders reliably.", mc);
+                }
+            }
+
             Collider[] existing = GetComponentsInChildren<Collider>(true);
             foreach (Collider c in existing)
-                if (c != null && !c.isTrigger) return;
+            {
+                if (c != null && c.enabled && !c.isTrigger && c is not MeshCollider)
+                    return;
+                if (c is MeshCollider mc && mc.enabled && mc.convex)
+                    return;
+            }
 
             Renderer[] rs = GetComponentsInChildren<Renderer>(true);
             if (rs.Length == 0) return;
+
             Bounds b = rs[0].bounds;
             for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
 
             BoxCollider box = gameObject.AddComponent<BoxCollider>();
             box.center = transform.InverseTransformPoint(b.center);
             Vector3 localSize = transform.InverseTransformVector(b.size);
-            box.size = new Vector3(Mathf.Abs(localSize.x) * 0.92f, Mathf.Abs(localSize.y) * 0.72f, Mathf.Abs(localSize.z) * 0.94f);
+            box.size = new Vector3(
+                Mathf.Max(0.5f, Mathf.Abs(localSize.x) * 0.90f),
+                Mathf.Max(0.35f, Mathf.Abs(localSize.y) * 0.65f),
+                Mathf.Max(0.8f, Mathf.Abs(localSize.z) * 0.92f));
+
+            Debug.Log($"[CYDOY] Added fallback BoxCollider to {name}: center={box.center}, size={box.size}", box);
         }
     }
 }
