@@ -10,7 +10,7 @@ namespace CheatOnYourDayOnes.Player
     public sealed class NetworkPlayerController : NetworkBehaviour
     {
         [Header("Movement")]
-        [SerializeField, Min(0.1f)] private float walkSpeed = 3.2f;
+        [SerializeField, Min(0.1f)] private float walkSpeed = 3.0f;
         [SerializeField, Min(0.1f)] private float sprintSpeed = 6.8f;
         [SerializeField, Min(0.1f)] private float acceleration = 18f;
         [SerializeField, Min(0.1f)] private float deceleration = 22f;
