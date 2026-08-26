@@ -19,6 +19,13 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private float gravity = -26f;
         [SerializeField, Min(0.1f)] private float jumpHeight = 1.35f;
 
+        [Header("Sprint stamina")]
+        [SerializeField, Min(1f)] private float maxStamina = 100f;
+        [SerializeField, Min(0.1f)] private float staminaDrainPerSecond = 22f;
+        [SerializeField, Min(0.1f)] private float staminaRegenPerSecond = 18f;
+        [SerializeField, Min(0f)] private float staminaRegenDelay = 0.8f;
+        [SerializeField, Range(0f, 25f)] private float sprintResumeThreshold = 12f;
+
         [Header("Camera")]
         [SerializeField] private Transform cameraTarget;
         [SerializeField] private Camera playerCamera;
@@ -30,6 +37,8 @@ namespace CheatOnYourDayOnes.Player
         private bool _sprintInput;
         private float _verticalVelocity;
         private Vector3 _serverPlanarVelocity;
+        private float _lastSprintTime = -999f;
+        private bool _sprintExhausted;
 
         private readonly NetworkVariable<Vector3> _serverPosition = new(default,
             NetworkVariableReadPermission.Everyone,
@@ -38,6 +47,15 @@ namespace CheatOnYourDayOnes.Player
         private readonly NetworkVariable<Quaternion> _serverRotation = new(Quaternion.identity,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
+
+        private readonly NetworkVariable<float> _stamina = new(100f,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        public float Stamina => _stamina.Value;
+        public float MaxStamina => maxStamina;
+        public float Stamina01 => maxStamina <= 0f ? 0f : Mathf.Clamp01(_stamina.Value / maxStamina);
+        public bool IsSprinting => _sprintInput && _moveInput.sqrMagnitude > 0.01f && !_sprintExhausted && _stamina.Value > 0f;
 
         private void Awake()
         {
@@ -62,7 +80,12 @@ namespace CheatOnYourDayOnes.Player
             }
             if (audioListener != null) audioListener.enabled = local;
             if (local) { Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false; }
-            if (IsServer) { _serverPosition.Value = transform.position; _serverRotation.Value = transform.rotation; }
+            if (IsServer)
+            {
+                _serverPosition.Value = transform.position;
+                _serverRotation.Value = transform.rotation;
+                _stamina.Value = maxStamina;
+            }
         }
 
         private void OnApplicationFocus(bool hasFocus)
@@ -115,19 +138,46 @@ namespace CheatOnYourDayOnes.Player
         }
 
         [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
-        private void SendMovementInputRpc(Vector2 input, bool sprint, float cameraYaw)
+        private void SendMovementInputRpc(Vector2 input, bool sprintRequested, float cameraYaw)
         {
             if (!IsServer || NetworkManager == null || !NetworkManager.IsListening) return;
+
             input = Vector2.ClampMagnitude(input, 1f);
+            bool moving = input.sqrMagnitude > 0.01f;
+
+            if (_sprintExhausted && _stamina.Value >= sprintResumeThreshold)
+                _sprintExhausted = false;
+
+            bool canSprint = sprintRequested && moving && !_sprintExhausted && _stamina.Value > 0.01f;
+
+            if (canSprint)
+            {
+                _stamina.Value = Mathf.Max(0f, _stamina.Value - staminaDrainPerSecond * Time.deltaTime);
+                _lastSprintTime = Time.time;
+                if (_stamina.Value <= 0.01f)
+                {
+                    _stamina.Value = 0f;
+                    _sprintExhausted = true;
+                    canSprint = false;
+                }
+            }
+            else if (Time.time - _lastSprintTime >= staminaRegenDelay)
+            {
+                _stamina.Value = Mathf.Min(maxStamina, _stamina.Value + staminaRegenPerSecond * Time.deltaTime);
+            }
+
             Quaternion yawRotation = Quaternion.Euler(0f, cameraYaw, 0f);
             Vector3 desiredDirection = yawRotation * new Vector3(input.x, 0f, input.y);
-            float maxSpeed = sprint ? sprintSpeed : walkSpeed;
+            float maxSpeed = canSprint ? sprintSpeed : walkSpeed;
             Vector3 desiredVelocity = desiredDirection * maxSpeed;
             float rate = desiredVelocity.sqrMagnitude > 0.001f ? acceleration : deceleration;
             _serverPlanarVelocity = Vector3.MoveTowards(_serverPlanarVelocity, desiredVelocity, rate * Time.deltaTime);
+
             if (_controller.isGrounded && _verticalVelocity < 0f) _verticalVelocity = -2f;
             else _verticalVelocity += gravity * Time.deltaTime;
-            Vector3 velocity = _serverPlanarVelocity; velocity.y = _verticalVelocity;
+
+            Vector3 velocity = _serverPlanarVelocity;
+            velocity.y = _verticalVelocity;
             _controller.Move(velocity * Time.deltaTime);
             transform.rotation = Quaternion.Slerp(transform.rotation, yawRotation, rotationSpeed * Time.deltaTime);
             _serverPosition.Value = transform.position;
