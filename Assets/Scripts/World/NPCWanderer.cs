@@ -12,11 +12,11 @@ namespace CheatOnYourDayOnes.World
         [Header("Vehicle reaction")]
         [SerializeField] private float carAwarenessRadius=7f,fleeSpeed=2.25f,fleeOnlyAboveKmh=30f,impactSpeedThreshold=.20f;
         [SerializeField] private float lieDownSeconds=3.5f,getUpSeconds=1.35f,impactCarryDistance=.20f;
-        [SerializeField] private float groundRayHeight=4f,groundRayDistance=12f;
-        [SerializeField] private float bodyGroundClearance=.008f;
+        [SerializeField] private float groundRayHeight=6f,groundRayDistance=20f;
+        [SerializeField] private float bodyGroundClearance=.005f;
         [SerializeField] private float carClearanceBeforeGetUp=3.2f;
         [SerializeField] private float extraWaitAfterCarClears=.65f;
-        [SerializeField] private float maxAnimationFallTravel=4.0f;
+        [SerializeField] private float maxAnimationFallTravel=4f;
         [SerializeField,Range(-1f,1f)] private float rearHitDotThreshold=-.25f;
 
         private static readonly int IdleHash=Animator.StringToHash("Base Layer.Idle");
@@ -28,16 +28,13 @@ namespace CheatOnYourDayOnes.World
         private static readonly int GettingUpRearHash=Animator.StringToHash("Base Layer.GettingUpRear");
 
         private CharacterController _controller;
-        private Vector3 _home,_target,_impactAnchor;
+        private Vector3 _home,_target,_impactAnchor,_fallOriginAnchor,_fallBodyStartCenter;
         private float _pause,_verticalVelocity,_fallUntil,_getUpUntil,_safeGetUpAfter;
-        private bool _walking,_running,_gettingUp,_rearImpact;
+        private bool _walking,_running,_gettingUp,_rearImpact,_fallMotionTracking;
         private DriveableCar _dangerCar;
-
         private SkinnedMeshRenderer _mainSkinnedMesh;
         private Collider[] _allColliders;
         private bool[] _colliderStates;
-        private Vector3 _fallOriginAnchor,_fallBodyStartCenter;
-        private bool _fallMotionTracking;
 
         public bool IsDown=>_fallUntil>0f||_gettingUp;
         public Vector3 DownPosition=>_impactAnchor;
@@ -53,16 +50,16 @@ namespace CheatOnYourDayOnes.World
 
         private void CacheBody()
         {
-            SkinnedMeshRenderer[] skins=GetComponentsInChildren<SkinnedMeshRenderer>(true);
             float best=-1f;
-            foreach(SkinnedMeshRenderer skin in skins)
+            foreach(SkinnedMeshRenderer skin in GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
                 if(skin==null)continue;
-                Vector3 size=skin.bounds.size;
-                float volume=Mathf.Abs(size.x*size.y*size.z);
+                Vector3 s=skin.bounds.size;
+                float volume=Mathf.Abs(s.x*s.y*s.z);
                 if(volume>best){best=volume;_mainSkinnedMesh=skin;}
             }
-            Debug.Log($"[CYDOY] NPC ground body: {name} mesh={(_mainSkinnedMesh!=null?_mainSkinnedMesh.name:"NONE")}",this);
+            if(_mainSkinnedMesh!=null)_mainSkinnedMesh.updateWhenOffscreen=true;
+            Debug.Log($"[CYDOY] NPC BODY FOR GROUNDING: {name} mesh={(_mainSkinnedMesh!=null?_mainSkinnedMesh.name:"NONE")}",this);
         }
 
         private void CacheColliders()
@@ -77,14 +74,12 @@ namespace CheatOnYourDayOnes.World
         {
             if(IsDown)
             {
-                // Do NOT modify Y here. Animator and ground physics are resolved once, after animation,
-                // in LateUpdate. Having multiple systems write Y caused the previous hovering/flicker bugs.
                 if(_gettingUp)
                 {
-                    Vector3 pos=transform.position;
-                    pos.x=_impactAnchor.x;
-                    pos.z=_impactAnchor.z;
-                    transform.position=pos;
+                    Vector3 p=transform.position;
+                    p.x=_impactAnchor.x;
+                    p.z=_impactAnchor.z;
+                    transform.position=p;
                 }
 
                 if(!_gettingUp&&Time.time>=_fallUntil)
@@ -102,16 +97,12 @@ namespace CheatOnYourDayOnes.World
                     _fallMotionTracking=false;
                     PlayState(_rearImpact?FallRearHash:FallHash,.03f);
                 }
-                else if(_gettingUp&&Time.time>=_getUpUntil)
-                {
-                    FinishGettingUp();
-                }
+                else if(_gettingUp&&Time.time>=_getUpUntil)FinishGettingUp();
                 return;
             }
 
             FindDangerousCar();
             Vector3 move=Vector3.zero;
-
             if(_dangerCar!=null)
             {
                 Vector3 away=transform.position-_dangerCar.transform.position;
@@ -152,8 +143,6 @@ namespace CheatOnYourDayOnes.World
         {
             if(!IsDown||_mainSkinnedMesh==null)return;
 
-            // 1) Let the Fall animation keep its authored horizontal displacement.
-            // We track where the visible body actually lands so GettingUp happens there.
             Bounds body=_mainSkinnedMesh.bounds;
             if(!_gettingUp)
             {
@@ -166,33 +155,37 @@ namespace CheatOnYourDayOnes.World
                 {
                     Vector3 travel=body.center-_fallBodyStartCenter;
                     travel.y=0f;
-                    if(travel.magnitude>maxAnimationFallTravel)
-                        travel=travel.normalized*maxAnimationFallTravel;
-
+                    if(travel.magnitude>maxAnimationFallTravel)travel=travel.normalized*maxAnimationFallTravel;
                     _impactAnchor.x=_fallOriginAnchor.x+travel.x;
                     _impactAnchor.z=_fallOriginAnchor.z+travel.z;
                 }
             }
 
-            // 2) Resolve real ground contact AFTER Animator evaluation for Fall, lying and GettingUp.
-            // The vehicle is explicitly ignored as support. The lowest point of the actual character
-            // mesh is constrained to the world surface, so the body cannot hover or sink through it.
             ResolveBodyGroundContact();
         }
 
         private void ResolveBodyGroundContact()
         {
+            if(_mainSkinnedMesh==null)return;
+
             Vector3 ground=FindGroundPoint(_impactAnchor);
             Bounds body=_mainSkinnedMesh.bounds;
-            float wantedBottomY=ground.y+bodyGroundClearance;
-            float correction=wantedBottomY-body.min.y;
 
-            // Because this runs once after animation, there is no competing pelvis/root correction.
-            // Positive correction lifts penetration; negative correction removes animation-authored lift.
-            if(Mathf.Abs(correction)<=3f)
-                transform.position+=Vector3.up*correction;
+            // Absolute solve, not an additive correction loop:
+            // current body bottom relative to NPC root tells us exactly where root Y must be
+            // so the visible body bottom sits on the real world ground.
+            float bottomOffsetFromRoot=body.min.y-transform.position.y;
+            float targetRootY=(ground.y+bodyGroundClearance)-bottomOffsetFromRoot;
 
-            // Keep the logical landing height synced to the actual terrain, never to the car.
+            Vector3 p=transform.position;
+            if(_gettingUp)
+            {
+                p.x=_impactAnchor.x;
+                p.z=_impactAnchor.z;
+            }
+            p.y=targetRootY;
+            transform.position=p;
+
             _impactAnchor.y=ground.y;
         }
 
@@ -201,9 +194,9 @@ namespace CheatOnYourDayOnes.World
             foreach(DriveableCar car in Object.FindObjectsByType<DriveableCar>(FindObjectsSortMode.None))
             {
                 if(car==null)continue;
-                Vector3 delta=car.transform.position-_impactAnchor;
-                delta.y=0f;
-                if(delta.sqrMagnitude<=carClearanceBeforeGetUp*carClearanceBeforeGetUp)return true;
+                Vector3 d=car.transform.position-_impactAnchor;
+                d.y=0f;
+                if(d.sqrMagnitude<=carClearanceBeforeGetUp*carClearanceBeforeGetUp)return true;
             }
             return false;
         }
@@ -231,12 +224,10 @@ namespace CheatOnYourDayOnes.World
 
         private Vector3 FindGroundPoint(Vector3 desired)
         {
-            // Cast from high above the requested X/Z. Only upward-facing static/world surfaces count.
-            // DriveableCar is NEVER accepted as floor/support.
             Vector3 origin=new Vector3(desired.x,desired.y+groundRayHeight,desired.z);
             RaycastHit[] hits=Physics.RaycastAll(origin,Vector3.down,groundRayDistance,~0,QueryTriggerInteraction.Ignore);
             bool found=false;
-            float y=float.NegativeInfinity;
+            float bestY=float.NegativeInfinity;
 
             foreach(RaycastHit hit in hits)
             {
@@ -244,31 +235,28 @@ namespace CheatOnYourDayOnes.World
                 if(hit.normal.y<.55f)continue;
                 if(hit.collider.GetComponentInParent<DriveableCar>()!=null)continue;
                 if(hit.collider.GetComponentInParent<NPCWanderer>()!=null)continue;
-                if(!found||hit.point.y>y){y=hit.point.y;found=true;}
+                if(!found||hit.point.y>bestY){bestY=hit.point.y;found=true;}
             }
 
-            if(found)desired.y=y;
+            if(found)desired.y=bestY;
             return desired;
         }
 
         private void StartGettingUp()
         {
             Vector3 ground=FindGroundPoint(_impactAnchor);
-            transform.position=new Vector3(_impactAnchor.x,transform.position.y,_impactAnchor.z);
             _impactAnchor.y=ground.y;
             _gettingUp=true;
             _fallMotionTracking=false;
             _getUpUntil=Time.time+getUpSeconds;
-
             int state=_rearImpact?GettingUpRearHash:GettingUpHash;
             bool ok=PlayState(state,.03f);
             if(!ok&&_rearImpact)ok=PlayState(GettingUpHash,.03f);
-            Debug.Log($"[CYDOY] NPC GETTING UP GROUNDED: {name} pos={_impactAnchor} rear={_rearImpact} animation={ok}",this);
+            Debug.Log($"[CYDOY] NPC GETTING UP ABSOLUTE-GROUNDED: {name} pos={_impactAnchor} animation={ok}",this);
         }
 
         private void FinishGettingUp()
         {
-            // Final animation frame is grounded before collisions return.
             ResolveBodyGroundContact();
             _gettingUp=false;
             _fallUntil=0f;
@@ -329,11 +317,17 @@ namespace CheatOnYourDayOnes.World
 
             DisablePhysicalCollision();
 
+            // Put the gameplay root on terrain immediately. LateUpdate then applies the exact
+            // mesh-relative solve after the Fall pose has been evaluated.
+            Vector3 p=transform.position;
+            p.y=_impactAnchor.y;
+            transform.position=p;
+
             int state=_rearImpact?FallRearHash:FallHash;
             bool ok=PlayState(state,0f);
             if(!ok&&_rearImpact)ok=PlayState(FallHash,0f);
 
-            Debug.Log($"[CYDOY] NPC PHYSICAL FALL: {name} hit={_fallOriginAnchor} speed={speed:F2} animation={ok}",this);
+            Debug.Log($"[CYDOY] NPC HARD ABSOLUTE GROUND: {name} groundY={_impactAnchor.y:F3} rootY={transform.position.y:F3} speed={speed:F2} animation={ok}",this);
             return true;
         }
 
