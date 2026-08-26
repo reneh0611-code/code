@@ -17,6 +17,8 @@ namespace CheatOnYourDayOnes.EditorTools
         private const string JumpPath = "Assets/Models/Animations/Jump.fbx";
         private const string FallPath = "Assets/Models/Animations/Fall.fbx";
         private const string GettingUpPath = "Assets/Models/Animations/GettingUp.fbx";
+        private const string FallRearPath = "Assets/Models/Animations/FallRear.fbx";
+        private const string GettingUpRearPath = "Assets/Models/Animations/GettingUpRear.fbx";
         private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
         private const string ControllerPath = "Assets/Resources/Tripo_Locomotion_ExactGeneric.controller";
 
@@ -28,14 +30,20 @@ namespace CheatOnYourDayOnes.EditorTools
             bool hasJump = AssetDatabase.LoadMainAssetAtPath(JumpPath) != null;
             bool hasFall = AssetDatabase.LoadMainAssetAtPath(FallPath) != null;
             bool hasGettingUp = AssetDatabase.LoadMainAssetAtPath(GettingUpPath) != null;
+            bool hasFallRear = AssetDatabase.LoadMainAssetAtPath(FallRearPath) != null;
+            bool hasGettingUpRear = AssetDatabase.LoadMainAssetAtPath(GettingUpRearPath) != null;
             if (hasJump) SetGeneric(JumpPath, false);
             if (hasFall) SetGeneric(FallPath, false);
             if (hasGettingUp) SetGeneric(GettingUpPath, false);
+            if (hasFallRear) SetGeneric(FallRearPath, false);
+            if (hasGettingUpRear) SetGeneric(GettingUpRearPath, false);
 
             AnimationClip idle = FindClip(IdlePath), walk = FindClip(WalkPath), run = FindClip(RunPath);
             AnimationClip jump = hasJump ? FindClip(JumpPath) : null;
             AnimationClip fall = hasFall ? FindClip(FallPath) : null;
             AnimationClip gettingUp = hasGettingUp ? FindClip(GettingUpPath) : null;
+            AnimationClip fallRear = hasFallRear ? FindClip(FallRearPath) : null;
+            AnimationClip gettingUpRear = hasGettingUpRear ? FindClip(GettingUpRearPath) : null;
             if (idle == null || walk == null || run == null) { EditorUtility.DisplayDialog("CYDOY", "Missing Idle, Walk or Run animation clip.", "OK"); return; }
 
             EnsureResourcesFolder();
@@ -47,13 +55,15 @@ namespace CheatOnYourDayOnes.EditorTools
             if (jump != null) { AnimatorState j = sm.AddState("Jump"); j.motion = jump; j.speed = 1f; }
             if (fall != null) { AnimatorState f = sm.AddState("Fall"); f.motion = fall; f.speed = 1f; }
             if (gettingUp != null) { AnimatorState g = sm.AddState("GettingUp"); g.motion = gettingUp; g.speed = 1f; }
+            if (fallRear != null) { AnimatorState fr = sm.AddState("FallRear"); fr.motion = fallRear; fr.speed = 1f; }
+            if (gettingUpRear != null) { AnimatorState gr = sm.AddState("GettingUpRear"); gr.motion = gettingUpRear; gr.speed = 1f; }
 
             InstallOnPlayer(controller);
             InstallOnExistingNpcs(controller);
             AssetDatabase.SaveAssets(); AssetDatabase.Refresh();
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene()); EditorSceneManager.SaveOpenScenes();
 
-            string status = $"Jump: {(jump != null ? "OK" : "missing")}\nFall: {(fall != null ? "OK" : "missing")}\nGettingUp: {(gettingUp != null ? "OK" : "missing")}";
+            string status = $"Jump: {(jump != null ? "OK" : "missing")}\nFall: {(fall != null ? "OK" : "missing")}\nGettingUp: {(gettingUp != null ? "OK" : "missing")}\nFallRear: {(fallRear != null ? "OK" : "missing")}\nGettingUpRear: {(gettingUpRear != null ? "OK" : "missing")}";
             EditorUtility.DisplayDialog("CYDOY", "Exact Generic animations installed.\n\n" + status, "Test it");
         }
 
@@ -92,7 +102,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 if (animator == null) continue;
                 animator.runtimeAnimatorController = controller; animator.avatar = null; animator.applyRootMotion = false; animator.cullingMode = AnimatorCullingMode.AlwaysAnimate; animator.enabled = true; wanderer.enabled = true; fixedCount++;
             }
-            Debug.Log($"[CYDOY] Prepared {fixedCount} existing NPCs with Fall/GettingUp support.");
+            Debug.Log($"[CYDOY] Prepared {fixedCount} existing NPCs with front/rear fall support.");
         }
 
         private static bool SetGeneric(string path, bool loop)
