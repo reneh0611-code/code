@@ -19,30 +19,35 @@ namespace CheatOnYourDayOnes.EditorTools
             {
                 GameObject npc = wanderer.gameObject;
 
-                // Remove previous visual/world grounders so they cannot fight this solution.
                 foreach (FixedWorldVisualGrounder old in npc.GetComponentsInChildren<FixedWorldVisualGrounder>(true))
                     Object.DestroyImmediate(old);
+
+                NPCRootGroundSnapper rootSnapper = npc.GetComponent<NPCRootGroundSnapper>();
+                if (rootSnapper == null)
+                    rootSnapper = npc.AddComponent<NPCRootGroundSnapper>();
+                rootSnapper.enabled = true;
 
                 Transform visualRoot = FindVisualRoot(npc.transform);
                 if (visualRoot == null)
                     continue;
 
-                NPCVisualControllerGrounder grounder = npc.GetComponent<NPCVisualControllerGrounder>();
-                if (grounder == null)
-                    grounder = npc.AddComponent<NPCVisualControllerGrounder>();
+                NPCVisualControllerGrounder visualGrounder = npc.GetComponent<NPCVisualControllerGrounder>();
+                if (visualGrounder == null)
+                    visualGrounder = npc.AddComponent<NPCVisualControllerGrounder>();
 
-                grounder.Configure(visualRoot, 0f);
-                grounder.enabled = true;
+                // Runs after the root snapper settles; visual is then aligned to the correctly grounded capsule.
+                visualGrounder.Configure(visualRoot, 0f);
+                visualGrounder.enabled = true;
                 count++;
             }
 
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             EditorSceneManager.SaveOpenScenes();
 
-            Debug.Log($"[CYDOY] Installed controller-bottom grounding on {count} NPCs.");
+            Debug.Log($"[CYDOY] Installed ROOT + VISUAL grounding on {count} NPCs.");
             EditorUtility.DisplayDialog(
                 "CYDOY · NPC Grounding",
-                $"Prepared {count} NPCs.\n\nThis fix does NOT raycast or edit animation. It waits for each CharacterController to stand on the ground, then aligns the visible shoe-bottom exactly to the controller bottom once.",
+                $"Prepared {count} NPCs.\n\nEach NPC now does two steps at runtime:\n1) snap the CharacterController root to the real horizontal road/sidewalk surface\n2) align the visible shoe-bottom to that grounded controller\n\nWalls/roofs/building surfaces are ignored. Animations are untouched.",
                 "Play to test");
         }
 
