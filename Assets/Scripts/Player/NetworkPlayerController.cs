@@ -1,4 +1,5 @@
 using CheatOnYourDayOnes.CameraSystem;
+using CheatOnYourDayOnes.Vehicles;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -38,11 +39,19 @@ namespace CheatOnYourDayOnes.Player
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
 
-        private void Awake() { _controller = GetComponent<CharacterController>(); }
+        private void Awake()
+        {
+            _controller = GetComponent<CharacterController>();
+            if (GetComponent<VehicleInteractor>() == null)
+                gameObject.AddComponent<VehicleInteractor>();
+        }
 
         public override void OnNetworkSpawn()
         {
             bool local = IsOwner;
+            VehicleInteractor vehicleInteractor = GetComponent<VehicleInteractor>();
+            if (vehicleInteractor != null) vehicleInteractor.enabled = local;
+
             if (playerCamera != null)
             {
                 playerCamera.gameObject.SetActive(local);
