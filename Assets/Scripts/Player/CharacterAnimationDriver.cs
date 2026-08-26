@@ -13,13 +13,17 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private float idleWalkBlend = 0.10f;
         [SerializeField] private float walkRunBlend = 0.08f;
         [SerializeField] private float idleRunBlend = 0.10f;
+        [SerializeField] private float jumpBlend = 0.06f;
+        [SerializeField] private float landBlend = 0.10f;
 
         private static readonly int IdleHash = Animator.StringToHash("Base Layer.Idle");
         private static readonly int WalkHash = Animator.StringToHash("Base Layer.Walk");
         private static readonly int RunHash = Animator.StringToHash("Base Layer.Run");
+        private static readonly int JumpHash = Animator.StringToHash("Base Layer.Jump");
 
         private int _currentState = -1;
         private bool _ready;
+        private bool _jumpStateExists;
 
         private void Awake()
         {
@@ -27,10 +31,10 @@ namespace CheatOnYourDayOnes.Player
                 characterController = GetComponent<CharacterController>();
 
             if (animator == null)
-                animator = FindAjAnimator();
+                animator = FindAnimator();
 
             if (fallbackController == null)
-                fallbackController = Resources.Load<RuntimeAnimatorController>("AJ_Locomotion");
+                fallbackController = Resources.Load<RuntimeAnimatorController>("Tripo_Locomotion_ExactGeneric");
 
             if (animator != null && animator.runtimeAnimatorController == null && fallbackController != null)
                 animator.runtimeAnimatorController = fallbackController;
@@ -42,22 +46,16 @@ namespace CheatOnYourDayOnes.Player
         {
             if (animator == null)
             {
-                Debug.LogError("[CYDOY] CharacterAnimationDriver: AJ Animator not found.", this);
+                Debug.LogError("[CYDOY] CharacterAnimationDriver: Animator not found.", this);
                 return;
             }
 
-            if (animator.runtimeAnimatorController == null)
-            {
-                if (fallbackController == null)
-                    fallbackController = Resources.Load<RuntimeAnimatorController>("AJ_Locomotion");
-
-                if (fallbackController != null)
-                    animator.runtimeAnimatorController = fallbackController;
-            }
+            if (animator.runtimeAnimatorController == null && fallbackController != null)
+                animator.runtimeAnimatorController = fallbackController;
 
             if (animator.runtimeAnimatorController == null)
             {
-                Debug.LogError("[CYDOY] CharacterAnimationDriver: AJ has no RuntimeAnimatorController.", animator);
+                Debug.LogError("[CYDOY] CharacterAnimationDriver: no RuntimeAnimatorController.", animator);
                 return;
             }
 
@@ -68,10 +66,11 @@ namespace CheatOnYourDayOnes.Player
             bool idleExists = animator.HasState(0, IdleHash);
             bool walkExists = animator.HasState(0, WalkHash);
             bool runExists = animator.HasState(0, RunHash);
+            _jumpStateExists = animator.HasState(0, JumpHash);
 
             if (!idleExists || !walkExists || !runExists)
             {
-                Debug.LogError("[CYDOY] AJ AnimatorController is missing Idle, Walk or Run.", animator);
+                Debug.LogError("[CYDOY] AnimatorController is missing Idle, Walk or Run.", animator);
                 return;
             }
 
@@ -85,6 +84,13 @@ namespace CheatOnYourDayOnes.Player
             if (!_ready || animator == null || characterController == null)
                 return;
 
+            if (_jumpStateExists && !characterController.isGrounded)
+            {
+                if (_currentState != JumpHash)
+                    BlendToState(JumpHash, jumpBlend);
+                return;
+            }
+
             Vector3 planarVelocity = characterController.velocity;
             planarVelocity.y = 0f;
             float speed = planarVelocity.magnitude;
@@ -96,18 +102,18 @@ namespace CheatOnYourDayOnes.Player
                     : RunHash;
 
             if (wantedState != _currentState)
-                BlendToState(wantedState);
+            {
+                float blend = _currentState == JumpHash ? landBlend : GetBlendDuration(_currentState, wantedState);
+                BlendToState(wantedState, blend);
+            }
         }
 
-        private void BlendToState(int targetState)
+        private void BlendToState(int targetState, float blendDuration)
         {
             if (animator == null || !animator.HasState(0, targetState))
                 return;
 
             animator.speed = 1f;
-
-            float blendDuration = GetBlendDuration(_currentState, targetState);
-
             if (blendDuration <= 0.001f || _currentState == -1)
                 animator.Play(targetState, 0, 0f);
             else
@@ -118,55 +124,27 @@ namespace CheatOnYourDayOnes.Player
 
         private float GetBlendDuration(int from, int to)
         {
-            bool idleWalk =
-                (from == IdleHash && to == WalkHash) ||
-                (from == WalkHash && to == IdleHash);
+            bool idleWalk = (from == IdleHash && to == WalkHash) || (from == WalkHash && to == IdleHash);
+            if (idleWalk) return idleWalkBlend;
 
-            if (idleWalk)
-                return idleWalkBlend;
+            bool walkRun = (from == WalkHash && to == RunHash) || (from == RunHash && to == WalkHash);
+            if (walkRun) return walkRunBlend;
 
-            bool walkRun =
-                (from == WalkHash && to == RunHash) ||
-                (from == RunHash && to == WalkHash);
-
-            if (walkRun)
-                return walkRunBlend;
-
-            bool idleRun =
-                (from == IdleHash && to == RunHash) ||
-                (from == RunHash && to == IdleHash);
-
-            if (idleRun)
-                return idleRunBlend;
+            bool idleRun = (from == IdleHash && to == RunHash) || (from == RunHash && to == IdleHash);
+            if (idleRun) return idleRunBlend;
 
             return 0f;
         }
 
-        private Animator FindAjAnimator()
+        private Animator FindAnimator()
         {
             Animator[] animators = GetComponentsInChildren<Animator>(true);
-            foreach (Animator candidate in animators)
-            {
-                if (candidate == null)
-                    continue;
-
-                Transform t = candidate.transform;
-                while (t != null && t != transform)
-                {
-                    if (t.name == "Mixamo_AJ")
-                        return candidate;
-                    t = t.parent;
-                }
-            }
-
             return animators.Length > 0 ? animators[0] : null;
         }
 
         private void ConfigureAnimator()
         {
-            if (animator == null)
-                return;
-
+            if (animator == null) return;
             animator.enabled = true;
             animator.speed = 1f;
             animator.applyRootMotion = false;
