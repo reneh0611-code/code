@@ -10,7 +10,7 @@ namespace CheatOnYourDayOnes.Player
     public sealed class NetworkPlayerController : NetworkBehaviour
     {
         [Header("Movement")]
-        [SerializeField, Min(0.1f)] private float walkSpeed = 3.7f;
+        [SerializeField, Min(0.1f)] private float walkSpeed = 3.2f;
         [SerializeField, Min(0.1f)] private float sprintSpeed = 6.8f;
         [SerializeField, Min(0.1f)] private float acceleration = 18f;
         [SerializeField, Min(0.1f)] private float deceleration = 22f;
@@ -38,10 +38,7 @@ namespace CheatOnYourDayOnes.Player
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
 
-        private void Awake()
-        {
-            _controller = GetComponent<CharacterController>();
-        }
+        private void Awake() { _controller = GetComponent<CharacterController>(); }
 
         public override void OnNetworkSpawn()
         {
@@ -50,29 +47,13 @@ namespace CheatOnYourDayOnes.Player
             {
                 playerCamera.gameObject.SetActive(local);
                 _thirdPersonCamera = playerCamera.GetComponent<ThirdPersonCamera>();
-                if (_thirdPersonCamera == null)
-                    _thirdPersonCamera = playerCamera.GetComponentInParent<ThirdPersonCamera>();
-                if (_thirdPersonCamera == null)
-                    _thirdPersonCamera = playerCamera.GetComponentInChildren<ThirdPersonCamera>(true);
-
-                if (local && _thirdPersonCamera != null)
-                    _thirdPersonCamera.SetTarget(transform);
+                if (_thirdPersonCamera == null) _thirdPersonCamera = playerCamera.GetComponentInParent<ThirdPersonCamera>();
+                if (_thirdPersonCamera == null) _thirdPersonCamera = playerCamera.GetComponentInChildren<ThirdPersonCamera>(true);
+                if (local && _thirdPersonCamera != null) _thirdPersonCamera.SetTarget(transform);
             }
-
-            if (audioListener != null)
-                audioListener.enabled = local;
-
-            if (local)
-            {
-                Cursor.lockState = CursorLockMode.Locked;
-                Cursor.visible = false;
-            }
-
-            if (IsServer)
-            {
-                _serverPosition.Value = transform.position;
-                _serverRotation.Value = transform.rotation;
-            }
+            if (audioListener != null) audioListener.enabled = local;
+            if (local) { Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false; }
+            if (IsServer) { _serverPosition.Value = transform.position; _serverRotation.Value = transform.rotation; }
         }
 
         private void OnApplicationFocus(bool hasFocus)
@@ -84,19 +65,13 @@ namespace CheatOnYourDayOnes.Player
 
         private void Update()
         {
-            if (!IsSpawned || NetworkManager == null || !NetworkManager.IsListening)
-                return;
-
+            if (!IsSpawned || NetworkManager == null || !NetworkManager.IsListening) return;
             if (IsOwner)
             {
                 ReadMovementInput();
-                float lookYaw = GetLookYaw();
-                SendMovementInputRpc(_moveInput, _sprintInput, lookYaw);
-
-                if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
-                    RequestJumpRpc();
+                SendMovementInputRpc(_moveInput, _sprintInput, GetLookYaw());
+                if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame) RequestJumpRpc();
             }
-
             if (!IsServer)
             {
                 transform.position = Vector3.Lerp(transform.position, _serverPosition.Value, 20f * Time.deltaTime);
@@ -106,73 +81,46 @@ namespace CheatOnYourDayOnes.Player
 
         private void FixedUpdate()
         {
-            if (!IsServer || !IsSpawned || NetworkManager == null || !NetworkManager.IsListening)
-                return;
-
+            if (!IsServer || !IsSpawned || NetworkManager == null || !NetworkManager.IsListening) return;
             _serverPosition.Value = transform.position;
             _serverRotation.Value = transform.rotation;
         }
 
         private void ReadMovementInput()
         {
-            if (Keyboard.current == null)
-            {
-                _moveInput = Vector2.zero;
-                _sprintInput = false;
-                return;
-            }
-
-            float x = 0f;
-            float y = 0f;
+            if (Keyboard.current == null) { _moveInput = Vector2.zero; _sprintInput = false; return; }
+            float x = 0f, y = 0f;
             if (Keyboard.current.aKey.isPressed) x -= 1f;
             if (Keyboard.current.dKey.isPressed) x += 1f;
             if (Keyboard.current.sKey.isPressed) y -= 1f;
             if (Keyboard.current.wKey.isPressed) y += 1f;
-
             _moveInput = Vector2.ClampMagnitude(new Vector2(x, y), 1f);
             _sprintInput = Keyboard.current.leftShiftKey.isPressed;
         }
 
         private float GetLookYaw()
         {
-            if (_thirdPersonCamera != null)
-                return _thirdPersonCamera.CurrentYaw;
-            if (playerCamera != null)
-                return playerCamera.transform.eulerAngles.y;
+            if (_thirdPersonCamera != null) return _thirdPersonCamera.CurrentYaw;
+            if (playerCamera != null) return playerCamera.transform.eulerAngles.y;
             return transform.eulerAngles.y;
         }
 
         [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
         private void SendMovementInputRpc(Vector2 input, bool sprint, float cameraYaw)
         {
-            if (!IsServer || NetworkManager == null || !NetworkManager.IsListening)
-                return;
-
+            if (!IsServer || NetworkManager == null || !NetworkManager.IsListening) return;
             input = Vector2.ClampMagnitude(input, 1f);
             Quaternion yawRotation = Quaternion.Euler(0f, cameraYaw, 0f);
             Vector3 desiredDirection = yawRotation * new Vector3(input.x, 0f, input.y);
             float maxSpeed = sprint ? sprintSpeed : walkSpeed;
             Vector3 desiredVelocity = desiredDirection * maxSpeed;
-
             float rate = desiredVelocity.sqrMagnitude > 0.001f ? acceleration : deceleration;
             _serverPlanarVelocity = Vector3.MoveTowards(_serverPlanarVelocity, desiredVelocity, rate * Time.deltaTime);
-
-            if (_controller.isGrounded && _verticalVelocity < 0f)
-                _verticalVelocity = -2f;
-            else
-                _verticalVelocity += gravity * Time.deltaTime;
-
-            Vector3 velocity = _serverPlanarVelocity;
-            velocity.y = _verticalVelocity;
+            if (_controller.isGrounded && _verticalVelocity < 0f) _verticalVelocity = -2f;
+            else _verticalVelocity += gravity * Time.deltaTime;
+            Vector3 velocity = _serverPlanarVelocity; velocity.y = _verticalVelocity;
             _controller.Move(velocity * Time.deltaTime);
-
-            // Always follow the horizontal camera direction, even while standing still.
-            // Slerp keeps the body turn natural instead of snapping instantly.
-            transform.rotation = Quaternion.Slerp(
-                transform.rotation,
-                yawRotation,
-                rotationSpeed * Time.deltaTime);
-
+            transform.rotation = Quaternion.Slerp(transform.rotation, yawRotation, rotationSpeed * Time.deltaTime);
             _serverPosition.Value = transform.position;
             _serverRotation.Value = transform.rotation;
         }
@@ -180,9 +128,7 @@ namespace CheatOnYourDayOnes.Player
         [Rpc(SendTo.Server)]
         private void RequestJumpRpc()
         {
-            if (!IsServer || !_controller.isGrounded)
-                return;
-
+            if (!IsServer || !_controller.isGrounded) return;
             _verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
         }
     }
