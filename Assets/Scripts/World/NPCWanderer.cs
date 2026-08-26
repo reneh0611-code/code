@@ -35,9 +35,8 @@ namespace CheatOnYourDayOnes.World
         private bool _walking,_running,_gettingUp,_rearImpact;
         private DriveableCar _dangerCar;
 
-        private Transform _visualRoot;
-        private Vector3 _visualBaseLocalPosition;
         private SkinnedMeshRenderer _mainSkinnedMesh;
+        private Transform _skeletonRootBone;
         private bool _visualCached;
 
         public bool IsDown=>_fallUntil>0f||_gettingUp;
@@ -54,8 +53,6 @@ namespace CheatOnYourDayOnes.World
         {
             if(animator==null)return;
             animator.applyRootMotion=false;
-            _visualRoot=animator.transform;
-            _visualBaseLocalPosition=_visualRoot.localPosition;
 
             SkinnedMeshRenderer[] skins=animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
             float bestVolume=-1f;
@@ -64,12 +61,22 @@ namespace CheatOnYourDayOnes.World
                 if(skin==null)continue;
                 Vector3 s=skin.bounds.size;
                 float volume=Mathf.Abs(s.x*s.y*s.z);
-                if(volume>bestVolume){bestVolume=volume;_mainSkinnedMesh=skin;}
+                if(volume>bestVolume)
+                {
+                    bestVolume=volume;
+                    _mainSkinnedMesh=skin;
+                }
             }
 
-            _visualCached=_visualRoot!=null&&_mainSkinnedMesh!=null;
-            if(_visualCached)
-                Debug.Log($"[CYDOY] NPC visual anchor: {name} mainMesh={_mainSkinnedMesh.name}",this);
+            _skeletonRootBone=_mainSkinnedMesh!=null?_mainSkinnedMesh.rootBone:null;
+            if(_skeletonRootBone==null&&animator!=null)
+            {
+                Transform hips=animator.GetBoneTransform(HumanBodyBones.Hips);
+                if(hips!=null)_skeletonRootBone=hips;
+            }
+
+            _visualCached=_mainSkinnedMesh!=null&&_skeletonRootBone!=null;
+            Debug.Log($"[CYDOY] NPC skeleton anchor: {name} mesh={(_mainSkinnedMesh!=null?_mainSkinnedMesh.name:"NONE")} rootBone={(_skeletonRootBone!=null?_skeletonRootBone.name:"NONE")} animatorOnRoot={(animator!=null&&animator.transform==transform)}",this);
         }
 
         private void Start(){_home=transform.position;Pause(Random.Range(.4f,2.5f));}
@@ -87,7 +94,6 @@ namespace CheatOnYourDayOnes.World
                     _gettingUp=false;
                     _fallUntil=0f;
                     if(_controller!=null)_controller.detectCollisions=true;
-                    RestoreVisualRoot();
                     PlayState(IdleHash,.08f);
                     Pause(Random.Range(.15f,.45f));
                 }
@@ -136,7 +142,7 @@ namespace CheatOnYourDayOnes.World
         private void LateUpdate()
         {
             if(!IsDown)return;
-            AnchorAnimatedBodyToRoad();
+            AnchorSkeletonToRoad();
         }
 
         private void HoldImpactRoot()
@@ -151,41 +157,23 @@ namespace CheatOnYourDayOnes.World
             _verticalVelocity=0f;
         }
 
-        private void AnchorAnimatedBodyToRoad()
+        private void AnchorSkeletonToRoad()
         {
             if(!_visualCached)CacheVisual();
-            if(!_visualCached||_visualRoot==transform)return;
+            if(!_visualCached)return;
 
             Vector3 ground=FindGroundPoint(_impactAnchor);
-
-            // First neutralize translation authored on the imported model root.
-            Vector3 lp=_visualRoot.localPosition;
-            lp.x=_visualBaseLocalPosition.x;
-            lp.z=_visualBaseLocalPosition.z;
-            _visualRoot.localPosition=lp;
-
-            // Then compensate what the actual animated skeleton did. Using the largest skinned mesh
-            // avoids accessories or stray renderers fooling the grounding calculation.
             Bounds body=_mainSkinnedMesh.bounds;
-            Vector3 bodyCenter=body.center;
 
-            Vector3 horizontalCorrection=new Vector3(
-                ground.x-bodyCenter.x,
+            Vector3 correction=new Vector3(
+                ground.x-body.center.x,
                 0f,
-                ground.z-bodyCenter.z);
-            _visualRoot.position+=horizontalCorrection;
+                ground.z-body.center.z);
+            _skeletonRootBone.position+=correction;
 
-            // Bounds changed after the horizontal move; read them again before vertical grounding.
             body=_mainSkinnedMesh.bounds;
             float targetBottom=ground.y+downGroundOffset;
-            float verticalCorrection=targetBottom-body.min.y;
-            _visualRoot.position+=Vector3.up*verticalCorrection;
-        }
-
-        private void RestoreVisualRoot()
-        {
-            if(!_visualCached)CacheVisual();
-            if(_visualRoot!=null&&_visualRoot!=transform)_visualRoot.localPosition=_visualBaseLocalPosition;
+            _skeletonRootBone.position+=Vector3.up*(targetBottom-body.min.y);
         }
 
         private Vector3 FindGroundPoint(Vector3 desired)
