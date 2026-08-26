@@ -9,23 +9,46 @@ namespace CheatOnYourDayOnes.EditorTools
 {
     public static class NPCWorldPopulator
     {
-        private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
         private const string ControllerPath = "Assets/Resources/AJ_Locomotion.controller";
         private const string RootName = "Generated_NPCs";
+
+        private static readonly string[] CharacterPrefabPaths =
+        {
+            "Assets/LuceedStudio/Character Lab/Little Guys/Little Guys - Free Sample/Woman/Free Woman/Free Woman.prefab",
+            "Assets/LuceedStudio/Character Lab/Little Guys/Little Guys - Free Sample/Woman/Free Woman/Free Woman Tall.prefab",
+            "Assets/LuceedStudio/Character Lab/Little Guys/Little Guys - Free Sample/Man/Free Man/Free Man.prefab",
+            "Assets/LuceedStudio/Character Lab/Little Guys/Little Guys - Free Sample/Man/Free Man/Free Man Tall.prefab"
+        };
 
         [MenuItem("Tools/CYDOY/Populate World With NPCs")]
         public static void Populate()
         {
-            GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
             RuntimeAnimatorController controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(ControllerPath);
+            List<GameObject> characterPrefabs = new();
 
-            Transform sourceAj = playerPrefab != null ? FindRecursive(playerPrefab.transform, "Mixamo_AJ") : null;
+            foreach (string path in CharacterPrefabPaths)
+            {
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab != null)
+                    characterPrefabs.Add(prefab);
+                else
+                    Debug.LogWarning("[CYDOY] NPC prefab missing: " + path);
+            }
 
-            if (sourceAj == null || controller == null)
+            if (characterPrefabs.Count == 0)
             {
                 EditorUtility.DisplayDialog(
                     "CYDOY · NPCs",
-                    "The textured Mixamo_AJ inside Player.prefab or AJ_Locomotion.controller is missing.",
+                    "None of the Little Guys character prefabs could be found. Make sure the Free Sample pack is imported.",
+                    "OK");
+                return;
+            }
+
+            if (controller == null)
+            {
+                EditorUtility.DisplayDialog(
+                    "CYDOY · NPCs",
+                    "AJ_Locomotion.controller is missing.",
                     "OK");
                 return;
             }
@@ -37,12 +60,11 @@ namespace CheatOnYourDayOnes.EditorTools
             GameObject root = new(RootName);
             Undo.RegisterCreatedObjectUndo(root, "Populate NPCs");
 
-            const int targetCount = 7;
+            const int targetCount = 8;
             List<Vector3> used = new();
             int created = 0;
-            int children = 0;
 
-            for (int attempt = 0; attempt < 160 && created < targetCount; attempt++)
+            for (int attempt = 0; attempt < 200 && created < targetCount; attempt++)
             {
                 Vector2 circle = Random.insideUnitCircle * 30f;
                 if (circle.magnitude < 8f)
@@ -52,8 +74,8 @@ namespace CheatOnYourDayOnes.EditorTools
                 if (!Physics.Raycast(rayOrigin, Vector3.down, out RaycastHit hit, 100f, ~0, QueryTriggerInteraction.Ignore))
                     continue;
 
-                string n = hit.collider != null ? hit.collider.name.ToLowerInvariant() : string.Empty;
-                if (n.Contains("roof") || n.Contains("wall") || n.Contains("building"))
+                string hitName = hit.collider != null ? hit.collider.name.ToLowerInvariant() : string.Empty;
+                if (hitName.Contains("roof") || hitName.Contains("wall") || hitName.Contains("building"))
                     continue;
 
                 bool tooClose = false;
@@ -68,25 +90,20 @@ namespace CheatOnYourDayOnes.EditorTools
                 if (tooClose)
                     continue;
 
-                bool isChild = children < 2 && created >= 2 && Random.value < 0.25f;
-                float scale = isChild ? Random.Range(0.60f, 0.72f) : Random.Range(0.92f, 1.07f);
+                GameObject sourcePrefab = characterPrefabs[Random.Range(0, characterPrefabs.Count)];
+                GameObject npc = PrefabUtility.InstantiatePrefab(sourcePrefab) as GameObject;
+                if (npc == null)
+                    npc = Object.Instantiate(sourcePrefab);
 
-                // Clone ONLY the already-working AJ visual child from Player.prefab.
-                // This carries AJ's real materials/textures but none of the Player root's
-                // network, camera, UI or movement components.
-                GameObject npc = Object.Instantiate(sourceAj.gameObject);
-                npc.name = isChild ? $"NPC_Child_{created + 1:00}" : $"NPC_Adult_{created + 1:00}";
+                npc.name = $"NPC_{sourcePrefab.name.Replace(" ", "_")}_{created + 1:00}";
                 npc.transform.SetParent(root.transform, true);
                 npc.transform.position = hit.point;
                 npc.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                npc.transform.localScale = sourceAj.localScale * scale;
                 npc.SetActive(true);
 
                 foreach (Collider collider in npc.GetComponentsInChildren<Collider>(true))
                     Object.DestroyImmediate(collider);
 
-                // The source visual may contain renderer states inherited from the prefab.
-                // NPCs should always render every AJ mesh; we never change the Player prefab itself.
                 foreach (SkinnedMeshRenderer renderer in npc.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 {
                     if (renderer != null)
@@ -96,6 +113,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 Animator animator = npc.GetComponentInChildren<Animator>(true);
                 if (animator == null)
                     animator = npc.AddComponent<Animator>();
+
                 animator.runtimeAnimatorController = controller;
                 animator.applyRootMotion = false;
                 animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
@@ -104,25 +122,29 @@ namespace CheatOnYourDayOnes.EditorTools
                 CharacterController cc = npc.GetComponent<CharacterController>();
                 if (cc == null)
                     cc = npc.AddComponent<CharacterController>();
-                cc.height = 1.82f;
-                cc.radius = 0.30f;
-                cc.center = new Vector3(0f, 0.91f, 0f);
-                cc.stepOffset = 0.25f;
+
+                Bounds bounds = GetRendererBounds(npc);
+                float visualHeight = Mathf.Max(1.2f, bounds.size.y);
+                cc.height = visualHeight * 0.92f;
+                cc.radius = Mathf.Clamp(bounds.size.x * 0.32f, 0.22f, 0.38f);
+                cc.center = new Vector3(0f, cc.height * 0.5f, 0f);
+                cc.stepOffset = Mathf.Min(0.25f, cc.height * 0.15f);
                 cc.skinWidth = 0.04f;
 
                 NPCWanderer wander = npc.GetComponent<NPCWanderer>();
                 if (wander == null)
                     wander = npc.AddComponent<NPCWanderer>();
-                wander.Configure(isChild ? Random.Range(0.95f, 1.15f) : Random.Range(1.20f, 1.50f), Random.Range(7f, 12f));
 
-                if (npc.GetComponent<NPCAppearanceRandomizer>() == null)
-                    npc.AddComponent<NPCAppearanceRandomizer>();
+                bool tall = sourcePrefab.name.ToLowerInvariant().Contains("tall");
+                float speed = tall ? Random.Range(1.25f, 1.50f) : Random.Range(1.15f, 1.40f);
+                wander.Configure(speed, Random.Range(7f, 12f));
 
+                // Do NOT add NPCAppearanceRandomizer here. The new character pack owns its
+                // materials/textures, so skin and clothing remain exactly as authored.
                 SnapToGround(npc, hit.point.y);
 
                 used.Add(npc.transform.position);
                 created++;
-                if (isChild) children++;
             }
 
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
@@ -131,7 +153,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.DisplayDialog(
                 "CYDOY · NPCs",
-                $"Placed {created} isolated NPCs using the Player AJ's working textures.\n\nPlayer.prefab, hub, camera and network objects were not modified.",
+                $"Placed {created} Little Guys NPCs using Free Woman, Free Woman Tall, Free Man and Free Man Tall.\n\nPlayer, hub, camera and network objects were not modified.",
                 "OK");
         }
 
@@ -147,19 +169,16 @@ namespace CheatOnYourDayOnes.EditorTools
             EditorSceneManager.SaveOpenScenes();
         }
 
-        private static Transform FindRecursive(Transform root, string targetName)
+        private static Bounds GetRendererBounds(GameObject npc)
         {
-            if (root.name == targetName)
-                return root;
+            Renderer[] renderers = npc.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+                return new Bounds(npc.transform.position + Vector3.up, new Vector3(0.6f, 1.8f, 0.6f));
 
-            for (int i = 0; i < root.childCount; i++)
-            {
-                Transform found = FindRecursive(root.GetChild(i), targetName);
-                if (found != null)
-                    return found;
-            }
-
-            return null;
+            Bounds bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+                bounds.Encapsulate(renderers[i].bounds);
+            return bounds;
         }
 
         private static void SnapToGround(GameObject npc, float groundY)
