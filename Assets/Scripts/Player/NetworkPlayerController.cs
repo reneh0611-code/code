@@ -1,3 +1,4 @@
+using CheatOnYourDayOnes.CameraSystem;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -17,25 +18,17 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private float gravity = -26f;
         [SerializeField, Min(0.1f)] private float jumpHeight = 1.35f;
 
-        [Header("Mouse Look")]
-        [SerializeField, Min(0.01f)] private float mouseSensitivity = 0.12f;
-        [SerializeField] private float minPitch = -35f;
-        [SerializeField] private float maxPitch = 65f;
-        [SerializeField] private bool lockCursor = true;
-
         [Header("Camera")]
         [SerializeField] private Transform cameraTarget;
         [SerializeField] private Camera playerCamera;
         [SerializeField] private AudioListener audioListener;
 
         private CharacterController _controller;
+        private ThirdPersonCamera _thirdPersonCamera;
         private Vector2 _moveInput;
         private bool _sprintInput;
         private float _verticalVelocity;
         private Vector3 _serverPlanarVelocity;
-        private float _lookYaw;
-        private float _lookPitch;
-        private bool _lookInitialized;
 
         private readonly NetworkVariable<Vector3> _serverPosition = new(default,
             NetworkVariableReadPermission.Everyone,
@@ -45,22 +38,34 @@ namespace CheatOnYourDayOnes.Player
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
 
-        private void Awake() => _controller = GetComponent<CharacterController>();
+        private void Awake()
+        {
+            _controller = GetComponent<CharacterController>();
+        }
 
         public override void OnNetworkSpawn()
         {
             bool local = IsOwner;
-            if (playerCamera != null) playerCamera.gameObject.SetActive(local);
-            if (audioListener != null) audioListener.enabled = local;
+            if (playerCamera != null)
+            {
+                playerCamera.gameObject.SetActive(local);
+                _thirdPersonCamera = playerCamera.GetComponent<ThirdPersonCamera>();
+                if (_thirdPersonCamera == null)
+                    _thirdPersonCamera = playerCamera.GetComponentInParent<ThirdPersonCamera>();
+                if (_thirdPersonCamera == null)
+                    _thirdPersonCamera = playerCamera.GetComponentInChildren<ThirdPersonCamera>(true);
+
+                if (local && _thirdPersonCamera != null)
+                    _thirdPersonCamera.SetTarget(transform);
+            }
+
+            if (audioListener != null)
+                audioListener.enabled = local;
 
             if (local)
             {
-                InitializeLook();
-                if (lockCursor)
-                {
-                    Cursor.lockState = CursorLockMode.Locked;
-                    Cursor.visible = false;
-                }
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
             }
 
             if (IsServer)
@@ -72,7 +77,7 @@ namespace CheatOnYourDayOnes.Player
 
         private void OnApplicationFocus(bool hasFocus)
         {
-            if (!IsOwner || !lockCursor) return;
+            if (!IsOwner) return;
             Cursor.lockState = hasFocus ? CursorLockMode.Locked : CursorLockMode.None;
             Cursor.visible = !hasFocus;
         }
@@ -84,11 +89,11 @@ namespace CheatOnYourDayOnes.Player
 
             if (IsOwner)
             {
-                ReadLookInput();
                 ReadMovementInput();
-                SendMovementInputRpc(_moveInput, _sprintInput, _lookYaw);
+                float lookYaw = GetLookYaw();
+                SendMovementInputRpc(_moveInput, _sprintInput, lookYaw);
 
-                if (Keyboard.current != null && Keyboard.current.tabKey.wasPressedThisFrame)
+                if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
                     RequestJumpRpc();
             }
 
@@ -106,35 +111,6 @@ namespace CheatOnYourDayOnes.Player
 
             _serverPosition.Value = transform.position;
             _serverRotation.Value = transform.rotation;
-        }
-
-        private void InitializeLook()
-        {
-            if (_lookInitialized) return;
-            Transform source = playerCamera != null ? playerCamera.transform : transform;
-            Vector3 e = source.eulerAngles;
-            _lookYaw = e.y;
-            _lookPitch = NormalizePitch(e.x);
-            _lookInitialized = true;
-            ApplyCameraTargetRotation();
-        }
-
-        private void ReadLookInput()
-        {
-            InitializeLook();
-            if (Mouse.current == null) return;
-
-            Vector2 delta = Mouse.current.delta.ReadValue();
-            _lookYaw += delta.x * mouseSensitivity;
-            _lookPitch -= delta.y * mouseSensitivity;
-            _lookPitch = Mathf.Clamp(_lookPitch, minPitch, maxPitch);
-            ApplyCameraTargetRotation();
-        }
-
-        private void ApplyCameraTargetRotation()
-        {
-            if (cameraTarget == null) return;
-            cameraTarget.rotation = Quaternion.Euler(_lookPitch, _lookYaw, 0f);
         }
 
         private void ReadMovementInput()
@@ -155,6 +131,15 @@ namespace CheatOnYourDayOnes.Player
 
             _moveInput = Vector2.ClampMagnitude(new Vector2(x, y), 1f);
             _sprintInput = Keyboard.current.leftShiftKey.isPressed;
+        }
+
+        private float GetLookYaw()
+        {
+            if (_thirdPersonCamera != null)
+                return _thirdPersonCamera.CurrentYaw;
+            if (playerCamera != null)
+                return playerCamera.transform.eulerAngles.y;
+            return transform.eulerAngles.y;
         }
 
         [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
@@ -198,12 +183,6 @@ namespace CheatOnYourDayOnes.Player
                 return;
 
             _verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
-        }
-
-        private static float NormalizePitch(float x)
-        {
-            if (x > 180f) x -= 360f;
-            return x;
         }
     }
 }
