@@ -18,11 +18,13 @@ namespace CheatOnYourDayOnes.World
         [SerializeField] private float carAwarenessRadius = 9f;
         [SerializeField] private float fleeSpeed = 3.8f;
         [SerializeField] private float impactSpeedThreshold = 2.2f;
-        [SerializeField] private float hitRecoverySeconds = 2.2f;
+        [SerializeField] private float lieDownSeconds = 1.15f;
+        [SerializeField] private float getUpSeconds = 1.35f;
 
         private static readonly int IdleHash = Animator.StringToHash("Base Layer.Idle");
         private static readonly int WalkHash = Animator.StringToHash("Base Layer.Walk");
         private static readonly int FallHash = Animator.StringToHash("Base Layer.Fall");
+        private static readonly int GettingUpHash = Animator.StringToHash("Base Layer.GettingUp");
 
         private CharacterController _controller;
         private Vector3 _home;
@@ -30,7 +32,9 @@ namespace CheatOnYourDayOnes.World
         private float _pause;
         private float _verticalVelocity;
         private bool _walking;
-        private float _hitUntil;
+        private float _fallUntil;
+        private float _getUpUntil;
+        private bool _gettingUp;
         private DriveableCar _dangerCar;
 
         private void Awake()
@@ -47,9 +51,28 @@ namespace CheatOnYourDayOnes.World
 
         private void Update()
         {
-            if (Time.time < _hitUntil)
+            if (Time.time < _fallUntil)
             {
                 ApplyGravityOnly();
+                return;
+            }
+
+            if (!_gettingUp && _fallUntil > 0f && Time.time >= _fallUntil)
+            {
+                StartGettingUp();
+            }
+
+            if (_gettingUp)
+            {
+                ApplyGravityOnly();
+                if (Time.time >= _getUpUntil)
+                {
+                    _gettingUp = false;
+                    _fallUntil = 0f;
+                    if (animator != null && animator.runtimeAnimatorController != null && animator.isActiveAndEnabled && animator.HasState(0, IdleHash))
+                        animator.CrossFadeInFixedTime(IdleHash, 0.08f, 0, 0f);
+                    Pause(Random.Range(0.15f, 0.45f));
+                }
                 return;
             }
 
@@ -62,7 +85,6 @@ namespace CheatOnYourDayOnes.World
                 away.y = 0f;
                 if (away.sqrMagnitude < 0.01f) away = transform.right;
                 away.Normalize();
-
                 Quaternion wanted = Quaternion.LookRotation(away, Vector3.up);
                 transform.rotation = Quaternion.Slerp(transform.rotation, wanted, 1f - Mathf.Exp(-turnSpeed * 1.8f * Time.deltaTime));
                 horizontal = away * fleeSpeed;
@@ -92,6 +114,14 @@ namespace CheatOnYourDayOnes.World
             _controller.Move((horizontal + Vector3.up * _verticalVelocity) * Time.deltaTime);
         }
 
+        private void StartGettingUp()
+        {
+            _gettingUp = true;
+            _getUpUntil = Time.time + getUpSeconds;
+            if (animator != null && animator.runtimeAnimatorController != null && animator.isActiveAndEnabled && animator.HasState(0, GettingUpHash))
+                animator.CrossFadeInFixedTime(GettingUpHash, 0.06f, 0, 0f);
+        }
+
         private void ApplyGravityOnly()
         {
             if (!_controller.enabled) return;
@@ -113,19 +143,21 @@ namespace CheatOnYourDayOnes.World
             }
         }
 
-        // Called by DriveableCar. The NPC never applies a reciprocal force to the vehicle.
         public void HitByVehicle(Vector3 carVelocity)
         {
             float speed = carVelocity.magnitude;
-            if (speed < impactSpeedThreshold || Time.time < _hitUntil) return;
-            _hitUntil = Time.time + hitRecoverySeconds;
+            if (speed < impactSpeedThreshold || Time.time < _fallUntil || _gettingUp) return;
+
+            _fallUntil = Time.time + lieDownSeconds;
+            _getUpUntil = 0f;
+            _gettingUp = false;
             _dangerCar = null;
             SetWalking(false);
 
             if (animator != null && animator.runtimeAnimatorController != null && animator.isActiveAndEnabled && animator.HasState(0, FallHash))
                 animator.CrossFadeInFixedTime(FallHash, 0.05f, 0, 0f);
 
-            Debug.Log($"[CYDOY] NPC HIT BY CAR: {name} speed={speed:F1}m/s fallAnimation={(animator != null && animator.HasState(0, FallHash))}", this);
+            Debug.Log($"[CYDOY] NPC HIT BY CAR: {name} speed={speed:F1}m/s fall={(animator != null && animator.HasState(0, FallHash))} gettingUp={(animator != null && animator.HasState(0, GettingUpHash))}", this);
         }
 
         private void PickTarget()
