@@ -1,3 +1,4 @@
+using CheatOnYourDayOnes.Vehicles;
 using UnityEngine;
 
 namespace CheatOnYourDayOnes.World
@@ -13,8 +14,15 @@ namespace CheatOnYourDayOnes.World
         [SerializeField] private float maxPause = 4f;
         [SerializeField] private float gravity = -20f;
 
+        [Header("Vehicle reaction")]
+        [SerializeField] private float carAwarenessRadius = 9f;
+        [SerializeField] private float fleeSpeed = 3.8f;
+        [SerializeField] private float impactSpeedThreshold = 2.2f;
+        [SerializeField] private float hitRecoverySeconds = 2.2f;
+
         private static readonly int IdleHash = Animator.StringToHash("Base Layer.Idle");
         private static readonly int WalkHash = Animator.StringToHash("Base Layer.Walk");
+        private static readonly int FallHash = Animator.StringToHash("Base Layer.Fall");
 
         private CharacterController _controller;
         private Vector3 _home;
@@ -22,12 +30,13 @@ namespace CheatOnYourDayOnes.World
         private float _pause;
         private float _verticalVelocity;
         private bool _walking;
+        private float _hitUntil;
+        private DriveableCar _dangerCar;
 
         private void Awake()
         {
             _controller = GetComponent<CharacterController>();
-            if (animator == null)
-                animator = GetComponentInChildren<Animator>(true);
+            if (animator == null) animator = GetComponentInChildren<Animator>(true);
         }
 
         private void Start()
@@ -38,23 +47,37 @@ namespace CheatOnYourDayOnes.World
 
         private void Update()
         {
+            if (Time.time < _hitUntil)
+            {
+                ApplyGravityOnly();
+                return;
+            }
+
+            FindDangerousCar();
             Vector3 horizontal = Vector3.zero;
 
-            if (_pause > 0f)
+            if (_dangerCar != null)
+            {
+                Vector3 away = transform.position - _dangerCar.transform.position;
+                away.y = 0f;
+                if (away.sqrMagnitude < 0.01f) away = transform.right;
+                away.Normalize();
+
+                Quaternion wanted = Quaternion.LookRotation(away, Vector3.up);
+                transform.rotation = Quaternion.Slerp(transform.rotation, wanted, 1f - Mathf.Exp(-turnSpeed * 1.8f * Time.deltaTime));
+                horizontal = away * fleeSpeed;
+                SetWalking(true);
+            }
+            else if (_pause > 0f)
             {
                 _pause -= Time.deltaTime;
-                if (_pause <= 0f)
-                    PickTarget();
+                if (_pause <= 0f) PickTarget();
             }
             else
             {
                 Vector3 toTarget = _target - transform.position;
                 toTarget.y = 0f;
-
-                if (toTarget.sqrMagnitude < 0.4f * 0.4f)
-                {
-                    Pause(Random.Range(minPause, maxPause));
-                }
+                if (toTarget.sqrMagnitude < 0.16f) Pause(Random.Range(minPause, maxPause));
                 else
                 {
                     Vector3 direction = toTarget.normalized;
@@ -64,13 +87,45 @@ namespace CheatOnYourDayOnes.World
                 }
             }
 
-            if (_controller.isGrounded && _verticalVelocity < 0f)
-                _verticalVelocity = -2f;
-            else
-                _verticalVelocity += gravity * Time.deltaTime;
+            if (_controller.isGrounded && _verticalVelocity < 0f) _verticalVelocity = -2f;
+            else _verticalVelocity += gravity * Time.deltaTime;
+            _controller.Move((horizontal + Vector3.up * _verticalVelocity) * Time.deltaTime);
+        }
 
-            Vector3 motion = horizontal + Vector3.up * _verticalVelocity;
-            _controller.Move(motion * Time.deltaTime);
+        private void ApplyGravityOnly()
+        {
+            if (!_controller.enabled) return;
+            if (_controller.isGrounded && _verticalVelocity < 0f) _verticalVelocity = -2f;
+            else _verticalVelocity += gravity * Time.deltaTime;
+            _controller.Move(Vector3.up * _verticalVelocity * Time.deltaTime);
+        }
+
+        private void FindDangerousCar()
+        {
+            _dangerCar = null;
+            float best = carAwarenessRadius;
+            DriveableCar[] cars = Object.FindObjectsByType<DriveableCar>(FindObjectsSortMode.None);
+            foreach (DriveableCar car in cars)
+            {
+                if (car == null || !car.IsOccupied) continue;
+                float d = Vector3.Distance(transform.position, car.transform.position);
+                if (d < best) { best = d; _dangerCar = car; }
+            }
+        }
+
+        // Called by DriveableCar. The NPC never applies a reciprocal force to the vehicle.
+        public void HitByVehicle(Vector3 carVelocity)
+        {
+            float speed = carVelocity.magnitude;
+            if (speed < impactSpeedThreshold || Time.time < _hitUntil) return;
+            _hitUntil = Time.time + hitRecoverySeconds;
+            _dangerCar = null;
+            SetWalking(false);
+
+            if (animator != null && animator.runtimeAnimatorController != null && animator.isActiveAndEnabled && animator.HasState(0, FallHash))
+                animator.CrossFadeInFixedTime(FallHash, 0.05f, 0, 0f);
+
+            Debug.Log($"[CYDOY] NPC HIT BY CAR: {name} speed={speed:F1}m/s fallAnimation={(animator != null && animator.HasState(0, FallHash))}", this);
         }
 
         private void PickTarget()
@@ -88,16 +143,11 @@ namespace CheatOnYourDayOnes.World
 
         private void SetWalking(bool walking)
         {
-            if (_walking == walking)
-                return;
-
+            if (_walking == walking) return;
             _walking = walking;
-            if (animator == null || animator.runtimeAnimatorController == null || !animator.isActiveAndEnabled)
-                return;
-
+            if (animator == null || animator.runtimeAnimatorController == null || !animator.isActiveAndEnabled) return;
             int state = walking ? WalkHash : IdleHash;
-            if (animator.HasState(0, state))
-                animator.CrossFadeInFixedTime(state, 0.10f, 0, 0f);
+            if (animator.HasState(0, state)) animator.CrossFadeInFixedTime(state, 0.10f, 0, 0f);
         }
 
         public void Configure(float speed, float radius)
