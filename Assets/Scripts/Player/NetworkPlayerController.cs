@@ -15,6 +15,13 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField, Min(0.1f)] private float deceleration = 22f;
         [SerializeField, Min(0.1f)] private float rotationSpeed = 18f;
         [SerializeField] private float gravity = -26f;
+        [SerializeField, Min(0.1f)] private float jumpHeight = 1.35f;
+
+        [Header("Mouse Look")]
+        [SerializeField, Min(0.01f)] private float mouseSensitivity = 0.12f;
+        [SerializeField] private float minPitch = -35f;
+        [SerializeField] private float maxPitch = 65f;
+        [SerializeField] private bool lockCursor = true;
 
         [Header("Camera")]
         [SerializeField] private Transform cameraTarget;
@@ -26,6 +33,9 @@ namespace CheatOnYourDayOnes.Player
         private bool _sprintInput;
         private float _verticalVelocity;
         private Vector3 _serverPlanarVelocity;
+        private float _lookYaw;
+        private float _lookPitch;
+        private bool _lookInitialized;
 
         private readonly NetworkVariable<Vector3> _serverPosition = new(default,
             NetworkVariableReadPermission.Everyone,
@@ -43,11 +53,28 @@ namespace CheatOnYourDayOnes.Player
             if (playerCamera != null) playerCamera.gameObject.SetActive(local);
             if (audioListener != null) audioListener.enabled = local;
 
+            if (local)
+            {
+                InitializeLook();
+                if (lockCursor)
+                {
+                    Cursor.lockState = CursorLockMode.Locked;
+                    Cursor.visible = false;
+                }
+            }
+
             if (IsServer)
             {
                 _serverPosition.Value = transform.position;
                 _serverRotation.Value = transform.rotation;
             }
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (!IsOwner || !lockCursor) return;
+            Cursor.lockState = hasFocus ? CursorLockMode.Locked : CursorLockMode.None;
+            Cursor.visible = !hasFocus;
         }
 
         private void Update()
@@ -57,8 +84,12 @@ namespace CheatOnYourDayOnes.Player
 
             if (IsOwner)
             {
-                ReadInput();
-                SendMovementInputRpc(_moveInput, _sprintInput, GetLookYaw());
+                ReadLookInput();
+                ReadMovementInput();
+                SendMovementInputRpc(_moveInput, _sprintInput, _lookYaw);
+
+                if (Keyboard.current != null && Keyboard.current.qKey.wasPressedThisFrame)
+                    RequestJumpRpc();
             }
 
             if (!IsServer)
@@ -77,7 +108,36 @@ namespace CheatOnYourDayOnes.Player
             _serverRotation.Value = transform.rotation;
         }
 
-        private void ReadInput()
+        private void InitializeLook()
+        {
+            if (_lookInitialized) return;
+            Transform source = playerCamera != null ? playerCamera.transform : transform;
+            Vector3 e = source.eulerAngles;
+            _lookYaw = e.y;
+            _lookPitch = NormalizePitch(e.x);
+            _lookInitialized = true;
+            ApplyCameraTargetRotation();
+        }
+
+        private void ReadLookInput()
+        {
+            InitializeLook();
+            if (Mouse.current == null) return;
+
+            Vector2 delta = Mouse.current.delta.ReadValue();
+            _lookYaw += delta.x * mouseSensitivity;
+            _lookPitch -= delta.y * mouseSensitivity;
+            _lookPitch = Mathf.Clamp(_lookPitch, minPitch, maxPitch);
+            ApplyCameraTargetRotation();
+        }
+
+        private void ApplyCameraTargetRotation()
+        {
+            if (cameraTarget == null) return;
+            cameraTarget.rotation = Quaternion.Euler(_lookPitch, _lookYaw, 0f);
+        }
+
+        private void ReadMovementInput()
         {
             if (Keyboard.current == null)
             {
@@ -97,8 +157,6 @@ namespace CheatOnYourDayOnes.Player
             _sprintInput = Keyboard.current.leftShiftKey.isPressed;
         }
 
-        private float GetLookYaw() => playerCamera != null ? playerCamera.transform.eulerAngles.y : transform.eulerAngles.y;
-
         [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
         private void SendMovementInputRpc(Vector2 input, bool sprint, float cameraYaw)
         {
@@ -116,21 +174,37 @@ namespace CheatOnYourDayOnes.Player
 
             if (_controller.isGrounded && _verticalVelocity < 0f)
                 _verticalVelocity = -2f;
-            _verticalVelocity += gravity * Time.deltaTime;
+            else
+                _verticalVelocity += gravity * Time.deltaTime;
 
             Vector3 velocity = _serverPlanarVelocity;
             velocity.y = _verticalVelocity;
             _controller.Move(velocity * Time.deltaTime);
 
-            Vector3 flatMove = new(_serverPlanarVelocity.x, 0f, _serverPlanarVelocity.z);
-            if (flatMove.sqrMagnitude > 0.12f)
+            // Character faces the mouse/look direction while moving. A/D therefore strafe naturally.
+            if (input.sqrMagnitude > 0.01f)
             {
-                Quaternion targetRotation = Quaternion.LookRotation(flatMove.normalized, Vector3.up);
+                Quaternion targetRotation = yawRotation;
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
             }
 
             _serverPosition.Value = transform.position;
             _serverRotation.Value = transform.rotation;
+        }
+
+        [Rpc(SendTo.Server)]
+        private void RequestJumpRpc()
+        {
+            if (!IsServer || !_controller.isGrounded)
+                return;
+
+            _verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
+        }
+
+        private static float NormalizePitch(float x)
+        {
+            if (x > 180f) x -= 360f;
+            return x;
         }
     }
 }
