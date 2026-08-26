@@ -44,38 +44,63 @@ namespace CheatOnYourDayOnes.Vehicles
             if(collision.collider.GetComponentInParent<NPCWanderer>()!=null)return;
             DriveableCar otherCar=collision.collider.GetComponentInParent<DriveableCar>();
             if(otherCar!=null&&otherCar!=this)return;
-
             Rigidbody otherRb=collision.rigidbody;
-            bool solidWorldObject=otherRb==null||otherRb.isKinematic;
-            if(!solidWorldObject)return;
+            if(otherRb!=null&&!otherRb.isKinematic)return;
 
-            bool hasBlockingContact=false;
+            bool shouldStop=false;
+            string hitSide="side";
             foreach(ContactPoint contact in collision.contacts)
             {
-                // Ground/road contacts point mostly upward. A wall, lamp post, building, barrier etc.
-                // has a mainly horizontal normal and therefore counts as an impassable obstacle.
-                if(Mathf.Abs(contact.normal.y)<.55f){hasBlockingContact=true;break;}
+                if(Mathf.Abs(contact.normal.y)>=.55f)continue;
+                Vector3 localPoint=transform.InverseTransformPoint(contact.point);
+                Vector3 center=_chassisCollider!=null?_chassisCollider.center:Vector3.zero;
+                float dz=localPoint.z-center.z;
+                float dx=localPoint.x-center.x;
+
+                // Prefer front/rear classification when the contact is longitudinal.
+                if(Mathf.Abs(dz)>=Mathf.Abs(dx)*.55f)
+                {
+                    if(dz>=0f)
+                    {
+                        hitSide="front";
+                        // Front obstacle only blocks forward motion. Reverse is always allowed.
+                        if(_driveSpeed>.01f||_rawThrottle>.05f)shouldStop=true;
+                    }
+                    else
+                    {
+                        hitSide="rear";
+                        // Rear obstacle only blocks reverse motion. Forward is always allowed.
+                        if(_driveSpeed<-.01f||_rawThrottle<-.05f)shouldStop=true;
+                    }
+                }
+                else
+                {
+                    // A true side hit only stops us if our current velocity is moving into that surface.
+                    Vector3 horizontalVelocity=_rb.linearVelocity;horizontalVelocity.y=0f;
+                    Vector3 horizontalNormal=contact.normal;horizontalNormal.y=0f;
+                    if(horizontalNormal.sqrMagnitude>.001f&&horizontalVelocity.sqrMagnitude>.001f)
+                    {
+                        horizontalNormal.Normalize();
+                        if(Vector3.Dot(horizontalVelocity,horizontalNormal)<-.05f)shouldStop=true;
+                    }
+                }
+                if(shouldStop)break;
             }
-            if(!hasBlockingContact)return;
+            if(!shouldStop)return;
 
             float beforeKmh=SpeedKmh;
             _driveSpeed=0f;
             _yawRate=0f;
-            Vector3 velocity=_rb.linearVelocity;
-            velocity.x=0f;
-            velocity.z=0f;
-            _rb.linearVelocity=velocity;
-            Vector3 angular=_rb.angularVelocity;
-            angular.y=0f;
-            _rb.angularVelocity=angular;
-            Debug.Log($"[CYDOY] CAR SOLID IMPACT -> 0 km/h | object={collision.collider.name} | before={beforeKmh:F1}km/h",this);
+            Vector3 velocity=_rb.linearVelocity;velocity.x=0f;velocity.z=0f;_rb.linearVelocity=velocity;
+            Vector3 angular=_rb.angularVelocity;angular.y=0f;_rb.angularVelocity=angular;
+            Debug.Log($"[CYDOY] CAR SOLID IMPACT -> 0 km/h | side={hitSide} | object={collision.collider.name} | before={beforeKmh:F1}km/h",this);
         }
 
         private void DetectNPCHits(){if(_chassisCollider==null||Mathf.Abs(_driveSpeed)<.15f)return;HashSet<NPCWanderer> current=new();float halfWidth=_chassisCollider.size.x*.5f+bumperSideMargin;float frontZ=_chassisCollider.center.z+_chassisCollider.size.z*.5f;float rearZ=_chassisCollider.center.z-_chassisCollider.size.z*.5f;bool forward=_driveSpeed>=0;foreach(NPCWanderer npc in Object.FindObjectsByType<NPCWanderer>(FindObjectsSortMode.None)){if(npc==null||npc.IsDown)continue;Vector3 local=transform.InverseTransformPoint(npc.transform.position);float lateral=Mathf.Abs(local.x-_chassisCollider.center.x);if(lateral>halfWidth)continue;float longitudinal=forward?local.z-frontZ:rearZ-local.z;if(longitudinal<-.30f||longitudinal>bumperReach)continue;current.Add(npc);if(_npcHitThisContact.Contains(npc))continue;float kmh=SpeedKmh;if(npc.HitByVehicle(DriveVelocity,transform.position)){ApplyNPCImpactSpeedResponse(kmh);_npcHitThisContact.Add(npc);Debug.Log($"[CYDOY] BUMPER HIT: {npc.name} gap={longitudinal:F2}m side={lateral:F2}m speed={kmh:F1}km/h",this);}}_npcHitThisContact.RemoveWhere(n=>n==null||!current.Contains(n));}
         private void DetectNPCOverrun(){if(_chassisCollider==null||Mathf.Abs(_driveSpeed)<1f)return;HashSet<NPCWanderer> current=new();float halfWidth=_chassisCollider.size.x*.5f*.92f,halfLength=_chassisCollider.size.z*.5f*1.05f;foreach(NPCWanderer npc in Object.FindObjectsByType<NPCWanderer>(FindObjectsSortMode.None)){if(npc==null||!npc.IsDown)continue;Vector3 local=transform.InverseTransformPoint(npc.DownPosition);bool underneath=Mathf.Abs(local.x-_chassisCollider.center.x)<=halfWidth&&Mathf.Abs(local.z-_chassisCollider.center.z)<=halfLength&&Mathf.Abs(local.y-_chassisCollider.center.y)<2f*_modelScale;if(!underneath)continue;current.Add(npc);if(_npcOverrunContact.Contains(npc))continue;float side=Mathf.Sign(local.x-_chassisCollider.center.x);if(Mathf.Abs(side)<.01f)side=Random.value>.5f?1f:-1f;Vector3 angular=_rb.angularVelocity;angular+=transform.forward*(side*overrunRollKick);angular.x=Mathf.Clamp(angular.x,-.5f,.5f);angular.z=Mathf.Clamp(angular.z,-.5f,.5f);_rb.angularVelocity=angular;Vector3 velocity=_rb.linearVelocity;velocity.y=Mathf.Min(velocity.y+overrunVerticalKick,.08f);_rb.linearVelocity=velocity;_npcOverrunContact.Add(npc);Debug.Log($"[CYDOY] NPC OVERRUN: {npc.name} side={(side<0?"left":"right")}",this);}_npcOverrunContact.RemoveWhere(n=>n==null||!current.Contains(n));}
         private void ApplyNPCImpactSpeedResponse(float kmh){if(kmh<=fullStopBelowKmh){_driveSpeed=0;_yawRate=0;Vector3 v=_rb.linearVelocity;v.x=0;v.z=0;_rb.linearVelocity=v;}else if(kmh<heavyBrakeBelowKmh)_driveSpeed*=mediumImpactSpeedRetention;}
         public float DistanceFrom(Vector3 p){float best=float.MaxValue;foreach(Collider c in GetComponentsInChildren<Collider>(true)){if(c==null||!c.enabled||c.isTrigger)continue;best=Mathf.Min(best,Vector3.Distance(p,c.ClosestPoint(p)));}return best<float.MaxValue?best:Vector3.Distance(p,transform.position);}
-        public bool TryEnter(Transform player){if(_occupied||player==null||DistanceFrom(player.position)>interactionDistance)return false;_driver=player;_driverController=player.GetComponent<CharacterController>();_networkController=player.GetComponent<CheatOnYourDayOnes.Player.NetworkPlayerController>();_interactor=player.GetComponent<VehicleInteractor>();if(_networkController!=null)_networkController.enabled=false;if(_interactor!=null)_interactor.enabled=false;_driverRenderers=player.GetComponentsInChildren<Renderer>(true);_driverRendererStates=new bool[_driverRenderers.Length];for(int i=0;i<_driverRenderers.Length;i++){_driverRendererStates[i]=_driverRenderers[i].enabled;_driverRenderers[i].enabled=false;}_driverColliders=player.GetComponentsInChildren<Collider>(true);_driverColliderStates=new bool[_driverColliders.Length];for(int i=0;i<_driverColliders.Length;i++){_driverColliderStates[i]=_driverColliders[i].enabled;_driverColliders[i].enabled=false;}if(_driverController!=null)_driverController.enabled=false;Transform seat=driverSeat!=null?driverSeat:transform;player.SetParent(seat,false);player.localPosition=Vector3.zero;player.localRotation=Quaternion.identity;_camera=Object.FindFirstObjectByType<ThirdPersonCamera>(FindObjectsInactive.Include);if(_camera!=null)_camera.EnterVehicleMode(transform);DetectWheelsAndScale();ConfigureRigidbody();RebuildVehicleColliders();PutTyresOnGround();_driveSpeed=_throttle=_steer=_yawRate=0;_rb.linearVelocity=Vector3.zero;_rb.angularVelocity=Vector3.zero;_rb.WakeUp();_occupied=true;_ignoreExitUntilEReleased=true;_npcHitThisContact.Clear();_npcOverrunContact.Clear();Debug.Log("[CYDOY] VEHICLE READY - reliable bumper hit + solid obstacle stop",this);return true;}
+        public bool TryEnter(Transform player){if(_occupied||player==null||DistanceFrom(player.position)>interactionDistance)return false;_driver=player;_driverController=player.GetComponent<CharacterController>();_networkController=player.GetComponent<CheatOnYourDayOnes.Player.NetworkPlayerController>();_interactor=player.GetComponent<VehicleInteractor>();if(_networkController!=null)_networkController.enabled=false;if(_interactor!=null)_interactor.enabled=false;_driverRenderers=player.GetComponentsInChildren<Renderer>(true);_driverRendererStates=new bool[_driverRenderers.Length];for(int i=0;i<_driverRenderers.Length;i++){_driverRendererStates[i]=_driverRenderers[i].enabled;_driverRenderers[i].enabled=false;}_driverColliders=player.GetComponentsInChildren<Collider>(true);_driverColliderStates=new bool[_driverColliders.Length];for(int i=0;i<_driverColliders.Length;i++){_driverColliderStates[i]=_driverColliders[i].enabled;_driverColliders[i].enabled=false;}if(_driverController!=null)_driverController.enabled=false;Transform seat=driverSeat!=null?driverSeat:transform;player.SetParent(seat,false);player.localPosition=Vector3.zero;player.localRotation=Quaternion.identity;_camera=Object.FindFirstObjectByType<ThirdPersonCamera>(FindObjectsInactive.Include);if(_camera!=null)_camera.EnterVehicleMode(transform);DetectWheelsAndScale();ConfigureRigidbody();RebuildVehicleColliders();PutTyresOnGround();_driveSpeed=_throttle=_steer=_yawRate=0;_rb.linearVelocity=Vector3.zero;_rb.angularVelocity=Vector3.zero;_rb.WakeUp();_occupied=true;_ignoreExitUntilEReleased=true;_npcHitThisContact.Clear();_npcOverrunContact.Clear();Debug.Log("[CYDOY] VEHICLE READY - directional obstacle stop",this);return true;}
         public void Exit(){if(!_occupied||_driver==null)return;Transform p=_driver;p.SetParent(null,true);p.position=exitPoint!=null?exitPoint.position:transform.position-transform.right*1.8f+Vector3.up*.25f;p.rotation=Quaternion.Euler(0,transform.eulerAngles.y,0);if(_camera!=null)_camera.ExitVehicleMode(p);if(_driverRenderers!=null)for(int i=0;i<_driverRenderers.Length;i++)if(_driverRenderers[i]!=null)_driverRenderers[i].enabled=_driverRendererStates[i];if(_driverColliders!=null)for(int i=0;i<_driverColliders.Length;i++)if(_driverColliders[i]!=null)_driverColliders[i].enabled=_driverColliderStates[i];if(_driverController!=null)_driverController.enabled=true;if(_networkController!=null)_networkController.enabled=true;if(_interactor!=null)_interactor.enabled=true;_driver=null;_occupied=false;_rawThrottle=_rawSteer=_throttle=_steer=_driveSpeed=_yawRate=0;_brake=false;_npcHitThisContact.Clear();_npcOverrunContact.Clear();}
         private void RebuildVehicleColliders(){foreach(Collider c in GetComponentsInChildren<Collider>(true)){if(c==null||c==_chassisCollider||_wheelSupportColliders.Contains(c as SphereCollider)||c.isTrigger)continue;c.enabled=false;}foreach(SphereCollider old in _wheelSupportColliders)if(old!=null)Destroy(old.gameObject);_wheelSupportColliders.Clear();Renderer[] rs=GetComponentsInChildren<Renderer>(true);if(rs.Length==0)return;Bounds all=rs[0].bounds;foreach(Renderer r in rs)if(r!=null)all.Encapsulate(r.bounds);Vector3 min=new(float.PositiveInfinity,float.PositiveInfinity,float.PositiveInfinity),max=new(float.NegativeInfinity,float.NegativeInfinity,float.NegativeInfinity);foreach(Vector3 corner in BoundsCorners(all)){Vector3 l=transform.InverseTransformPoint(corner);min=Vector3.Min(min,l);max=Vector3.Max(max,l);}if(_chassisCollider==null){_chassisCollider=GetComponent<BoxCollider>();if(_chassisCollider==null)_chassisCollider=gameObject.AddComponent<BoxCollider>();}Vector3 raw=max-min;_chassisCollider.size=new Vector3(raw.x*.82f,raw.y*.32f,raw.z*.84f);_chassisCollider.center=new Vector3((min.x+max.x)*.5f,min.y+raw.y*.66f,(min.z+max.z)*.5f);_chassisCollider.enabled=true;_chassisCollider.isTrigger=false;foreach(Renderer wheel in _wheelRenderers){if(wheel==null||!wheel.enabled)continue;Bounds wb=wheel.bounds;float radiusWorld=Mathf.Clamp(wb.size.y*.47f,.16f*_modelScale,.48f*_modelScale);GameObject support=new("CYDOY_WheelSupport_"+wheel.name);support.transform.SetParent(transform,false);support.transform.position=wb.center;SphereCollider sphere=support.AddComponent<SphereCollider>();float ps=Mathf.Max(.0001f,Mathf.Max(Mathf.Abs(transform.lossyScale.x),Mathf.Max(Mathf.Abs(transform.lossyScale.y),Mathf.Abs(transform.lossyScale.z))));sphere.radius=radiusWorld/ps;_wheelSupportColliders.Add(sphere);}}
         private void PutTyresOnGround(){if(_wheelRenderers.Count==0)return;float bottom=float.PositiveInfinity;Vector3 avg=Vector3.zero;int count=0;foreach(Renderer wheel in _wheelRenderers){if(wheel==null||!wheel.enabled)continue;bottom=Mathf.Min(bottom,wheel.bounds.min.y);avg+=wheel.bounds.center;count++;}if(count==0)return;avg/=count;RaycastHit[] hits=Physics.RaycastAll(new Vector3(avg.x,avg.y+3*_modelScale,avg.z),Vector3.down,10*_modelScale,~0,QueryTriggerInteraction.Ignore);bool found=false;float ground=float.NegativeInfinity;foreach(RaycastHit hit in hits){if(hit.collider==null||hit.transform==transform||hit.transform.IsChildOf(transform)||hit.normal.y<.65f)continue;if(!found||hit.point.y>ground){ground=hit.point.y;found=true;}}if(!found)return;transform.position+=Vector3.up*(ground+tyreGroundClearance-bottom);Physics.SyncTransforms();}
