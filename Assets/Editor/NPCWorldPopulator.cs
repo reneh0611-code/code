@@ -81,8 +81,6 @@ namespace CheatOnYourDayOnes.EditorTools
                     ? Random.Range(0.58f, 0.72f)
                     : Random.Range(0.90f, 1.08f);
 
-                // Important: clone the already textured AJ from Player.prefab instead of raw Aj.fbx.
-                // This guarantees every NPC starts with the exact same working textures/materials as the player.
                 GameObject npc = Object.Instantiate(sourceAj);
                 npc.name = isChild ? $"NPC_Child_{created + 1:00}" : $"NPC_Adult_{created + 1:00}";
                 npc.transform.SetParent(root.transform);
@@ -92,7 +90,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 npc.SetActive(true);
 
                 RemoveModelColliders(npc);
-                HideBackpack(npc.transform);
+                ForceCharacterVisible(npc);
 
                 Animator animator = npc.GetComponentInChildren<Animator>(true);
                 if (animator == null)
@@ -137,7 +135,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.DisplayDialog(
                 "CYDOY · NPC Population",
-                $"Placed {created} NPCs from the textured Player AJ.\n\nThey keep AJ's real textures, vary only recognized clothing materials, and backpacks are hidden.",
+                $"Placed {created} visible NPCs from the textured Player AJ.\n\nNo renderer or rig bone is disabled during NPC creation.",
                 "Nice");
         }
 
@@ -159,16 +157,12 @@ namespace CheatOnYourDayOnes.EditorTools
                 Object.DestroyImmediate(collider);
         }
 
-        private static void HideBackpack(Transform root)
+        private static void ForceCharacterVisible(GameObject npc)
         {
-            foreach (Transform t in root.GetComponentsInChildren<Transform>(true))
+            foreach (SkinnedMeshRenderer renderer in npc.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
-                if (t == root)
-                    continue;
-
-                string n = t.name.ToLowerInvariant();
-                if (n.Contains("backpack") || n.Contains("back_pack") || n.Contains("rucksack") || n == "bag" || n.Contains("shoulderbag"))
-                    t.gameObject.SetActive(false);
+                if (renderer != null)
+                    renderer.enabled = true;
             }
         }
 
