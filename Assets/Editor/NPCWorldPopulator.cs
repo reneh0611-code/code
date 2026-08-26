@@ -22,6 +22,16 @@ namespace CheatOnYourDayOnes.EditorTools
         [MenuItem("Tools/CYDOY/Populate World With NPCs")]
         public static void Populate()
         {
+            RuntimeAnimatorController npcController = LittleGuysAnimationInstaller.EnsureController();
+            if (npcController == null)
+            {
+                EditorUtility.DisplayDialog(
+                    "CYDOY · NPCs",
+                    "The Little Guys Humanoid animation controller could not be created. Check the Console before spawning NPCs.",
+                    "OK");
+                return;
+            }
+
             List<GameObject> characterPrefabs = new();
             foreach (string path in CharacterPrefabPaths)
             {
@@ -90,19 +100,24 @@ namespace CheatOnYourDayOnes.EditorTools
                 }
 
                 Animator animator = npc.GetComponentInChildren<Animator>(true);
-                if (animator != null)
+                if (animator == null)
                 {
-                    animator.applyRootMotion = false;
-                    animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-                    animator.enabled = true;
-                    if (animator.runtimeAnimatorController != null)
-                    {
-                        animator.Rebind();
-                        animator.Update(0f);
-                    }
+                    Debug.LogWarning("[CYDOY] Little Guys NPC has no Animator: " + npc.name);
+                    Object.DestroyImmediate(npc);
+                    continue;
                 }
 
-                // Scale the actual rendered body to a realistic human height.
+                animator.runtimeAnimatorController = npcController;
+                animator.applyRootMotion = false;
+                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                animator.updateMode = AnimatorUpdateMode.Normal;
+                animator.enabled = true;
+                animator.Rebind();
+                animator.Update(0f);
+                animator.Play("Idle", 0, Random.Range(0f, 0.9f));
+                animator.Update(0f);
+
+                // Scale from the actually animated Humanoid body, not the original tiny sample dimensions.
                 Bounds preScaleBounds = GetRendererBounds(npc);
                 bool tall = sourcePrefab.name.ToLowerInvariant().Contains("tall");
                 float targetHeight = tall ? Random.Range(1.78f, 1.86f) : Random.Range(1.64f, 1.76f);
@@ -112,7 +127,6 @@ namespace CheatOnYourDayOnes.EditorTools
                     npc.transform.localScale *= scaleMultiplier;
                 }
 
-                // Put visible feet exactly on ground after scaling.
                 SnapVisualToGround(npc, hit.point.y);
 
                 Bounds bounds = GetRendererBounds(npc);
@@ -122,16 +136,16 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 CharacterController cc = npc.GetComponent<CharacterController>();
                 if (cc == null) cc = npc.AddComponent<CharacterController>();
-                cc.height = visualHeight * 0.92f;
-                cc.radius = Mathf.Clamp(visualWidth * 0.27f, 0.20f, 0.40f);
+                cc.height = visualHeight * 0.94f;
+                cc.radius = Mathf.Clamp(visualWidth * 0.25f, 0.20f, 0.38f);
                 cc.center = localCenter;
-                cc.stepOffset = Mathf.Min(0.24f, cc.height * 0.14f);
+                cc.stepOffset = Mathf.Min(0.22f, cc.height * 0.13f);
                 cc.skinWidth = 0.035f;
                 cc.minMoveDistance = 0.001f;
 
                 NPCWanderer wander = npc.GetComponent<NPCWanderer>();
                 if (wander == null) wander = npc.AddComponent<NPCWanderer>();
-                wander.Configure(tall ? Random.Range(1.20f, 1.42f) : Random.Range(1.08f, 1.32f), Random.Range(7f, 12f));
+                wander.Configure(tall ? Random.Range(1.15f, 1.32f) : Random.Range(1.05f, 1.24f), Random.Range(7f, 12f));
 
                 SnapVisualToGround(npc, hit.point.y);
                 used.Add(npc.transform.position);
@@ -144,7 +158,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.DisplayDialog(
                 "CYDOY · NPCs",
-                $"Placed {created} Little Guys NPCs with opaque URP materials, realistic height and ground snapping.\n\nPlayer/hub/camera/network were not modified.",
+                $"Placed {created} animated Little Guys NPCs. They use separate Humanoid copies of your Mixamo clips and continuous visible-foot grounding.\n\nAJ/player/hub/camera/network were not modified.",
                 "OK");
         }
 
