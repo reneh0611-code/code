@@ -12,7 +12,7 @@ namespace CheatOnYourDayOnes.World
         [SerializeField] private float carAwarenessRadius=7f,fleeSpeed=2.25f,fleeOnlyAboveKmh=30f,impactSpeedThreshold=.20f;
         [SerializeField] private float minimumLieSeconds=1.25f,impactCarryDistance=.20f;
         [SerializeField] private float groundRayHeight=6f,groundRayDistance=20f;
-        [SerializeField] private float bodyGroundClearance=-.035f;
+        [SerializeField] private float bodyGroundClearance=-.135f;
         [SerializeField] private float carClearanceBeforeGetUp=3.2f,extraWaitAfterCarClears=.65f,maxAnimationFallTravel=4f;
         [SerializeField,Range(-1f,1f)] private float rearHitDotThreshold=-.25f;
 
@@ -61,8 +61,6 @@ namespace CheatOnYourDayOnes.World
 
         private void LateUpdate()
         {
-            // IMPORTANT: grounding is global, not just a knocked-down fix. This removes the permanent
-            // shoe-height gap that was already present while NPCs were standing/walking.
             if(_mainSkinnedMesh==null)return;
 
             if(IsDown&&!_gettingUp)
