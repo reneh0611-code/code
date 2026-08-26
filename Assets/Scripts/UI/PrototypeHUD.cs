@@ -19,195 +19,28 @@ namespace CheatOnYourDayOnes.UI
         private static readonly Color Energy = new(0.18f,0.67f,0.95f,1f);
         private static readonly Color Stamina = new(0.38f,0.86f,0.40f,1f);
         private static readonly Color Gold = new(0.92f,0.80f,0.48f,1f);
-
-        private PlayerAgent _player;
-        private PlayerInteractor _interactor;
-        private VehicleInteractor _vehicleInteractor;
-        private NetworkPlayerController _movement;
-        private Texture2D _roundedMask;
-        private float _staminaVisibleUntil;
-
+        private PlayerAgent _player; private PlayerInteractor _interactor; private VehicleInteractor _vehicleInteractor; private NetworkPlayerController _movement; private Texture2D _roundedMask; private float _staminaVisibleUntil;
         private GUIStyle _tiny,_small,_medium,_big,_prompt,_key,_speedNumber,_speedUnit,_dialNumber;
-
-        private void Awake()
-        {
-            _roundedMask = CreateRoundedMask(64,14f);
-            _roundedMask.hideFlags = HideFlags.HideAndDontSave;
-        }
-
+        private void Awake(){_roundedMask=CreateRoundedMask(64,14f);_roundedMask.hideFlags=HideFlags.HideAndDontSave;}
         private void OnDestroy(){if(_roundedMask!=null)Destroy(_roundedMask);}
-
-        private void TryBind()
-        {
-            if(_player!=null||NetworkManager.Singleton==null||!NetworkManager.Singleton.IsListening)return;
-            var local=NetworkManager.Singleton.LocalClient?.PlayerObject;
-            if(local==null)return;
-            _player=local.GetComponent<PlayerAgent>();
-            _interactor=local.GetComponent<PlayerInteractor>();
-            _vehicleInteractor=local.GetComponent<VehicleInteractor>();
-            _movement=local.GetComponent<NetworkPlayerController>();
-        }
-
-        private void BuildStyles(float s)
-        {
-            _tiny=Style(10,s,FontStyle.Bold,Muted,TextAnchor.MiddleLeft);
-            _small=Style(13,s,FontStyle.Bold,Text,TextAnchor.MiddleLeft);
-            _medium=Style(17,s,FontStyle.Bold,Text,TextAnchor.MiddleLeft);
-            _big=Style(34,s,FontStyle.Bold,Text,TextAnchor.MiddleLeft);
-            _prompt=Style(15,s,FontStyle.Bold,Text,TextAnchor.MiddleLeft);
-            _key=Style(14,s,FontStyle.Bold,new Color(.05f,.05f,.05f,1f),TextAnchor.MiddleCenter);
-            _speedNumber=Style(30,s,FontStyle.Bold,Text,TextAnchor.MiddleCenter);
-            _speedUnit=Style(9,s,FontStyle.Bold,Muted,TextAnchor.MiddleCenter);
-            _dialNumber=Style(9,s,FontStyle.Bold,Muted,TextAnchor.MiddleCenter);
-        }
-
-        private static GUIStyle Style(float size,float scale,FontStyle fs,Color c,TextAnchor a)=>new(GUI.skin.label)
-        {
-            fontSize=Mathf.RoundToInt(size*scale),fontStyle=fs,alignment=a,padding=new RectOffset(0,0,0,0),normal={textColor=c}
-        };
-
-        private void OnGUI()
-        {
-            TryBind();
-            if(_player==null)return;
-            float s=Mathf.Clamp(Mathf.Min(Screen.width/1920f,Screen.height/1080f),.78f,1.22f);
-            BuildStyles(s);
-            DriveableCar car=FindOccupiedCar();
-
-            DrawWallet(s);
-            DrawMissionBlock(s);
-            DrawClock(s);
-            DrawNeeds(s);
-            DrawLocation(s);
-            DrawStamina(s,car==null);
-            DrawInteraction(s,car==null);
-            if(car!=null)DrawAnalogSpeedometer(s,car);
-        }
-
-        private void DrawWallet(float s)
-        {
-            float x=24*s,y=24*s,w=330*s,h=96*s;
-            DrawCard(new Rect(x,y,w,h),PanelStrong);
-            Rect icon=new(x+14*s,y+14*s,48*s,48*s);
-            DrawRounded(icon,new Color(.15f,.30f,.18f,.75f));
-            GUIStyle moneyIcon=Style(24,s,FontStyle.Bold,new Color(.65f,1f,.68f,1f),TextAnchor.MiddleCenter);
-            GUI.Label(icon,"$",moneyIcon);
-
-            GUI.Label(new Rect(x+78*s,y+12*s,100*s,14*s),"CASH",_tiny);
-            Color old=_big.normal.textColor;_big.normal.textColor=new Color(.60f,1f,.64f,1f);
-            GUI.Label(new Rect(x+78*s,y+24*s,220*s,40*s),$"$ {_player.Wallet.Cash.Value:N0}",_big);_big.normal.textColor=old;
-            DrawRounded(new Rect(x+78*s,y+70*s,220*s,6*s),Track);
-            DrawRounded(new Rect(x+78*s,y+70*s,110*s,6*s),new Color(.42f,.85f,.48f,1f));
-
-            float by=y+h+6*s;
-            DrawCard(new Rect(x,by,w,h*.58f),Panel);
-            DrawLine(new Rect(x+w*.5f,by+10*s,1*s,h*.58f-20*s),new Color(1,1,1,.12f));
-            GUI.Label(new Rect(x+14*s,by+8*s,65*s,15*s),"BANK",_tiny);
-            GUI.Label(new Rect(x+14*s,by+24*s,130*s,24*s),$"$ {_player.Wallet.Bank.Value:N0}",_medium);
-            GUI.Label(new Rect(x+w*.5f+14*s,by+8*s,65*s,15*s),"AURA",_tiny);
-            GUI.Label(new Rect(x+w*.5f+14*s,by+24*s,130*s,24*s),$"{_player.Aura.Aura.Value:+0;-0;0}",_medium);
-        }
-
-        private void DrawMissionBlock(float s)
-        {
-            float x=24*s,y=198*s,w=330*s;
-            GUI.Label(new Rect(x,y,w,18*s),"AKTIVE MISSIONEN",_tiny);
-            DrawCard(new Rect(x,y+24*s,w,74*s),Panel);
-            DrawRounded(new Rect(x+12*s,y+37*s,8*s,8*s),new Color(.62f,.31f,.92f,1f));
-            GUI.Label(new Rect(x+30*s,y+30*s,w-42*s,22*s),"Keine aktive Mission",_small);
-            GUIStyle sub=Style(11,s,FontStyle.Normal,Muted,TextAnchor.MiddleLeft);
-            GUI.Label(new Rect(x+30*s,y+52*s,w-42*s,18*s),"Missionen erscheinen hier automatisch",sub);
-        }
-
-        private void DrawClock(float s)
-        {
-            DateTime now=DateTime.Now;
-            float w=180*s,h=72*s,x=Screen.width-24*s-w,y=22*s;
-            DrawCard(new Rect(x,y,w,h),new Color(.02f,.022f,.026f,.26f));
-            GUIStyle time=Style(31,s,FontStyle.Bold,Text,TextAnchor.MiddleRight);
-            GUIStyle day=Style(11,s,FontStyle.Bold,Muted,TextAnchor.MiddleRight);
-            GUI.Label(new Rect(x+12*s,y+8*s,w-24*s,36*s),now.ToString("HH:mm"),time);
-            GUI.Label(new Rect(x+12*s,y+43*s,w-24*s,18*s),GermanDay(now.DayOfWeek),day);
-        }
-
-        private static string GermanDay(DayOfWeek d)=>d switch
-        {
-            DayOfWeek.Monday=>"MONTAG",DayOfWeek.Tuesday=>"DIENSTAG",DayOfWeek.Wednesday=>"MITTWOCH",
-            DayOfWeek.Thursday=>"DONNERSTAG",DayOfWeek.Friday=>"FREITAG",DayOfWeek.Saturday=>"SAMSTAG",_=>"SONNTAG"
-        };
-
-        private void DrawNeeds(float s)
-        {
-            float x=24*s,w=355*s,rowH=52*s,gap=3*s,y=Screen.height-24*s-(rowH*3+gap*2)-44*s;
-            DrawNeedRow(x,y,w,rowH,"♥","HEALTH",_player.Needs.Health.Value,Health,s);
-            DrawNeedRow(x,y+(rowH+gap),w,rowH,"≡","HUNGER",_player.Needs.Hunger.Value,Hunger,s);
-            DrawNeedRow(x,y+(rowH+gap)*2,w,rowH,"▣","ENERGY",_player.Needs.Energy.Value,Energy,s);
-        }
-
-        private void DrawNeedRow(float x,float y,float w,float h,string icon,string label,float raw,Color c,float s)
-        {
-            float value=Mathf.Clamp(raw,0,100);
-            DrawCard(new Rect(x,y,w,h),PanelStrong);
-            GUIStyle iconStyle=Style(23,s,FontStyle.Bold,c,TextAnchor.MiddleCenter);
-            GUI.Label(new Rect(x+10*s,y+8*s,34*s,34*s),icon,iconStyle);
-            GUI.Label(new Rect(x+55*s,y+7*s,115*s,18*s),label,_small);
-            GUIStyle val=Style(12,s,FontStyle.Bold,Text,TextAnchor.MiddleRight);
-            GUI.Label(new Rect(x+w-60*s,y+7*s,45*s,18*s),$"{Mathf.RoundToInt(value)}%",val);
-            Rect track=new(x+55*s,y+30*s,w-74*s,8*s);DrawRounded(track,Track);
-            Rect fill=new(track.x,track.y,track.width*value/100f,track.height);if(fill.width>1)DrawRounded(fill,c);
-        }
-
-        private void DrawStamina(float s,bool onFoot)
-        {
-            if(!onFoot||_movement==null)return;
-            if(_movement.IsSprinting||_movement.Stamina01<.995f)_staminaVisibleUntil=Time.unscaledTime+1.2f;
-            if(Time.unscaledTime>_staminaVisibleUntil)return;
-            float x=24*s,w=355*s,h=52*s,y=Screen.height-24*s-h;
-            DrawCard(new Rect(x,y,w,h),PanelStrong);
-            GUIStyle bolt=Style(24,s,FontStyle.Bold,Stamina,TextAnchor.MiddleCenter);
-            GUI.Label(new Rect(x+10*s,y+8*s,34*s,34*s),"ϟ",bolt);
-            GUI.Label(new Rect(x+55*s,y+7*s,115*s,18*s),"STAMINA",_small);
-            GUIStyle val=Style(12,s,FontStyle.Bold,Text,TextAnchor.MiddleRight);
-            GUI.Label(new Rect(x+w-60*s,y+7*s,45*s,18*s),$"{Mathf.RoundToInt(_movement.Stamina)}%",val);
-            Rect track=new(x+55*s,y+30*s,w-74*s,8*s);DrawRounded(track,Track);
-            DrawRounded(new Rect(track.x,track.y,track.width*_movement.Stamina01,track.height),Stamina);
-        }
-
-        private void DrawLocation(float s)
-        {
-            float x=24*s,y=Screen.height-26*s;
-            GUIStyle loc=Style(12,s,FontStyle.Bold,Text,TextAnchor.MiddleLeft);
-            GUI.Label(new Rect(x,y-20*s,170*s,20*s),"●  EASTWOOD",loc);
-        }
-
-        private void DrawInteraction(float s,bool onFoot)
-        {
-            if(!onFoot)return;
-            string prompt=null;
-            if(_vehicleInteractor!=null&&_vehicleInteractor.enabled&&_vehicleInteractor.CanEnterVehicle)prompt="Fahren";
-            else if(_interactor!=null&&_interactor.enabled&&!string.IsNullOrWhiteSpace(_interactor.CurrentPrompt))prompt=CleanPrompt(_interactor.CurrentPrompt);
-            if(string.IsNullOrWhiteSpace(prompt))return;
-            float w=Mathf.Clamp(170+prompt.Length*8,220,380)*s,h=54*s,x=Screen.width*.5f-w*.5f,y=Screen.height-86*s;
-            DrawCard(new Rect(x,y,w,h),PanelStrong);
-            Rect key=new(x+10*s,y+9*s,36*s,36*s);DrawRounded(key,new Color(1,1,1,.85f));GUI.Label(key,"E",_key);
-            GUI.Label(new Rect(x+62*s,y,w-74*s,h),prompt,_prompt);
-        }
-
-        private void DrawAnalogSpeedometer(float s,DriveableCar car)
-        {
-            float size=245*s,x=Screen.width-24*s-size,y=Screen.height-20*s-size;
-            Rect dial=new(x,y,size,size);DrawRounded(dial,new Color(.015f,.017f,.02f,.82f));
-            Vector2 center=new(dial.center.x,dial.center.y+16*s);float radius=91*s;const float minA=-130,maxA=130,maxK=50;
-            for(int i=0;i<=25;i++){float t=i/25f,a=Mathf.Lerp(minA,maxA,t);bool major=i%5==0;DrawRadialTick(center,radius,a,(major?15:8)*s,(major?2.2f:1.3f)*s,major?Text:new Color(1,1,1,.34f));if(major){Vector2 lp=PointOnCircle(center,radius-31*s,a);GUI.Label(new Rect(lp.x-18*s,lp.y-8*s,36*s,16*s),Mathf.RoundToInt(maxK*t).ToString(),_dialNumber);}}
-            float speed=Mathf.Clamp(car.SpeedKmh,0,maxK),needle=Mathf.Lerp(minA,maxA,speed/maxK);DrawNeedle(center,needle,70*s,3*s,Gold);DrawRounded(new Rect(center.x-7*s,center.y-7*s,14*s,14*s),Gold);
-            GUI.Label(new Rect(center.x-58*s,center.y+31*s,116*s,36*s),Mathf.RoundToInt(car.SpeedKmh).ToString(),_speedNumber);GUI.Label(new Rect(center.x-45*s,center.y+64*s,90*s,15*s),"KM/H",_speedUnit);
-        }
-
+        private void TryBind(){if(_player!=null||NetworkManager.Singleton==null||!NetworkManager.Singleton.IsListening)return;var local=NetworkManager.Singleton.LocalClient?.PlayerObject;if(local==null)return;_player=local.GetComponent<PlayerAgent>();_interactor=local.GetComponent<PlayerInteractor>();_vehicleInteractor=local.GetComponent<VehicleInteractor>();_movement=local.GetComponent<NetworkPlayerController>();}
+        private void BuildStyles(float s){_tiny=Style(10,s,FontStyle.Bold,Muted,TextAnchor.MiddleLeft);_small=Style(13,s,FontStyle.Bold,Text,TextAnchor.MiddleLeft);_medium=Style(17,s,FontStyle.Bold,Text,TextAnchor.MiddleLeft);_big=Style(34,s,FontStyle.Bold,Text,TextAnchor.MiddleLeft);_prompt=Style(15,s,FontStyle.Bold,Text,TextAnchor.MiddleLeft);_key=Style(14,s,FontStyle.Bold,new Color(.05f,.05f,.05f,1f),TextAnchor.MiddleCenter);_speedNumber=Style(30,s,FontStyle.Bold,Text,TextAnchor.MiddleCenter);_speedUnit=Style(9,s,FontStyle.Bold,Muted,TextAnchor.MiddleCenter);_dialNumber=Style(9,s,FontStyle.Bold,Muted,TextAnchor.MiddleCenter);}
+        private static GUIStyle Style(float z,float s,FontStyle f,Color c,TextAnchor a)=>new(GUI.skin.label){fontSize=Mathf.RoundToInt(z*s),fontStyle=f,alignment=a,padding=new RectOffset(0,0,0,0),normal={textColor=c}};
+        private void OnGUI(){TryBind();if(_player==null)return;float s=Mathf.Clamp(Mathf.Min(Screen.width/1920f,Screen.height/1080f),.78f,1.22f);BuildStyles(s);DriveableCar car=FindOccupiedCar();DrawWallet(s);DrawMissionBlock(s);DrawClock(s);DrawNeeds(s);DrawLocation(s);DrawStamina(s,car==null);DrawInteraction(s,car==null);if(car!=null)DrawAnalogSpeedometer(s,car);}
+        private void DrawWallet(float s){float x=24*s,y=24*s,w=330*s,h=96*s;DrawCard(new Rect(x,y,w,h),PanelStrong);Rect icon=new(x+14*s,y+14*s,48*s,48*s);DrawRounded(icon,new Color(.15f,.30f,.18f,.75f));GUI.Label(icon,"$",Style(24,s,FontStyle.Bold,new Color(.65f,1f,.68f,1f),TextAnchor.MiddleCenter));GUI.Label(new Rect(x+78*s,y+12*s,100*s,14*s),"CASH",_tiny);Color old=_big.normal.textColor;_big.normal.textColor=new Color(.60f,1f,.64f,1f);GUI.Label(new Rect(x+78*s,y+24*s,220*s,40*s),$"$ {_player.Wallet.Cash.Value:N0}",_big);_big.normal.textColor=old;DrawRounded(new Rect(x+78*s,y+70*s,220*s,6*s),Track);DrawRounded(new Rect(x+78*s,y+70*s,110*s,6*s),new Color(.42f,.85f,.48f,1f));float by=y+h+6*s;DrawCard(new Rect(x,by,w,h*.58f),Panel);DrawLine(new Rect(x+w*.5f,by+10*s,1*s,h*.58f-20*s),new Color(1,1,1,.12f));GUI.Label(new Rect(x+14*s,by+8*s,65*s,15*s),"BANK",_tiny);GUI.Label(new Rect(x+14*s,by+24*s,130*s,24*s),$"$ {_player.Wallet.Bank.Value:N0}",_medium);GUI.Label(new Rect(x+w*.5f+14*s,by+8*s,65*s,15*s),"AURA",_tiny);GUI.Label(new Rect(x+w*.5f+14*s,by+24*s,130*s,24*s),$"{_player.Aura.Aura.Value:+0;-0;0}",_medium);}
+        private void DrawMissionBlock(float s){float x=24*s,y=198*s,w=330*s;GUI.Label(new Rect(x,y,w,18*s),"AKTIVE MISSIONEN",_tiny);DrawCard(new Rect(x,y+24*s,w,74*s),Panel);DrawRounded(new Rect(x+12*s,y+37*s,8*s,8*s),new Color(.62f,.31f,.92f,1f));GUI.Label(new Rect(x+30*s,y+30*s,w-42*s,22*s),"Keine aktive Mission",_small);GUI.Label(new Rect(x+30*s,y+52*s,w-42*s,18*s),"Missionen erscheinen hier automatisch",Style(11,s,FontStyle.Normal,Muted,TextAnchor.MiddleLeft));}
+        private void DrawClock(float s){DateTime now=DateTime.Now;float w=180*s,h=72*s,x=Screen.width-24*s-w,y=22*s;DrawCard(new Rect(x,y,w,h),new Color(.02f,.022f,.026f,.26f));GUI.Label(new Rect(x+12*s,y+8*s,w-24*s,36*s),now.ToString("HH:mm"),Style(31,s,FontStyle.Bold,Text,TextAnchor.MiddleRight));GUI.Label(new Rect(x+12*s,y+43*s,w-24*s,18*s),GermanDay(now.DayOfWeek),Style(11,s,FontStyle.Bold,Muted,TextAnchor.MiddleRight));}
+        private static string GermanDay(DayOfWeek d)=>d switch{DayOfWeek.Monday=>"MONTAG",DayOfWeek.Tuesday=>"DIENSTAG",DayOfWeek.Wednesday=>"MITTWOCH",DayOfWeek.Thursday=>"DONNERSTAG",DayOfWeek.Friday=>"FREITAG",DayOfWeek.Saturday=>"SAMSTAG",_=>"SONNTAG"};
+        private void DrawNeeds(float s){float x=24*s,w=355*s,rowH=52*s,gap=3*s,y=Screen.height-24*s-(rowH*3+gap*2)-44*s;DrawNeedRow(x,y,w,rowH,"♥","HEALTH",_player.Needs.Health.Value,Health,s);DrawNeedRow(x,y+(rowH+gap),w,rowH,"≡","HUNGER",_player.Needs.Hunger.Value,Hunger,s);DrawNeedRow(x,y+(rowH+gap)*2,w,rowH,"▣","ENERGY",_player.Needs.Energy.Value,Energy,s);}
+        private void DrawNeedRow(float x,float y,float w,float h,string icon,string label,float raw,Color c,float s){float v=Mathf.Clamp(raw,0,100);DrawCard(new Rect(x,y,w,h),PanelStrong);GUI.Label(new Rect(x+10*s,y+8*s,34*s,34*s),icon,Style(23,s,FontStyle.Bold,c,TextAnchor.MiddleCenter));GUI.Label(new Rect(x+55*s,y+7*s,115*s,18*s),label,_small);GUI.Label(new Rect(x+w-60*s,y+7*s,45*s,18*s),$"{Mathf.RoundToInt(v)}%",Style(12,s,FontStyle.Bold,Text,TextAnchor.MiddleRight));Rect track=new(x+55*s,y+30*s,w-74*s,8*s);DrawRounded(track,Track);Rect fill=new(track.x,track.y,track.width*v/100f,track.height);if(fill.width>1)DrawRounded(fill,c);}
+        private void DrawStamina(float s,bool foot){if(!foot||_movement==null)return;if(_movement.IsSprinting||_movement.Stamina01<.995f)_staminaVisibleUntil=Time.unscaledTime+1.2f;if(Time.unscaledTime>_staminaVisibleUntil)return;float x=24*s,w=355*s,h=52*s,y=Screen.height-24*s-h;DrawCard(new Rect(x,y,w,h),PanelStrong);GUI.Label(new Rect(x+10*s,y+8*s,34*s,34*s),"ϟ",Style(24,s,FontStyle.Bold,Stamina,TextAnchor.MiddleCenter));GUI.Label(new Rect(x+55*s,y+7*s,115*s,18*s),"STAMINA",_small);GUI.Label(new Rect(x+w-60*s,y+7*s,45*s,18*s),$"{Mathf.RoundToInt(_movement.Stamina)}%",Style(12,s,FontStyle.Bold,Text,TextAnchor.MiddleRight));Rect track=new(x+55*s,y+30*s,w-74*s,8*s);DrawRounded(track,Track);DrawRounded(new Rect(track.x,track.y,track.width*_movement.Stamina01,track.height),Stamina);}
+        private void DrawLocation(float s){GUI.Label(new Rect(24*s,Screen.height-46*s,170*s,20*s),"●  EASTWOOD",Style(12,s,FontStyle.Bold,Text,TextAnchor.MiddleLeft));}
+        private void DrawInteraction(float s,bool foot){if(!foot)return;string p=null;if(_vehicleInteractor!=null&&_vehicleInteractor.enabled&&_vehicleInteractor.CanEnterVehicle)p="Fahren";else if(_interactor!=null&&_interactor.enabled&&!string.IsNullOrWhiteSpace(_interactor.CurrentPrompt))p=CleanPrompt(_interactor.CurrentPrompt);if(string.IsNullOrWhiteSpace(p))return;float w=Mathf.Clamp(170+p.Length*8,220,380)*s,h=54*s,x=Screen.width*.5f-w*.5f,y=Screen.height-86*s;DrawCard(new Rect(x,y,w,h),PanelStrong);Rect key=new(x+10*s,y+9*s,36*s,36*s);DrawRounded(key,new Color(1,1,1,.85f));GUI.Label(key,"E",_key);GUI.Label(new Rect(x+62*s,y,w-74*s,h),p,_prompt);}
+        private void DrawAnalogSpeedometer(float s,DriveableCar car){float size=245*s,x=Screen.width-24*s-size,y=Screen.height-20*s-size;Rect dial=new(x,y,size,size);DrawRounded(dial,new Color(.015f,.017f,.02f,.82f));Vector2 center=new(dial.center.x,dial.center.y+16*s);float radius=91*s;const float minA=-130,maxA=130,maxK=50;for(int i=0;i<=25;i++){float t=i/25f,a=Mathf.Lerp(minA,maxA,t);bool major=i%5==0;DrawRadialTick(center,radius,a,(major?15:8)*s,(major?2.2f:1.3f)*s,major?Text:new Color(1,1,1,.34f));if(major){Vector2 lp=PointOnCircle(center,radius-31*s,a);GUI.Label(new Rect(lp.x-18*s,lp.y-8*s,36*s,16*s),Mathf.RoundToInt(maxK*t).ToString(),_dialNumber);}}float speed=Mathf.Clamp(car.SpeedKmh,0,maxK),needle=Mathf.Lerp(minA,maxA,speed/maxK);DrawNeedle(center,needle,70*s,3*s,Gold);DrawRounded(new Rect(center.x-7*s,center.y-7*s,14*s,14*s),Gold);GUI.Label(new Rect(center.x-58*s,center.y+31*s,116*s,36*s),Mathf.RoundToInt(car.SpeedKmh).ToString(),_speedNumber);GUI.Label(new Rect(center.x-45*s,center.y+64*s,90*s,15*s),"KM/H",_speedUnit);}
         private static Vector2 PointOnCircle(Vector2 c,float r,float deg){float rad=(deg-90)*Mathf.Deg2Rad;return c+new Vector2(Mathf.Cos(rad),Mathf.Sin(rad))*r;}
         private static void DrawRadialTick(Vector2 c,float r,float a,float len,float w,Color col){Vector2 p=PointOnCircle(c,r-len*.5f,a);Matrix4x4 m=GUI.matrix;Color old=GUI.color;GUI.color=col;GUIUtility.RotateAroundPivot(a,p);GUI.DrawTexture(new Rect(p.x-w*.5f,p.y-len*.5f,w,len),Texture2D.whiteTexture);GUI.matrix=m;GUI.color=old;}
         private static void DrawNeedle(Vector2 c,float a,float len,float w,Color col){Matrix4x4 m=GUI.matrix;Color old=GUI.color;GUI.color=col;GUIUtility.RotateAroundPivot(a,c);GUI.DrawTexture(new Rect(c.x-w*.5f,c.y-len+7,w,len),Texture2D.whiteTexture);GUI.matrix=m;GUI.color=old;}
-
-        private static DriveableCar FindOccupiedCar(){foreach(var c in Object.FindObjectsByType<DriveableCar>(FindObjectsSortMode.None))if(c!=null&&c.IsOccupied)return c;return null;}
+        private static DriveableCar FindOccupiedCar(){foreach(var c in UnityEngine.Object.FindObjectsByType<DriveableCar>(FindObjectsSortMode.None))if(c!=null&&c.IsOccupied)return c;return null;}
         private static string CleanPrompt(string p){p=p.Trim().Replace("[ E ]","").Replace("[E]","").Replace("(E)","").Replace("E -","").Trim();return string.IsNullOrWhiteSpace(p)?"Interagieren":p;}
         private void DrawCard(Rect r,Color c){DrawRounded(new Rect(r.x+2,r.y+3,r.width,r.height),new Color(0,0,0,.08f));DrawRounded(r,c);}
         private void DrawRounded(Rect r,Color c){Color old=GUI.color;GUI.color=c;GUI.DrawTexture(r,_roundedMask!=null?_roundedMask:Texture2D.whiteTexture,ScaleMode.StretchToFill,true);GUI.color=old;}
