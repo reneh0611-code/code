@@ -14,7 +14,7 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField, Min(0.1f)] private float sprintSpeed = 6.8f;
         [SerializeField, Min(0.1f)] private float acceleration = 18f;
         [SerializeField, Min(0.1f)] private float deceleration = 22f;
-        [SerializeField, Min(0.1f)] private float rotationSpeed = 18f;
+        [SerializeField, Min(0.1f)] private float rotationSpeed = 14f;
         [SerializeField] private float gravity = -26f;
         [SerializeField, Min(0.1f)] private float jumpHeight = 1.35f;
 
@@ -166,11 +166,12 @@ namespace CheatOnYourDayOnes.Player
             velocity.y = _verticalVelocity;
             _controller.Move(velocity * Time.deltaTime);
 
-            if (input.sqrMagnitude > 0.01f)
-            {
-                Quaternion targetRotation = yawRotation;
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
-            }
+            // Always follow the horizontal camera direction, even while standing still.
+            // Slerp keeps the body turn natural instead of snapping instantly.
+            transform.rotation = Quaternion.Slerp(
+                transform.rotation,
+                yawRotation,
+                rotationSpeed * Time.deltaTime);
 
             _serverPosition.Value = transform.position;
             _serverRotation.Value = transform.rotation;
