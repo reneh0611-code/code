@@ -88,7 +88,7 @@ namespace CheatOnYourDayOnes.Player
                 ReadMovementInput();
                 SendMovementInputRpc(_moveInput, _sprintInput, _lookYaw);
 
-                if (Keyboard.current != null && Keyboard.current.qKey.wasPressedThisFrame)
+                if (Keyboard.current != null && Keyboard.current.tabKey.wasPressedThisFrame)
                     RequestJumpRpc();
             }
 
@@ -181,7 +181,6 @@ namespace CheatOnYourDayOnes.Player
             velocity.y = _verticalVelocity;
             _controller.Move(velocity * Time.deltaTime);
 
-            // Character faces the mouse/look direction while moving. A/D therefore strafe naturally.
             if (input.sqrMagnitude > 0.01f)
             {
                 Quaternion targetRotation = yawRotation;
