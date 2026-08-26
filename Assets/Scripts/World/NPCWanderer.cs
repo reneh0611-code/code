@@ -86,7 +86,10 @@ namespace CheatOnYourDayOnes.World
                 return;
 
             _walking = walking;
-            if (animator == null)
+
+            // Little Guys sample prefabs may have an Animator/Avatar but no runtime controller.
+            // In that case movement should continue normally and animation calls are simply skipped.
+            if (animator == null || animator.runtimeAnimatorController == null || !animator.isActiveAndEnabled)
                 return;
 
             int state = walking ? WalkHash : IdleHash;
