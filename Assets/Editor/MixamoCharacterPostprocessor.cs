@@ -6,8 +6,6 @@ namespace CheatOnYourDayOnes.EditorTools
     /// <summary>
     /// AJ uses the original Mixamo transform hierarchy directly.
     /// Generic is intentional: no Humanoid retargeting or pose conversion.
-    /// The mesh stays readable in the Editor so CYDOY can surgically remove
-    /// accessory triangles such as the backpack without touching animation data.
     /// </summary>
     public sealed class MixamoCharacterPostprocessor : AssetPostprocessor
     {
@@ -26,7 +24,7 @@ namespace CheatOnYourDayOnes.EditorTools
             importer.importCameras = false;
             importer.importLights = false;
             importer.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
-            importer.isReadable = true;
+            importer.isReadable = false;
         }
 
         private static void OnPostprocessAllAssets(
@@ -42,7 +40,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>(CharacterPath);
                 if (model != null)
-                    Debug.Log("[CYDOY] AJ imported as readable Generic mesh for direct Mixamo playback: " + CharacterPath);
+                    Debug.Log("[CYDOY] AJ imported as Generic for direct Mixamo playback: " + CharacterPath);
             }
         }
     }
