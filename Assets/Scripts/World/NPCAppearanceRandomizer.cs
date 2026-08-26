@@ -41,60 +41,49 @@ namespace CheatOnYourDayOnes.World
         {
             SkinnedMeshRenderer[] renderers = GetComponentsInChildren<SkinnedMeshRenderer>(true)
                 .Where(r => r != null)
-                .OrderBy(r => r.bounds.center.y)
                 .ToArray();
-
-            if (renderers.Length == 0)
-                return;
 
             Color upper = Upper[Random.Range(0, Upper.Length)];
             Color lower = Lower[Random.Range(0, Lower.Length)];
             Color shoes = Shoes[Random.Range(0, Shoes.Length)];
 
-            Bounds full = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                full.Encapsulate(renderers[i].bounds);
-
-            for (int i = 0; i < renderers.Length; i++)
+            foreach (SkinnedMeshRenderer renderer in renderers)
             {
-                SkinnedMeshRenderer renderer = renderers[i];
                 string key = BuildKey(renderer);
 
-                if (IsSkinFaceHair(key))
+                // Absolutely never recolor anything that may contain skin, face, head, hair or hands.
+                if (ContainsAny(key,
+                    "skin", "face", "head", "hair", "eye", "eyes", "mouth", "teeth",
+                    "hand", "hands", "arm", "arms", "body", "torso", "neck"))
                     continue;
 
-                Bounds b = renderer.bounds;
-                float center01 = Mathf.InverseLerp(full.min.y, full.max.y, b.center.y);
+                bool upperClothing = ContainsAny(key,
+                    "shirt", "hoodie", "sweater", "jacket", "coat", "top", "vest", "pullover", "sweatshirt");
 
-                Color tint;
-                if (ContainsAny(key, "shoe", "boot", "sneaker", "footwear"))
-                    tint = shoes;
-                else if (ContainsAny(key, "pant", "trouser", "jeans", "short", "lower"))
-                    tint = lower;
-                else if (ContainsAny(key, "shirt", "hoodie", "sweater", "jacket", "coat", "top", "upper", "vest", "pullover"))
-                    tint = upper;
-                else
-                {
-                    // Fallback for neutral renderer names: use vertical position only.
-                    // Lowest clothing piece = shoes, middle-lower = pants, middle-upper = top.
-                    // The very highest renderer is preserved because it is usually hair/head/accessory.
-                    if (center01 < 0.22f)
-                        tint = shoes;
-                    else if (center01 < 0.52f)
-                        tint = lower;
-                    else if (center01 < 0.86f)
-                        tint = upper;
-                    else
-                        continue;
-                }
+                bool lowerClothing = ContainsAny(key,
+                    "pants", "pant", "trouser", "trousers", "jeans", "shorts", "legwear");
 
-                // renderer.materials creates per-NPC material instances.
-                // Original AJ textures remain assigned, only the material tint is changed.
+                bool footwear = ContainsAny(key,
+                    "shoe", "shoes", "boot", "boots", "sneaker", "sneakers", "footwear");
+
+                // Unknown or mixed renderer/material: leave AJ's original material completely untouched.
+                if (!upperClothing && !lowerClothing && !footwear)
+                    continue;
+
+                Color tint = footwear ? shoes : lowerClothing ? lower : upper;
+
                 Material[] mats = renderer.materials;
                 for (int slot = 0; slot < mats.Length; slot++)
                 {
                     Material mat = mats[slot];
                     if (mat == null)
+                        continue;
+
+                    string materialKey = mat.name.ToLowerInvariant();
+
+                    // Double protection: if an individual material name hints at skin/face, never tint it.
+                    if (ContainsAny(materialKey,
+                        "skin", "face", "head", "hair", "eye", "mouth", "hand", "body"))
                         continue;
 
                     if (mat.HasProperty("_BaseColor"))
@@ -113,12 +102,6 @@ namespace CheatOnYourDayOnes.World
                     (renderer.sharedMesh != null ? renderer.sharedMesh.name : string.Empty) + " " +
                     string.Join(" ", renderer.sharedMaterials.Where(m => m != null).Select(m => m.name)))
                 .ToLowerInvariant();
-        }
-
-        private static bool IsSkinFaceHair(string key)
-        {
-            return ContainsAny(key,
-                "skin", "face", "head", "hair", "eye", "eyes", "mouth", "teeth", "hand");
         }
 
         private static bool ContainsAny(string value, params string[] tokens)
