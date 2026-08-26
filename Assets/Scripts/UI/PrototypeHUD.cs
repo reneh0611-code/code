@@ -8,8 +8,9 @@ namespace CheatOnYourDayOnes.UI
 {
     public sealed class PrototypeHUD : MonoBehaviour
     {
-        private static readonly Color Ink = new(0.025f, 0.027f, 0.03f, 0.92f);
-        private static readonly Color InkSoft = new(0.035f, 0.038f, 0.043f, 0.82f);
+        // HUD surfaces are deliberately very transparent; text + bars stay fully legible.
+        private static readonly Color Ink = new(0.025f, 0.027f, 0.03f, 0.30f);
+        private static readonly Color InkSoft = new(0.035f, 0.038f, 0.043f, 0.22f);
         private static readonly Color Text = new(0.97f, 0.965f, 0.94f, 1f);
         private static readonly Color Muted = new(0.66f, 0.67f, 0.65f, 1f);
         private static readonly Color Track = new(0.13f, 0.14f, 0.15f, 0.95f);
@@ -116,14 +117,14 @@ namespace CheatOnYourDayOnes.UI
             DrawCard(new Rect(x, y, w, h), Ink);
 
             Rect coin = new(x + 15f * scale, y + 16f * scale, 44f * scale, 44f * scale);
-            DrawRounded(coin, Gold);
+            DrawRounded(coin, new Color(Gold.r, Gold.g, Gold.b, 0.58f));
             GUIStyle dollar = MakeStyle(22f, scale, FontStyle.Bold, new Color(0.15f, 0.13f, 0.08f), TextAnchor.MiddleCenter);
             GUI.Label(coin, "$", dollar);
 
             GUI.Label(new Rect(x + 72f * scale, y + 12f * scale, 100f * scale, 15f * scale), "CASH", _tiny);
             GUI.Label(new Rect(x + 72f * scale, y + 25f * scale, w - 88f * scale, 42f * scale), $"{_player.Wallet.Cash.Value:N0}", _cash);
 
-            DrawLine(new Rect(x + 16f * scale, y + 70f * scale, w - 32f * scale, 1f), new Color(1f, 1f, 1f, 0.08f));
+            DrawLine(new Rect(x + 16f * scale, y + 70f * scale, w - 32f * scale, 1f), new Color(1f, 1f, 1f, 0.12f));
 
             GUI.Label(new Rect(x + 16f * scale, y + 80f * scale, 48f * scale, 15f * scale), "BANK", _tiny);
             GUI.Label(new Rect(x + 62f * scale, y + 78f * scale, 90f * scale, 18f * scale), $"{_player.Wallet.Bank.Value:N0}", _secondary);
@@ -171,7 +172,6 @@ namespace CheatOnYourDayOnes.UI
             if (Time.unscaledTime > _staminaVisibleUntil) return;
 
             float w = 280f * scale;
-            float h = 31f * scale;
             float x = Screen.width * 0.5f - w * 0.5f;
             float y = Screen.height - 145f * scale;
 
@@ -201,13 +201,14 @@ namespace CheatOnYourDayOnes.UI
             float x = Screen.width * 0.5f - w * 0.5f;
             float y = Screen.height - 88f * scale;
 
-            DrawCard(new Rect(x, y, w, h), new Color(0.02f, 0.022f, 0.025f, 0.92f));
+            DrawCard(new Rect(x, y, w, h), new Color(0.02f, 0.022f, 0.025f, 0.28f));
             Rect key = new(x + 8f * scale, y + 8f * scale, 34f * scale, 34f * scale);
-            DrawRounded(key, Text);
+            DrawRounded(key, new Color(Text.r, Text.g, Text.b, 0.62f));
             GUI.Label(key, "E", _key);
             GUI.Label(new Rect(x + 55f * scale, y, w - 66f * scale, h), prompt, _prompt);
         }
 
+        // Speedometer intentionally unchanged.
         private void DrawAnalogSpeedometer(float scale, DriveableCar car)
         {
             float size = 245f * scale;
@@ -294,7 +295,8 @@ namespace CheatOnYourDayOnes.UI
 
         private void DrawCard(Rect rect, Color color)
         {
-            DrawRounded(new Rect(rect.x + 2f, rect.y + 3f, rect.width, rect.height), new Color(0f, 0f, 0f, .18f));
+            // Very light shadow only; no opaque slabs behind the HUD.
+            DrawRounded(new Rect(rect.x + 2f, rect.y + 3f, rect.width, rect.height), new Color(0f, 0f, 0f, .07f));
             DrawRounded(rect, color);
         }
 
