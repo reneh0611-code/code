@@ -9,7 +9,6 @@ namespace CheatOnYourDayOnes.EditorTools
 {
     public static class NPCWorldPopulator
     {
-        private const string ControllerPath = "Assets/Resources/AJ_Locomotion.controller";
         private const string RootName = "Generated_NPCs";
 
         private static readonly string[] CharacterPrefabPaths =
@@ -23,7 +22,6 @@ namespace CheatOnYourDayOnes.EditorTools
         [MenuItem("Tools/CYDOY/Populate World With NPCs")]
         public static void Populate()
         {
-            RuntimeAnimatorController controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(ControllerPath);
             List<GameObject> characterPrefabs = new();
 
             foreach (string path in CharacterPrefabPaths)
@@ -40,15 +38,6 @@ namespace CheatOnYourDayOnes.EditorTools
                 EditorUtility.DisplayDialog(
                     "CYDOY · NPCs",
                     "None of the Little Guys character prefabs could be found. Make sure the Free Sample pack is imported.",
-                    "OK");
-                return;
-            }
-
-            if (controller == null)
-            {
-                EditorUtility.DisplayDialog(
-                    "CYDOY · NPCs",
-                    "AJ_Locomotion.controller is missing.",
                     "OK");
                 return;
             }
@@ -97,7 +86,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
                 npc.name = $"NPC_{sourcePrefab.name.Replace(" ", "_")}_{created + 1:00}";
                 npc.transform.SetParent(root.transform, true);
-                npc.transform.position = hit.point;
+                npc.transform.position = hit.point + Vector3.up * 2f;
                 npc.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
                 npc.SetActive(true);
 
@@ -110,38 +99,48 @@ namespace CheatOnYourDayOnes.EditorTools
                         renderer.enabled = true;
                 }
 
+                // IMPORTANT: keep the animator/avatar/controller exactly as authored by the Little Guys prefab.
+                // We no longer assign AJ_Locomotion here, because AJ's Generic controller is not compatible
+                // with these Humanoid avatars and can collapse the pose/bounds.
                 Animator animator = npc.GetComponentInChildren<Animator>(true);
-                if (animator == null)
-                    animator = npc.AddComponent<Animator>();
+                if (animator != null)
+                {
+                    animator.applyRootMotion = false;
+                    animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                    animator.enabled = true;
+                    animator.Rebind();
+                    animator.Update(0f);
+                }
 
-                animator.runtimeAnimatorController = controller;
-                animator.applyRootMotion = false;
-                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-                animator.enabled = true;
+                // First place the visible feet exactly on the raycast ground.
+                SnapVisualToGround(npc, hit.point.y);
+
+                Bounds bounds = GetRendererBounds(npc);
+                Vector3 localCenter = npc.transform.InverseTransformPoint(bounds.center);
+                float visualHeight = Mathf.Max(0.8f, bounds.size.y);
+                float visualWidth = Mathf.Max(0.35f, Mathf.Max(bounds.size.x, bounds.size.z));
 
                 CharacterController cc = npc.GetComponent<CharacterController>();
                 if (cc == null)
                     cc = npc.AddComponent<CharacterController>();
 
-                Bounds bounds = GetRendererBounds(npc);
-                float visualHeight = Mathf.Max(1.2f, bounds.size.y);
-                cc.height = visualHeight * 0.92f;
-                cc.radius = Mathf.Clamp(bounds.size.x * 0.32f, 0.22f, 0.38f);
-                cc.center = new Vector3(0f, cc.height * 0.5f, 0f);
-                cc.stepOffset = Mathf.Min(0.25f, cc.height * 0.15f);
-                cc.skinWidth = 0.04f;
+                cc.height = Mathf.Max(0.7f, visualHeight * 0.92f);
+                cc.radius = Mathf.Clamp(visualWidth * 0.28f, 0.18f, 0.38f);
+                cc.center = new Vector3(localCenter.x, localCenter.y, localCenter.z);
+                cc.stepOffset = Mathf.Min(0.22f, cc.height * 0.15f);
+                cc.skinWidth = 0.035f;
+                cc.minMoveDistance = 0.001f;
 
                 NPCWanderer wander = npc.GetComponent<NPCWanderer>();
                 if (wander == null)
                     wander = npc.AddComponent<NPCWanderer>();
 
                 bool tall = sourcePrefab.name.ToLowerInvariant().Contains("tall");
-                float speed = tall ? Random.Range(1.25f, 1.50f) : Random.Range(1.15f, 1.40f);
+                float speed = tall ? Random.Range(1.20f, 1.42f) : Random.Range(1.08f, 1.32f);
                 wander.Configure(speed, Random.Range(7f, 12f));
 
-                // Do NOT add NPCAppearanceRandomizer here. The new character pack owns its
-                // materials/textures, so skin and clothing remain exactly as authored.
-                SnapToGround(npc, hit.point.y);
+                // One final correction after CharacterController creation, using actual visible bounds only.
+                SnapVisualToGround(npc, hit.point.y);
 
                 used.Add(npc.transform.position);
                 created++;
@@ -153,7 +152,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EditorUtility.DisplayDialog(
                 "CYDOY · NPCs",
-                $"Placed {created} Little Guys NPCs using Free Woman, Free Woman Tall, Free Man and Free Man Tall.\n\nPlayer, hub, camera and network objects were not modified.",
+                $"Placed {created} Little Guys NPCs with their original animator/avatar preserved and their visible feet snapped to the ground.\n\nPlayer, hub, camera and network objects were not modified.",
                 "OK");
         }
 
@@ -181,7 +180,7 @@ namespace CheatOnYourDayOnes.EditorTools
             return bounds;
         }
 
-        private static void SnapToGround(GameObject npc, float groundY)
+        private static void SnapVisualToGround(GameObject npc, float groundY)
         {
             Renderer[] renderers = npc.GetComponentsInChildren<Renderer>(true);
             if (renderers.Length == 0)
@@ -191,7 +190,8 @@ namespace CheatOnYourDayOnes.EditorTools
             for (int i = 1; i < renderers.Length; i++)
                 bounds.Encapsulate(renderers[i].bounds);
 
-            npc.transform.position += Vector3.up * (groundY - bounds.min.y);
+            float delta = groundY - bounds.min.y;
+            npc.transform.position += Vector3.up * delta;
         }
     }
 }
