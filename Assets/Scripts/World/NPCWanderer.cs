@@ -12,15 +12,16 @@ namespace CheatOnYourDayOnes.World
         [SerializeField] private float turnSpeed = 5f;
         [SerializeField] private float minPause = 1.25f;
         [SerializeField] private float maxPause = 4f;
-        [SerializeField] private float groundSearchUp = 1.5f;
-        [SerializeField] private float groundSearchDown = 4f;
-        [SerializeField] private float maxGroundCorrection = 0.45f;
+        [SerializeField] private float groundSearchUp = 1.25f;
+        [SerializeField] private float groundSearchDown = 3f;
+        [SerializeField] private float maxGroundCorrection = 0.5f;
 
         private static readonly int IdleHash = Animator.StringToHash("Base Layer.Idle");
         private static readonly int WalkHash = Animator.StringToHash("Base Layer.Walk");
 
         private CharacterController _controller;
-        private Renderer[] _renderers;
+        private SkinnedMeshRenderer[] _skinnedRenderers;
+        private Mesh[] _bakedMeshes;
         private Vector3 _home;
         private Vector3 _target;
         private float _pause;
@@ -31,7 +32,30 @@ namespace CheatOnYourDayOnes.World
             _controller = GetComponent<CharacterController>();
             if (animator == null)
                 animator = GetComponentInChildren<Animator>(true);
-            _renderers = GetComponentsInChildren<Renderer>(true).Where(r => r != null).ToArray();
+
+            _skinnedRenderers = GetComponentsInChildren<SkinnedMeshRenderer>(true)
+                .Where(r => r != null)
+                .ToArray();
+
+            _bakedMeshes = new Mesh[_skinnedRenderers.Length];
+            for (int i = 0; i < _bakedMeshes.Length; i++)
+            {
+                _bakedMeshes[i] = new Mesh
+                {
+                    name = $"{name}_GroundBake_{i}"
+                };
+                _bakedMeshes[i].MarkDynamic();
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (_bakedMeshes == null) return;
+            foreach (Mesh mesh in _bakedMeshes)
+            {
+                if (mesh != null)
+                    Destroy(mesh);
+            }
         }
 
         private void Start()
@@ -63,13 +87,13 @@ namespace CheatOnYourDayOnes.World
             Quaternion wantedRotation = Quaternion.LookRotation(direction, Vector3.up);
             transform.rotation = Quaternion.Slerp(transform.rotation, wantedRotation, 1f - Mathf.Exp(-turnSpeed * Time.deltaTime));
 
-            // Horizontal locomotion only. Vertical placement is handled from the visible feet in LateUpdate.
+            // Horizontal locomotion only. Exact vertical placement is solved from the actual skinned mesh in LateUpdate.
             _controller.Move(direction * walkSpeed * Time.deltaTime);
         }
 
         private void LateUpdate()
         {
-            LockVisibleFeetToGround();
+            LockActualMeshToGround();
         }
 
         private void PickTarget()
@@ -99,26 +123,56 @@ namespace CheatOnYourDayOnes.World
                 animator.CrossFadeInFixedTime(state, 0.12f, 0, 0f);
         }
 
-        private void LockVisibleFeetToGround()
+        private void LockActualMeshToGround()
         {
-            if (_renderers == null || _renderers.Length == 0 || _controller == null)
+            if (_controller == null || _skinnedRenderers == null || _skinnedRenderers.Length == 0)
                 return;
 
-            Bounds bounds = _renderers[0].bounds;
-            for (int i = 1; i < _renderers.Length; i++)
+            bool foundVertex = false;
+            float lowestWorldY = float.PositiveInfinity;
+            Vector3 sampleCenter = transform.position;
+            int centerSamples = 0;
+
+            for (int i = 0; i < _skinnedRenderers.Length; i++)
             {
-                if (_renderers[i] != null && _renderers[i].enabled)
-                    bounds.Encapsulate(_renderers[i].bounds);
+                SkinnedMeshRenderer smr = _skinnedRenderers[i];
+                Mesh baked = _bakedMeshes[i];
+                if (smr == null || baked == null || !smr.enabled || !smr.gameObject.activeInHierarchy)
+                    continue;
+
+                smr.BakeMesh(baked);
+                Vector3[] vertices = baked.vertices;
+                Matrix4x4 localToWorld = smr.transform.localToWorldMatrix;
+
+                for (int v = 0; v < vertices.Length; v++)
+                {
+                    Vector3 world = localToWorld.MultiplyPoint3x4(vertices[v]);
+                    if (world.y < lowestWorldY)
+                        lowestWorldY = world.y;
+                }
+
+                sampleCenter += smr.bounds.center;
+                centerSamples++;
+                foundVertex = true;
             }
 
-            Vector3 origin = new(bounds.center.x, bounds.min.y + groundSearchUp, bounds.center.z);
-            RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, groundSearchUp + groundSearchDown, ~0, QueryTriggerInteraction.Ignore);
-            if (hits == null || hits.Length == 0)
+            if (!foundVertex || float.IsInfinity(lowestWorldY))
                 return;
+
+            if (centerSamples > 0)
+                sampleCenter /= centerSamples + 1f;
+
+            Vector3 origin = new(sampleCenter.x, lowestWorldY + groundSearchUp, sampleCenter.z);
+            RaycastHit[] hits = Physics.RaycastAll(
+                origin,
+                Vector3.down,
+                groundSearchUp + groundSearchDown,
+                ~0,
+                QueryTriggerInteraction.Ignore);
 
             float bestDistance = float.MaxValue;
             float groundY = 0f;
-            bool found = false;
+            bool foundGround = false;
 
             foreach (RaycastHit hit in hits)
             {
@@ -133,16 +187,14 @@ namespace CheatOnYourDayOnes.World
                 {
                     bestDistance = hit.distance;
                     groundY = hit.point.y;
-                    found = true;
+                    foundGround = true;
                 }
             }
 
-            if (!found)
+            if (!foundGround)
                 return;
 
-            float delta = groundY - bounds.min.y;
-            delta = Mathf.Clamp(delta, -maxGroundCorrection, maxGroundCorrection);
-
+            float delta = Mathf.Clamp(groundY - lowestWorldY, -maxGroundCorrection, maxGroundCorrection);
             if (Mathf.Abs(delta) > 0.0005f)
                 _controller.Move(Vector3.up * delta);
         }
