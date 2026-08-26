@@ -15,11 +15,14 @@ namespace CheatOnYourDayOnes.World
         [SerializeField] private float lyingVisualSink=.38f;
         [SerializeField] private float carClearanceBeforeGetUp=3.2f;
         [SerializeField] private float extraWaitAfterCarClears=.65f;
+        [SerializeField] private float maxAnimationFallTravel=4.0f;
         [SerializeField,Range(-1f,1f)] private float rearHitDotThreshold=-.25f;
 
         private static readonly int IdleHash=Animator.StringToHash("Base Layer.Idle"),WalkHash=Animator.StringToHash("Base Layer.Walk"),RunHash=Animator.StringToHash("Base Layer.Run"),FallHash=Animator.StringToHash("Base Layer.Fall"),GettingUpHash=Animator.StringToHash("Base Layer.GettingUp"),FallRearHash=Animator.StringToHash("Base Layer.FallRear"),GettingUpRearHash=Animator.StringToHash("Base Layer.GettingUpRear");
         private CharacterController _controller; private Vector3 _home,_target,_impactAnchor; private float _pause,_verticalVelocity,_fallUntil,_getUpUntil,_safeGetUpAfter; private bool _walking,_running,_gettingUp,_rearImpact; private DriveableCar _dangerCar;
         private SkinnedMeshRenderer _mainSkinnedMesh; private Collider[] _allColliders; private bool[] _colliderStates;
+        private Vector3 _fallOriginAnchor,_fallBodyStartCenter;
+        private bool _fallMotionTracking;
 
         public bool IsDown=>_fallUntil>0f||_gettingUp;
         public Vector3 DownPosition=>_impactAnchor;
@@ -33,32 +36,35 @@ namespace CheatOnYourDayOnes.World
         {
             if(IsDown)
             {
-                Vector3 pinned=FindGroundPoint(_impactAnchor);pinned.x=_impactAnchor.x;pinned.z=_impactAnchor.z;transform.position=pinned;
+                Vector3 ground=FindGroundPoint(_impactAnchor);
+                Vector3 pos=transform.position;
+                pos.y=ground.y;
+
+                // During the fall animation the skeleton is allowed to travel forward/backward visually.
+                // Only once GettingUp begins do we move the gameplay root to the actual landing point.
+                if(_gettingUp)
+                {
+                    pos.x=_impactAnchor.x;
+                    pos.z=_impactAnchor.z;
+                }
+                transform.position=pos;
 
                 if(!_gettingUp&&Time.time>=_fallUntil)
                 {
-                    if(IsCarTooClose())
-                    {
-                        _safeGetUpAfter=Time.time+extraWaitAfterCarClears;
-                    }
-                    else if(Time.time>=_safeGetUpAfter)
-                    {
-                        StartGettingUp();
-                    }
+                    if(IsCarTooClose()) _safeGetUpAfter=Time.time+extraWaitAfterCarClears;
+                    else if(Time.time>=_safeGetUpAfter) StartGettingUp();
                 }
 
                 if(_gettingUp&&IsCarTooClose())
                 {
-                    // Never stand up underneath a vehicle. Return to the lying pose and wait.
                     _gettingUp=false;
                     _fallUntil=Time.time+.35f;
                     _safeGetUpAfter=Time.time+extraWaitAfterCarClears;
+                    _fallOriginAnchor=_impactAnchor;
+                    _fallMotionTracking=false;
                     PlayState(_rearImpact?FallRearHash:FallHash,.03f);
                 }
-                else if(_gettingUp&&Time.time>=_getUpUntil)
-                {
-                    FinishGettingUp();
-                }
+                else if(_gettingUp&&Time.time>=_getUpUntil) FinishGettingUp();
                 return;
             }
 
@@ -72,11 +78,37 @@ namespace CheatOnYourDayOnes.World
         private void LateUpdate()
         {
             if(!IsDown||_mainSkinnedMesh==null)return;
-            Vector3 pinned=FindGroundPoint(_impactAnchor);pinned.x=_impactAnchor.x;pinned.z=_impactAnchor.z;transform.position=pinned;
+
             Bounds body=_mainSkinnedMesh.bounds;
-            float desiredBottom=pinned.y+downGroundOffset-(!_gettingUp?lyingVisualSink:0f);
+
+            if(!_gettingUp)
+            {
+                if(!_fallMotionTracking)
+                {
+                    _fallBodyStartCenter=body.center;
+                    _fallMotionTracking=true;
+                }
+                else
+                {
+                    Vector3 travel=body.center-_fallBodyStartCenter;
+                    travel.y=0f;
+                    if(travel.magnitude>maxAnimationFallTravel) travel=travel.normalized*maxAnimationFallTravel;
+                    _impactAnchor.x=_fallOriginAnchor.x+travel.x;
+                    _impactAnchor.z=_fallOriginAnchor.z+travel.z;
+                    _impactAnchor=FindGroundPoint(_impactAnchor);
+                }
+            }
+
+            Vector3 ground=FindGroundPoint(_impactAnchor);
+            Vector3 rootPos=transform.position;
+            if(_gettingUp){rootPos.x=_impactAnchor.x;rootPos.z=_impactAnchor.z;}
+            rootPos.y=ground.y;
+            transform.position=rootPos;
+
+            body=_mainSkinnedMesh.bounds;
+            float desiredBottom=ground.y+downGroundOffset-(!_gettingUp?lyingVisualSink:0f);
             float correction=desiredBottom-body.min.y;
-            if(Mathf.Abs(correction)<2f)transform.position+=Vector3.up*correction;
+            if(Mathf.Abs(correction)<2f) transform.position+=Vector3.up*correction;
         }
 
         private bool IsCarTooClose()
@@ -95,8 +127,21 @@ namespace CheatOnYourDayOnes.World
 
         private Vector3 FindGroundPoint(Vector3 desired){Vector3 origin=new Vector3(desired.x,desired.y+groundRayHeight,desired.z);RaycastHit[] hits=Physics.RaycastAll(origin,Vector3.down,groundRayDistance,~0,QueryTriggerInteraction.Ignore);bool found=false;float y=float.NegativeInfinity;foreach(var hit in hits){if(hit.collider==null||hit.transform==transform||hit.transform.IsChildOf(transform)||hit.normal.y<.55f)continue;if(hit.collider.GetComponentInParent<DriveableCar>()!=null)continue;if(!found||hit.point.y>y){y=hit.point.y;found=true;}}if(found)desired.y=y+downGroundOffset;return desired;}
 
-        private void StartGettingUp(){_gettingUp=true;_getUpUntil=Time.time+getUpSeconds;int state=_rearImpact?GettingUpRearHash:GettingUpHash;bool ok=PlayState(state,.03f);if(!ok&&_rearImpact)ok=PlayState(GettingUpHash,.03f);Debug.Log($"[CYDOY] NPC GETTING UP: {name} rear={_rearImpact} animation={ok}",this);}
-        private void FinishGettingUp(){_gettingUp=false;_fallUntil=0;RestorePhysicalCollision();PlayState(IdleHash,.06f);Pause(Random.Range(.15f,.45f));}
+        private void StartGettingUp()
+        {
+            // Transfer the displacement contained in Fall/FallRear to the actual NPC root before
+            // playing GettingUp. The NPC now stands up where the body really landed.
+            Vector3 ground=FindGroundPoint(_impactAnchor);
+            transform.position=new Vector3(_impactAnchor.x,ground.y,_impactAnchor.z);
+            _gettingUp=true;
+            _fallMotionTracking=false;
+            _getUpUntil=Time.time+getUpSeconds;
+            int state=_rearImpact?GettingUpRearHash:GettingUpHash;
+            bool ok=PlayState(state,.03f);if(!ok&&_rearImpact)ok=PlayState(GettingUpHash,.03f);
+            Debug.Log($"[CYDOY] NPC GETTING UP AT LANDING: {name} pos={_impactAnchor} rear={_rearImpact} animation={ok}",this);
+        }
+
+        private void FinishGettingUp(){_gettingUp=false;_fallUntil=0;_fallMotionTracking=false;RestorePhysicalCollision();PlayState(IdleHash,.06f);Pause(Random.Range(.15f,.45f));}
         private bool PlayState(int hash,float fade){if(animator==null||animator.runtimeAnimatorController==null||!animator.isActiveAndEnabled)return false;animator.applyRootMotion=false;if(!animator.HasState(0,hash))return false;animator.CrossFadeInFixedTime(hash,fade,0,0);return true;}
         private void FindDangerousCar(){_dangerCar=null;float best=carAwarenessRadius;foreach(DriveableCar car in Object.FindObjectsByType<DriveableCar>(FindObjectsSortMode.None)){if(car==null||!car.IsOccupied||!car.IsThreateningPoint(transform.position,fleeOnlyAboveKmh))continue;float d=Vector3.Distance(transform.position,car.transform.position);if(d<best){best=d;_dangerCar=car;}}}
 
@@ -106,10 +151,12 @@ namespace CheatOnYourDayOnes.World
             Vector3 toCar=carPosition-transform.position;toCar.y=0;if(toCar.sqrMagnitude>.001f)toCar.Normalize();_rearImpact=Vector3.Dot(transform.forward,toCar)<rearHitDotThreshold;
             Vector3 carry=carVelocity;carry.y=0;if(carry.sqrMagnitude>.001f)carry=carry.normalized*impactCarryDistance;
             Vector3 hitPoint=transform.position+carry;_impactAnchor=FindGroundPoint(hitPoint);_impactAnchor.x=hitPoint.x;_impactAnchor.z=hitPoint.z;
+            _fallOriginAnchor=_impactAnchor;
+            _fallMotionTracking=false;
             _fallUntil=Time.time+lieDownSeconds;_safeGetUpAfter=_fallUntil;_getUpUntil=0;_gettingUp=false;_dangerCar=null;_walking=false;_running=false;
             DisablePhysicalCollision();transform.position=_impactAnchor;
             int state=_rearImpact?FallRearHash:FallHash;bool ok=PlayState(state,0f);if(!ok&&_rearImpact)ok=PlayState(FallHash,0f);
-            Debug.Log($"[CYDOY] NPC HARD DOWN LONG: {name} speed={speed:F2} lie={lieDownSeconds:F1}s anchor={_impactAnchor} animation={ok}",this);return true;
+            Debug.Log($"[CYDOY] NPC FALL TRACKING: {name} hit={_fallOriginAnchor} speed={speed:F2} animation={ok}",this);return true;
         }
 
         private void PickTarget(){Vector2 c=Random.insideUnitCircle*wanderRadius;_target=_home+new Vector3(c.x,0,c.y);SetWalking(true);}
