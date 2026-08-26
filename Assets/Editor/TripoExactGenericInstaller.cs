@@ -34,7 +34,7 @@ namespace CheatOnYourDayOnes.EditorTools
             InstallOnExistingNpcs(controller);
             AssetDatabase.SaveAssets(); AssetDatabase.Refresh();
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene()); EditorSceneManager.SaveOpenScenes();
-            EditorUtility.DisplayDialog("CYDOY", "Exact Generic locomotion installed. NPC grounding now targets the actual animated model child instead of moving the NPC controller/root.", "Test it");
+            EditorUtility.DisplayDialog("CYDOY", "Exact Generic locomotion installed. Player auto-grounding is disabled; NPC grounding remains separate.", "Test it");
         }
 
         private static void InstallOnPlayer(RuntimeAnimatorController controller)
@@ -46,15 +46,24 @@ namespace CheatOnYourDayOnes.EditorTools
                 Animator animator = visual != null ? visual.GetComponentInChildren<Animator>(true) : root.GetComponentInChildren<Animator>(true);
                 if (animator == null) return;
                 animator.runtimeAnimatorController = controller; animator.avatar = null; animator.applyRootMotion = false; animator.cullingMode = AnimatorCullingMode.AlwaysAnimate; animator.enabled = true;
+
                 CharacterAnimationDriver driver = root.GetComponent<CharacterAnimationDriver>();
                 if (driver != null)
                 {
-                    SerializedObject so = new(driver); so.FindProperty("animator").objectReferenceValue = animator; so.FindProperty("fallbackController").objectReferenceValue = controller; so.ApplyModifiedPropertiesWithoutUndo(); driver.enabled = true;
+                    SerializedObject so = new(driver);
+                    so.FindProperty("animator").objectReferenceValue = animator;
+                    so.FindProperty("fallbackController").objectReferenceValue = controller;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                    driver.enabled = true;
                 }
-                MixamoRuntimePoseAndGrounder old = root.GetComponent<MixamoRuntimePoseAndGrounder>(); if (old != null) Object.DestroyImmediate(old);
-                FixedWorldVisualGrounder g = root.GetComponent<FixedWorldVisualGrounder>(); if (g == null) g = root.AddComponent<FixedWorldVisualGrounder>();
-                Transform model = visual != null && visual.childCount > 0 ? visual.GetChild(0) : animator.transform;
-                SerializedObject gs = new(g); gs.FindProperty("modelRoot").objectReferenceValue = model; gs.FindProperty("settleFrames").intValue = 2; gs.FindProperty("soleOffset").floatValue = 0f; gs.ApplyModifiedPropertiesWithoutUndo(); g.enabled = true;
+
+                // Player height is intentionally left untouched. Runtime mesh/raycast grounding caused
+                // the visible player to sink depending on the current animation pose.
+                foreach (FixedWorldVisualGrounder grounder in root.GetComponentsInChildren<FixedWorldVisualGrounder>(true))
+                    Object.DestroyImmediate(grounder);
+                foreach (MixamoRuntimePoseAndGrounder old in root.GetComponentsInChildren<MixamoRuntimePoseAndGrounder>(true))
+                    Object.DestroyImmediate(old);
+
                 PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
             }
             finally { PrefabUtility.UnloadPrefabContents(root); }
@@ -70,30 +79,10 @@ namespace CheatOnYourDayOnes.EditorTools
                 Animator animator = npc.GetComponentInChildren<Animator>(true);
                 if (animator == null) continue;
                 animator.runtimeAnimatorController = controller; animator.avatar = null; animator.applyRootMotion = false; animator.cullingMode = AnimatorCullingMode.AlwaysAnimate; animator.enabled = true;
-
-                // Critical fix: never use the NPC root as modelRoot. The root owns CharacterController/movement.
-                // Move only the animated visual hierarchy so the soles can meet the street independently.
-                Transform modelRoot = animator.transform;
-                if (modelRoot == npc.transform)
-                {
-                    SkinnedMeshRenderer smr = npc.GetComponentInChildren<SkinnedMeshRenderer>(true);
-                    if (smr != null && smr.transform != npc.transform) modelRoot = FindHighestVisualChild(npc.transform, smr.transform);
-                }
-
-                FixedWorldVisualGrounder oldRootGrounder = npc.GetComponent<FixedWorldVisualGrounder>();
-                if (oldRootGrounder != null) Object.DestroyImmediate(oldRootGrounder);
-                FixedWorldVisualGrounder grounder = modelRoot.GetComponent<FixedWorldVisualGrounder>(); if (grounder == null) grounder = modelRoot.gameObject.AddComponent<FixedWorldVisualGrounder>();
-                SerializedObject so = new(grounder); so.FindProperty("modelRoot").objectReferenceValue = modelRoot; so.FindProperty("settleFrames").intValue = 2; so.FindProperty("rayStartHeight").floatValue = 2f; so.FindProperty("rayDistance").floatValue = 6f; so.FindProperty("soleOffset").floatValue = 0f; so.ApplyModifiedPropertiesWithoutUndo(); grounder.enabled = true;
-                wanderer.enabled = true; fixedCount++;
+                wanderer.enabled = true;
+                fixedCount++;
             }
-            Debug.Log($"[CYDOY] Prepared {fixedCount} existing NPCs for visual-only grounding.");
-        }
-
-        private static Transform FindHighestVisualChild(Transform npcRoot, Transform leaf)
-        {
-            Transform current = leaf;
-            while (current.parent != null && current.parent != npcRoot) current = current.parent;
-            return current;
+            Debug.Log($"[CYDOY] Prepared {fixedCount} existing NPCs. NPC grounding is handled by the dedicated NPC snap tool.");
         }
 
         private static bool SetGeneric(string path, bool loop)
