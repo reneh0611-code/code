@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,14 +9,26 @@ namespace CheatOnYourDayOnes.EditorTools
 {
     public static class AJBackpackUtility
     {
-        private const string CharacterPath = "Assets/Models/Characters/Aj.fbx";
         private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
         private const string GeneratedFolder = "Assets/Models/Characters/Generated";
+
+        // Confirmed manually with the live NPC island tester:
+        // Renderer 1 (zero-based index 0), displayed Island 12 (zero-based index 11)
+        // is the backpack. Island 13 contains cap/hood geometry and must remain untouched.
+        private const int BackpackRendererIndex = 0;
+        private const int BackpackIslandDisplayNumber = 12;
+
+        private sealed class Island
+        {
+            public int subMesh;
+            public List<int> triangles = new();
+            public HashSet<int> vertices = new();
+            public Bounds localBounds;
+        }
 
         [MenuItem("Tools/CYDOY/Remove AJ Backpack")]
         public static void RemoveBackpack()
         {
-            EnsureReadableSource();
             EnsureGeneratedFolder();
 
             GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
@@ -26,10 +39,6 @@ namespace CheatOnYourDayOnes.EditorTools
             }
 
             GameObject root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
-            int hiddenBones = 0;
-            int modifiedRenderers = 0;
-            int removedTriangles = 0;
-
             try
             {
                 Transform aj = FindRecursive(root.transform, "Mixamo_AJ");
@@ -39,177 +48,194 @@ namespace CheatOnYourDayOnes.EditorTools
                     return;
                 }
 
-                foreach (Transform t in aj.GetComponentsInChildren<Transform>(true))
+                SkinnedMeshRenderer[] renderers = aj.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                if (renderers.Length <= BackpackRendererIndex)
                 {
-                    if (t == aj)
-                        continue;
-
-                    if (IsBackpackToken(t.name))
-                    {
-                        t.gameObject.SetActive(false);
-                        hiddenBones++;
-                    }
+                    EditorUtility.DisplayDialog("CYDOY · AJ Backpack", "Renderer 1 no longer exists on Mixamo_AJ.", "OK");
+                    return;
                 }
 
-                foreach (SkinnedMeshRenderer renderer in aj.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                SkinnedMeshRenderer renderer = renderers[BackpackRendererIndex];
+                Mesh source = renderer.sharedMesh;
+                if (source == null || !source.isReadable)
                 {
-                    if (renderer == null || renderer.sharedMesh == null)
-                        continue;
+                    EditorUtility.DisplayDialog(
+                        "CYDOY · AJ Backpack",
+                        "Renderer 1 mesh is missing or not readable. Reimport Aj.fbx once so Read/Write is enabled.",
+                        "OK");
+                    return;
+                }
 
-                    Mesh source = renderer.sharedMesh;
-                    if (!source.isReadable)
-                    {
-                        Debug.LogWarning($"[CYDOY] Mesh '{source.name}' is not readable; skipped backpack surgery.");
-                        continue;
-                    }
+                List<Island> islands = BuildIslands(source);
+                int islandIndex = BackpackIslandDisplayNumber - 1;
+                if (islandIndex < 0 || islandIndex >= islands.Count)
+                {
+                    EditorUtility.DisplayDialog(
+                        "CYDOY · AJ Backpack",
+                        $"Renderer 1 currently has only {islands.Count} mesh islands, so confirmed Island 12 could not be resolved.",
+                        "OK");
+                    return;
+                }
 
-                    HashSet<int> backpackBoneIndices = GetBackpackBoneIndices(renderer);
-                    if (backpackBoneIndices.Count == 0)
-                        continue;
+                Island backpack = islands[islandIndex];
+                Mesh cleaned = CreateMeshWithoutIsland(source, backpack);
+                cleaned.name = source.name + "_NoBackpack_Exact";
 
-                    BoneWeight[] weights = source.boneWeights;
-                    if (weights == null || weights.Length != source.vertexCount)
-                        continue;
+                string safeRenderer = Sanitize(renderer.name);
+                string assetPath = $"{GeneratedFolder}/AJ_NoBackpack_Exact_{safeRenderer}.asset";
+                AssetDatabase.DeleteAsset(assetPath);
+                AssetDatabase.CreateAsset(cleaned, assetPath);
+                AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport);
 
-                    Mesh cleaned = Object.Instantiate(source);
-                    cleaned.name = source.name + "_NoBackpack";
+                Mesh saved = AssetDatabase.LoadAssetAtPath<Mesh>(assetPath);
+                renderer.sharedMesh = saved;
+                EditorUtility.SetDirty(renderer);
 
-                    int removedFromRenderer = 0;
-                    for (int subMesh = 0; subMesh < source.subMeshCount; subMesh++)
-                    {
-                        int[] triangles = source.GetTriangles(subMesh);
-                        List<int> kept = new(triangles.Length);
-
-                        for (int i = 0; i + 2 < triangles.Length; i += 3)
-                        {
-                            int a = triangles[i];
-                            int b = triangles[i + 1];
-                            int c = triangles[i + 2];
-
-                            float wa = BackpackInfluence(weights[a], backpackBoneIndices);
-                            float wb = BackpackInfluence(weights[b], backpackBoneIndices);
-                            float wc = BackpackInfluence(weights[c], backpackBoneIndices);
-
-                            int stronglyWeightedVertices = 0;
-                            if (wa >= 0.20f) stronglyWeightedVertices++;
-                            if (wb >= 0.20f) stronglyWeightedVertices++;
-                            if (wc >= 0.20f) stronglyWeightedVertices++;
-
-                            float average = (wa + wb + wc) / 3f;
-                            bool backpackTriangle = stronglyWeightedVertices >= 2 || average >= 0.30f;
-
-                            if (backpackTriangle)
-                            {
-                                removedFromRenderer++;
-                                continue;
-                            }
-
-                            kept.Add(a);
-                            kept.Add(b);
-                            kept.Add(c);
-                        }
-
-                        cleaned.SetTriangles(kept, subMesh, false);
-                    }
-
-                    if (removedFromRenderer == 0)
-                    {
-                        Object.DestroyImmediate(cleaned);
-                        continue;
-                    }
-
-                    cleaned.RecalculateBounds();
-
-                    string safeRenderer = Sanitize(renderer.name);
-                    string assetPath = $"{GeneratedFolder}/AJ_NoBackpack_{safeRenderer}.asset";
-                    AssetDatabase.DeleteAsset(assetPath);
-                    AssetDatabase.CreateAsset(cleaned, assetPath);
-                    AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport);
-
-                    Mesh saved = AssetDatabase.LoadAssetAtPath<Mesh>(assetPath);
-                    renderer.sharedMesh = saved;
-                    EditorUtility.SetDirty(renderer);
-
-                    modifiedRenderers++;
-                    removedTriangles += removedFromRenderer;
-
-                    Debug.Log($"[CYDOY] Backpack geometry removed from renderer '{renderer.name}'. Triangles removed: {removedFromRenderer}. Generated mesh: {assetPath}");
+                // These are only backpack helper bones. Hiding them is harmless and keeps
+                // the hierarchy clean, but geometry removal above is what actually removes the bag.
+                foreach (Transform t in aj.GetComponentsInChildren<Transform>(true))
+                {
+                    string n = t.name.ToLowerInvariant();
+                    if (n.Contains("backpack") || n.Contains("back_pack") || n.Contains("rucksack"))
+                        t.gameObject.SetActive(false);
                 }
 
                 PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+
+                EditorUtility.DisplayDialog(
+                    "CYDOY · AJ Backpack",
+                    $"Exact backpack removed.\n\nRenderer: 1\nIsland removed: {BackpackIslandDisplayNumber}\nTriangles removed: {backpack.triangles.Count / 3}\n\nIsland 13 was not touched, so cap/hood geometry remains intact.\n\nRecreate the NPCs once so they clone this updated AJ.",
+                    "Perfekt");
             }
             finally
             {
                 PrefabUtility.UnloadPrefabContents(root);
             }
-
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-
-            EditorUtility.DisplayDialog(
-                "CYDOY · AJ Backpack",
-                $"Backpack mesh cleanup complete.\n\nBackpack bones hidden: {hiddenBones}\nMeshes modified: {modifiedRenderers}\nBackpack triangles removed: {removedTriangles}\n\nThe original Aj.fbx was not destructively changed. The Player prefab now points to generated no-backpack mesh copies.",
-                "OK");
         }
 
-        private static void EnsureReadableSource()
+        private static List<Island> BuildIslands(Mesh mesh)
         {
-            ModelImporter importer = AssetImporter.GetAtPath(CharacterPath) as ModelImporter;
-            if (importer == null)
-                return;
+            List<Island> islands = new();
+            Vector3[] verts = mesh.vertices;
 
-            if (!importer.isReadable)
+            for (int sub = 0; sub < mesh.subMeshCount; sub++)
             {
-                importer.isReadable = true;
-                importer.SaveAndReimport();
+                int[] tris = mesh.GetTriangles(sub);
+                int triCount = tris.Length / 3;
+                Dictionary<int, List<int>> vertexToTriangles = new();
+
+                for (int t = 0; t < triCount; t++)
+                {
+                    for (int k = 0; k < 3; k++)
+                    {
+                        int v = tris[t * 3 + k];
+                        if (!vertexToTriangles.TryGetValue(v, out List<int> list))
+                        {
+                            list = new List<int>();
+                            vertexToTriangles[v] = list;
+                        }
+                        list.Add(t);
+                    }
+                }
+
+                bool[] visited = new bool[triCount];
+                Queue<int> queue = new();
+
+                for (int start = 0; start < triCount; start++)
+                {
+                    if (visited[start])
+                        continue;
+
+                    Island island = new() { subMesh = sub };
+                    visited[start] = true;
+                    queue.Enqueue(start);
+
+                    while (queue.Count > 0)
+                    {
+                        int tri = queue.Dequeue();
+                        int a = tris[tri * 3];
+                        int b = tris[tri * 3 + 1];
+                        int c = tris[tri * 3 + 2];
+
+                        island.triangles.Add(a);
+                        island.triangles.Add(b);
+                        island.triangles.Add(c);
+                        island.vertices.Add(a);
+                        island.vertices.Add(b);
+                        island.vertices.Add(c);
+
+                        int[] triVertices = { a, b, c };
+                        foreach (int vertex in triVertices)
+                        {
+                            foreach (int neighbor in vertexToTriangles[vertex])
+                            {
+                                if (visited[neighbor])
+                                    continue;
+                                visited[neighbor] = true;
+                                queue.Enqueue(neighbor);
+                            }
+                        }
+                    }
+
+                    if (island.vertices.Count > 0)
+                    {
+                        int first = island.vertices.First();
+                        Bounds bounds = new(verts[first], Vector3.zero);
+                        foreach (int v in island.vertices)
+                            bounds.Encapsulate(verts[v]);
+                        island.localBounds = bounds;
+                    }
+
+                    islands.Add(island);
+                }
             }
+
+            // Must use the exact same ordering as the tester the user used.
+            return islands.OrderByDescending(i => i.triangles.Count).ToList();
         }
 
-        private static HashSet<int> GetBackpackBoneIndices(SkinnedMeshRenderer renderer)
+        private static Mesh CreateMeshWithoutIsland(Mesh source, Island remove)
         {
-            HashSet<int> result = new();
-            Transform[] bones = renderer.bones;
-            if (bones == null)
-                return result;
+            Mesh cleaned = UnityEngine.Object.Instantiate(source);
 
-            for (int i = 0; i < bones.Length; i++)
+            HashSet<string> removeKeys = new();
+            for (int i = 0; i < remove.triangles.Count; i += 3)
+                removeKeys.Add(TriangleKey(remove.triangles[i], remove.triangles[i + 1], remove.triangles[i + 2]));
+
+            for (int sub = 0; sub < source.subMeshCount; sub++)
             {
-                Transform bone = bones[i];
-                if (bone != null && IsBackpackToken(bone.name))
-                    result.Add(i);
+                int[] tris = source.GetTriangles(sub);
+                if (sub != remove.subMesh)
+                {
+                    cleaned.SetTriangles(tris, sub, false);
+                    continue;
+                }
+
+                List<int> kept = new(tris.Length);
+                for (int i = 0; i < tris.Length; i += 3)
+                {
+                    if (removeKeys.Contains(TriangleKey(tris[i], tris[i + 1], tris[i + 2])))
+                        continue;
+
+                    kept.Add(tris[i]);
+                    kept.Add(tris[i + 1]);
+                    kept.Add(tris[i + 2]);
+                }
+
+                cleaned.SetTriangles(kept, sub, false);
             }
 
-            return result;
+            cleaned.RecalculateBounds();
+            return cleaned;
         }
 
-        private static float BackpackInfluence(BoneWeight weight, HashSet<int> backpackIndices)
+        private static string TriangleKey(int a, int b, int c)
         {
-            float total = 0f;
-            if (backpackIndices.Contains(weight.boneIndex0)) total += weight.weight0;
-            if (backpackIndices.Contains(weight.boneIndex1)) total += weight.weight1;
-            if (backpackIndices.Contains(weight.boneIndex2)) total += weight.weight2;
-            if (backpackIndices.Contains(weight.boneIndex3)) total += weight.weight3;
-            return total;
-        }
-
-        private static bool IsBackpackToken(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-                return false;
-
-            string n = value.ToLowerInvariant();
-            return n.Contains("backpack") || n.Contains("back_pack") || n.Contains("rucksack") ||
-                   n.Contains("shoulderbag") || n.Contains("back bag") || n == "bag";
-        }
-
-        private static void EnsureGeneratedFolder()
-        {
-            if (!AssetDatabase.IsValidFolder("Assets/Models"))
-                AssetDatabase.CreateFolder("Assets", "Models");
-            if (!AssetDatabase.IsValidFolder("Assets/Models/Characters"))
-                AssetDatabase.CreateFolder("Assets/Models", "Characters");
-            if (!AssetDatabase.IsValidFolder(GeneratedFolder))
-                AssetDatabase.CreateFolder("Assets/Models/Characters", "Generated");
+            int[] values = { a, b, c };
+            Array.Sort(values);
+            return $"{values[0]}_{values[1]}_{values[2]}";
         }
 
         private static Transform FindRecursive(Transform root, string targetName)
@@ -225,6 +251,16 @@ namespace CheatOnYourDayOnes.EditorTools
             }
 
             return null;
+        }
+
+        private static void EnsureGeneratedFolder()
+        {
+            if (!AssetDatabase.IsValidFolder("Assets/Models"))
+                AssetDatabase.CreateFolder("Assets", "Models");
+            if (!AssetDatabase.IsValidFolder("Assets/Models/Characters"))
+                AssetDatabase.CreateFolder("Assets/Models", "Characters");
+            if (!AssetDatabase.IsValidFolder(GeneratedFolder))
+                AssetDatabase.CreateFolder("Assets/Models/Characters", "Generated");
         }
 
         private static string Sanitize(string value)
