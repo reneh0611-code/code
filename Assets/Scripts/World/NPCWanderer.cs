@@ -15,9 +15,7 @@ namespace CheatOnYourDayOnes.World
         [SerializeField] private float carClearanceBeforeGetUp=3.2f,extraWaitAfterCarClears=.65f,maxAnimationFallTravel=4f;
         [SerializeField,Range(-1f,1f)] private float rearHitDotThreshold=-.25f;
 
-        // IMPORTANT: do not serialize this. Existing NPCs in the scene kept stale inspector values,
-        // which is why changing the script default appeared to do nothing.
-        private const float ForcedBodyGroundClearance = -.135f;
+        private const float ForcedBodyGroundClearance = -.100f;
         private const float ClipFinishedNormalizedTime = .985f;
 
         private static readonly int IdleHash=Animator.StringToHash("Base Layer.Idle"),WalkHash=Animator.StringToHash("Base Layer.Walk"),RunHash=Animator.StringToHash("Base Layer.Run"),FallHash=Animator.StringToHash("Base Layer.Fall"),GettingUpHash=Animator.StringToHash("Base Layer.GettingUp"),FallRearHash=Animator.StringToHash("Base Layer.FallRear"),GettingUpRearHash=Animator.StringToHash("Base Layer.GettingUpRear");
