@@ -5,19 +5,63 @@ namespace CheatOnYourDayOnes.Vehicles
 {
     public sealed class VehicleInteractor : MonoBehaviour
     {
-        [SerializeField] private float enterRadius = 3.0f;
+        [SerializeField] private float enterRadius = 3.5f;
+
+        private DriveableCar _nearbyCar;
 
         private void Update()
         {
-            if (Keyboard.current == null || !Keyboard.current.eKey.wasPressedThisFrame) return;
+            _nearbyCar = FindNearestAvailableCar();
+
+            if (_nearbyCar == null || Keyboard.current == null)
+                return;
+
+            if (Keyboard.current.eKey.wasPressedThisFrame)
+            {
+                bool entered = _nearbyCar.TryEnter(transform);
+                if (!entered)
+                    Debug.LogWarning($"[CYDOY] E pressed near {_nearbyCar.name}, but entering failed.", _nearbyCar);
+            }
+        }
+
+        private DriveableCar FindNearestAvailableCar()
+        {
             DriveableCar nearest = null;
             float best = enterRadius;
+
             foreach (DriveableCar car in Object.FindObjectsByType<DriveableCar>(FindObjectsSortMode.None))
             {
-                float d = Vector3.Distance(transform.position, car.transform.position);
-                if (!car.IsOccupied && d < best) { best = d; nearest = car; }
+                if (car == null || car.IsOccupied)
+                    continue;
+
+                float d = car.DistanceFrom(transform.position);
+                if (d <= best)
+                {
+                    best = d;
+                    nearest = car;
+                }
             }
-            if (nearest != null) nearest.TryEnter(transform);
+
+            return nearest;
+        }
+
+        private void OnGUI()
+        {
+            if (_nearbyCar == null)
+                return;
+
+            const float width = 210f;
+            const float height = 52f;
+            Rect rect = new Rect((Screen.width - width) * 0.5f, Screen.height * 0.72f, width, height);
+
+            GUIStyle style = new GUIStyle(GUI.skin.box)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 18,
+                fontStyle = FontStyle.Bold
+            };
+
+            GUI.Box(rect, "[ E ]  Fahren", style);
         }
     }
 }
