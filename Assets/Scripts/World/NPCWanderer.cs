@@ -37,7 +37,7 @@ namespace CheatOnYourDayOnes.World
 
         private Transform _visualRoot;
         private Vector3 _visualBaseLocalPosition;
-        private Renderer[] _visualRenderers;
+        private SkinnedMeshRenderer _mainSkinnedMesh;
         private bool _visualCached;
 
         public bool IsDown=>_fallUntil>0f||_gettingUp;
@@ -56,8 +56,20 @@ namespace CheatOnYourDayOnes.World
             animator.applyRootMotion=false;
             _visualRoot=animator.transform;
             _visualBaseLocalPosition=_visualRoot.localPosition;
-            _visualRenderers=animator.GetComponentsInChildren<Renderer>(true);
-            _visualCached=_visualRoot!=null&&_visualRenderers!=null&&_visualRenderers.Length>0;
+
+            SkinnedMeshRenderer[] skins=animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            float bestVolume=-1f;
+            foreach(SkinnedMeshRenderer skin in skins)
+            {
+                if(skin==null)continue;
+                Vector3 s=skin.bounds.size;
+                float volume=Mathf.Abs(s.x*s.y*s.z);
+                if(volume>bestVolume){bestVolume=volume;_mainSkinnedMesh=skin;}
+            }
+
+            _visualCached=_visualRoot!=null&&_mainSkinnedMesh!=null;
+            if(_visualCached)
+                Debug.Log($"[CYDOY] NPC visual anchor: {name} mainMesh={_mainSkinnedMesh.name}",this);
         }
 
         private void Start(){_home=transform.position;Pause(Random.Range(.4f,2.5f));}
@@ -124,7 +136,7 @@ namespace CheatOnYourDayOnes.World
         private void LateUpdate()
         {
             if(!IsDown)return;
-            GroundAnimatedVisualToRoad();
+            AnchorAnimatedBodyToRoad();
         }
 
         private void HoldImpactRoot()
@@ -139,36 +151,35 @@ namespace CheatOnYourDayOnes.World
             _verticalVelocity=0f;
         }
 
-        private void GroundAnimatedVisualToRoad()
+        private void AnchorAnimatedBodyToRoad()
         {
             if(!_visualCached)CacheVisual();
             if(!_visualCached||_visualRoot==transform)return;
 
-            Vector3 groundPoint=FindGroundPoint(_impactAnchor);
+            Vector3 ground=FindGroundPoint(_impactAnchor);
 
-            // Animator/clip may contain translation curves. Always cancel translation of the model
-            // root itself first so a fall clip cannot carry the visible character onto the vehicle.
+            // First neutralize translation authored on the imported model root.
             Vector3 lp=_visualRoot.localPosition;
             lp.x=_visualBaseLocalPosition.x;
             lp.z=_visualBaseLocalPosition.z;
             _visualRoot.localPosition=lp;
 
-            float visibleBottom=float.PositiveInfinity;
-            bool found=false;
-            foreach(Renderer r in _visualRenderers)
-            {
-                if(r==null||!r.enabled||!r.gameObject.activeInHierarchy)continue;
-                visibleBottom=Mathf.Min(visibleBottom,r.bounds.min.y);
-                found=true;
-            }
-            if(!found)return;
+            // Then compensate what the actual animated skeleton did. Using the largest skinned mesh
+            // avoids accessories or stray renderers fooling the grounding calculation.
+            Bounds body=_mainSkinnedMesh.bounds;
+            Vector3 bodyCenter=body.center;
 
-            float targetBottom=groundPoint.y+downGroundOffset;
-            float correction=targetBottom-visibleBottom;
+            Vector3 horizontalCorrection=new Vector3(
+                ground.x-bodyCenter.x,
+                0f,
+                ground.z-bodyCenter.z);
+            _visualRoot.position+=horizontalCorrection;
 
-            // Apply after Animator evaluation. This is what prevents the animated skeleton from
-            // visually ending up on the bonnet/roof even though the NPC root is already grounded.
-            _visualRoot.position+=Vector3.up*correction;
+            // Bounds changed after the horizontal move; read them again before vertical grounding.
+            body=_mainSkinnedMesh.bounds;
+            float targetBottom=ground.y+downGroundOffset;
+            float verticalCorrection=targetBottom-body.min.y;
+            _visualRoot.position+=Vector3.up*verticalCorrection;
         }
 
         private void RestoreVisualRoot()
