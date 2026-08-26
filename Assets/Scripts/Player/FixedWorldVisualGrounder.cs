@@ -3,28 +3,19 @@ using UnityEngine;
 
 namespace CheatOnYourDayOnes.Player
 {
-    /// <summary>
-    /// Grounds only the rendered model once against the real world surface.
-    /// No bones, animation curves, animator parameters or controller motion are modified.
-    /// The resulting local visual offset then stays fixed so locomotion animation remains untouched.
-    /// </summary>
     public sealed class FixedWorldVisualGrounder : MonoBehaviour
     {
         [SerializeField] private Transform modelRoot;
         [SerializeField] private int settleFrames = 2;
-        [SerializeField] private float rayStartHeight = 1.5f;
-        [SerializeField] private float rayDistance = 4f;
+        [SerializeField] private float rayStartHeight = 2f;
+        [SerializeField] private float rayDistance = 6f;
         [SerializeField] private float soleOffset = 0f;
 
         private IEnumerator Start()
         {
             ResolveModelRoot();
-            if (modelRoot == null)
-                yield break;
-
-            for (int i = 0; i < settleFrames; i++)
-                yield return null;
-
+            if (modelRoot == null) yield break;
+            for (int i = 0; i < settleFrames; i++) yield return null;
             AlignOnceToWorldGround();
             enabled = false;
         }
@@ -33,15 +24,13 @@ namespace CheatOnYourDayOnes.Player
         {
             if (modelRoot != null) return;
             Transform visual = transform.Find("CharacterVisual");
-            if (visual != null && visual.childCount > 0)
-                modelRoot = visual.GetChild(0);
+            modelRoot = visual != null && visual.childCount > 0 ? visual.GetChild(0) : transform;
         }
 
         private void AlignOnceToWorldGround()
         {
             Renderer[] renderers = modelRoot.GetComponentsInChildren<Renderer>(true);
-            if (renderers == null || renderers.Length == 0)
-                return;
+            if (renderers.Length == 0) return;
 
             bool hasBounds = false;
             Bounds combined = default;
@@ -53,31 +42,37 @@ namespace CheatOnYourDayOnes.Player
             }
             if (!hasBounds) return;
 
-            Vector3 rayOrigin = new Vector3(combined.center.x, combined.min.y + rayStartHeight, combined.center.z);
-            RaycastHit[] hits = Physics.RaycastAll(rayOrigin, Vector3.down, rayDistance, ~0, QueryTriggerInteraction.Ignore);
-
+            Vector3 origin = new Vector3(combined.center.x, combined.min.y + rayStartHeight, combined.center.z);
+            RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, rayDistance, ~0, QueryTriggerInteraction.Ignore);
             bool found = false;
-            float bestDistance = float.MaxValue;
-            float groundY = combined.min.y;
+            float best = float.MaxValue;
+            float groundY = 0f;
+
             foreach (RaycastHit hit in hits)
             {
                 if (hit.collider == null) continue;
                 Transform ht = hit.collider.transform;
-                if (ht == transform || ht.IsChildOf(transform)) continue;
-                if (hit.distance < bestDistance)
+                // Ignore the whole character hierarchy, even when modelRoot == transform.
+                if (ht == transform || ht.IsChildOf(transform) || transform.IsChildOf(ht) && ht.GetComponentInParent<CharacterController>() == GetComponentInParent<CharacterController>()) continue;
+                if (hit.distance < best)
                 {
-                    bestDistance = hit.distance;
+                    best = hit.distance;
                     groundY = hit.point.y;
                     found = true;
                 }
             }
 
-            if (!found) return;
+            if (!found)
+            {
+                Debug.LogWarning($"[CYDOY] Grounding found no world collider below {name}.", this);
+                return;
+            }
 
             float deltaY = (groundY + soleOffset) - combined.min.y;
             modelRoot.position += Vector3.up * deltaY;
-
-            Debug.Log($"[CYDOY] Fixed visual grounding applied once. VisualBottom={combined.min.y:F4}, Ground={groundY:F4}, DeltaY={deltaY:F4}. Animation untouched.", this);
+            Debug.Log($"[CYDOY] Grounded {name}: bottom {combined.min.y:F3} -> ground {groundY:F3}, delta {deltaY:F3}.", this);
         }
+
+        public void SetModelRoot(Transform root) => modelRoot = root;
     }
 }
