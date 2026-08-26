@@ -8,7 +8,7 @@ namespace CheatOnYourDayOnes.CameraSystem
         [SerializeField] private Transform target;
         [SerializeField] private Vector3 pivotOffset = new(0.30f, 1.42f, 0f);
         [SerializeField, Min(1.5f)] private float distance = 2.35f;
-        [SerializeField, Min(0.01f)] private float mouseSensitivity = 0.12f;
+        [SerializeField, Min(0.01f)] private float mouseSensitivity = 0.14f;
         [SerializeField] private float minPitch = -35f;
         [SerializeField] private float maxPitch = 65f;
         [SerializeField, Min(1f)] private float followSmooth = 18f;
