@@ -9,6 +9,9 @@ namespace CheatOnYourDayOnes.Vehicles
 
         private DriveableCar _nearbyCar;
 
+        public DriveableCar NearbyCar => _nearbyCar;
+        public bool CanEnterVehicle => _nearbyCar != null;
+
         private void Update()
         {
             _nearbyCar = FindNearestAvailableCar();
@@ -43,25 +46,6 @@ namespace CheatOnYourDayOnes.Vehicles
             }
 
             return nearest;
-        }
-
-        private void OnGUI()
-        {
-            if (_nearbyCar == null)
-                return;
-
-            const float width = 210f;
-            const float height = 52f;
-            Rect rect = new Rect((Screen.width - width) * 0.5f, Screen.height * 0.72f, width, height);
-
-            GUIStyle style = new GUIStyle(GUI.skin.box)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 18,
-                fontStyle = FontStyle.Bold
-            };
-
-            GUI.Box(rect, "[ E ]  Fahren", style);
         }
     }
 }
