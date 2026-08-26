@@ -24,7 +24,7 @@ namespace CheatOnYourDayOnes.Vehicles
         [SerializeField] private float downforce = 42f;
         [SerializeField] private float rollingResistance = 0.28f;
         [SerializeField] private float airDrag = 0.012f;
-        [SerializeField] private float interactionDistance = 3.0f;
+        [SerializeField] private float interactionDistance = 3.5f;
 
         private Rigidbody _rb;
         private Transform _driver;
@@ -98,9 +98,24 @@ namespace CheatOnYourDayOnes.Vehicles
             _rb.AddForce(-_rb.linearVelocity * _rb.linearVelocity.magnitude * airDrag, ForceMode.Force);
         }
 
+        public float DistanceFrom(Vector3 worldPoint)
+        {
+            Collider[] colliders = GetComponentsInChildren<Collider>(true);
+            float best = float.MaxValue;
+            foreach (Collider c in colliders)
+            {
+                if (c == null || !c.enabled) continue;
+                Vector3 closest = c.ClosestPoint(worldPoint);
+                float d = Vector3.Distance(worldPoint, closest);
+                if (d < best) best = d;
+            }
+            if (best < float.MaxValue) return best;
+            return Vector3.Distance(worldPoint, transform.position);
+        }
+
         public bool TryEnter(Transform player)
         {
-            if (_occupied || player == null || Vector3.Distance(player.position, transform.position) > interactionDistance) return false;
+            if (_occupied || player == null || DistanceFrom(player.position) > interactionDistance) return false;
             _driver = player;
             _driverController = player.GetComponent<CharacterController>();
             if (_driverController != null) _driverController.enabled = false;
@@ -112,6 +127,7 @@ namespace CheatOnYourDayOnes.Vehicles
             player.position = seat.position;
             player.rotation = seat.rotation;
             _occupied = true;
+            Debug.Log($"[CYDOY] Entered vehicle {name}.", this);
             return true;
         }
 
