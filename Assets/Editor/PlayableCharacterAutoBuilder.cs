@@ -26,6 +26,7 @@ namespace CheatOnYourDayOnes.EditorTools
         private static double nextTry;
         private static bool done;
         private static bool reimporting;
+        private static bool forceRebuild;
 
         static PlayableCharacterAutoBuilder()
         {
@@ -47,11 +48,26 @@ namespace CheatOnYourDayOnes.EditorTools
             if (done || reimporting || EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling || EditorApplication.isUpdating) return;
             if (EditorApplication.timeSinceStartup < nextTry) return;
             nextTry = EditorApplication.timeSinceStartup + 1.0;
-            done = BuildAll();
+            try
+            {
+                done = BuildAll();
+            }
+            catch (Exception exception)
+            {
+                // A broken source clip must never turn into an EditorApplication.update log loop.
+                done = true;
+                Debug.LogError($"[CYDOY PLAYABLE] Automatic character build stopped after one error. Use Tools/CYDOY/Playable Characters/Rebuild after fixing the source.\n{exception}");
+            }
         }
 
         private static bool BuildAll()
         {
+            CleanupLeakedBuildInstances();
+
+            // Script reloads are common while iterating. Once the generated character set is
+            // complete, leave it alone unless the developer explicitly requests a rebuild.
+            if (!forceRebuild && OutputsReady()) return true;
+
             string fbx01 = FindFbx(Source01);
             string fbx02 = FindFbx(Source02);
             if (string.IsNullOrEmpty(fbx01) || string.IsNullOrEmpty(fbx02))
@@ -78,6 +94,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+            forceRebuild = false;
             Debug.Log("[CYDOY PLAYABLE] READY: both playable characters + retargeted Idle/Walk/Run/Jump/Punch animations are built.");
             return true;
         }
@@ -157,42 +174,51 @@ namespace CheatOnYourDayOnes.EditorTools
                 return false;
             }
 
-            if (AssetDatabase.LoadAssetAtPath<AnimatorController>(outputController) == null)
-            {
-                if (!AssetDatabase.CopyAsset(ControllerSource, outputController)) return false;
-                AssetDatabase.ImportAsset(outputController);
-            }
+            // Always start from the clean source controller while generating. A partially built
+            // output can otherwise retain references to an earlier, incomplete clip set.
+            if (AssetDatabase.LoadAssetAtPath<AnimatorController>(outputController) != null)
+                AssetDatabase.DeleteAsset(outputController);
+            if (!AssetDatabase.CopyAsset(ControllerSource, outputController)) return false;
+            AssetDatabase.ImportAsset(outputController);
 
             AnimatorController targetController = AssetDatabase.LoadAssetAtPath<AnimatorController>(outputController);
             if (targetController == null) return false;
 
             GameObject temp = PrefabUtility.InstantiatePrefab(targetPrefab) as GameObject;
             if (temp == null) temp = UnityEngine.Object.Instantiate(targetPrefab);
-            Animator animator = temp.GetComponentInChildren<Animator>(true);
-            Transform animRoot = animator != null ? animator.transform : temp.transform;
+            temp.name = $"__CYDOY_RETARGET_TEMP_{label}";
+            temp.hideFlags = HideFlags.HideAndDontSave;
 
-            Dictionary<string, string> targetPaths = BuildBonePathMap(animRoot);
-            if (targetPaths.Count < 10)
+            try
             {
-                UnityEngine.Object.DestroyImmediate(temp);
-                Debug.LogError($"[CYDOY PLAYABLE] {label}: no usable rig hierarchy found. The FBX must contain the Mixamo rig, not only the mesh.");
-                return false;
+                Animator animator = temp.GetComponentInChildren<Animator>(true);
+                Transform animRoot = animator != null ? animator.transform : temp.transform;
+
+                Dictionary<string, string> targetPaths = BuildBonePathMap(animRoot);
+                if (targetPaths.Count < 10)
+                {
+                    Debug.LogError($"[CYDOY PLAYABLE] {label}: no usable rig hierarchy found. The FBX must contain the Mixamo rig, not only the mesh.");
+                    return false;
+                }
+
+                Dictionary<AnimationClip, AnimationClip> clipMap = new();
+                foreach (AnimatorControllerLayer layer in sourceController.layers)
+                    CollectAndRetargetMotions(layer.stateMachine, targetPaths, animFolder, label, clipMap);
+
+                foreach (AnimatorControllerLayer layer in targetController.layers)
+                    ReplaceStateMachineMotions(layer.stateMachine, clipMap);
+
+                EditorUtility.SetDirty(targetController);
+                AssetDatabase.SaveAssets();
+
+                int converted = clipMap.Values.Count(v => v != null);
+                Debug.Log($"[CYDOY PLAYABLE] {label}: retargeted {converted} animation clips to its own skeleton.");
+                return converted > 0;
             }
-
-            Dictionary<AnimationClip, AnimationClip> clipMap = new();
-            foreach (AnimatorControllerLayer layer in sourceController.layers)
-                CollectAndRetargetMotions(layer.stateMachine, targetPaths, animFolder, label, clipMap);
-
-            foreach (AnimatorControllerLayer layer in targetController.layers)
-                ReplaceStateMachineMotions(layer.stateMachine, clipMap);
-
-            EditorUtility.SetDirty(targetController);
-            AssetDatabase.SaveAssets();
-            UnityEngine.Object.DestroyImmediate(temp);
-
-            int converted = clipMap.Values.Count(v => v != null);
-            Debug.Log($"[CYDOY PLAYABLE] {label}: retargeted {converted} animation clips to its own skeleton.");
-            return converted > 0;
+            finally
+            {
+                if (temp != null) UnityEngine.Object.DestroyImmediate(temp);
+            }
         }
 
         private static Dictionary<string, string> BuildBonePathMap(Transform root)
@@ -230,7 +256,11 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static AnimationClip CreateRetargetedClip(AnimationClip source, Dictionary<string, string> targetPaths, string animFolder, string label)
         {
-            string safe = Sanitize(source.name);
+            // Mixamo commonly names every embedded take "mixamo.com". Include the FBX name and
+            // local file id so unrelated states never overwrite the same generated .anim file.
+            string sourceAssetName = Path.GetFileNameWithoutExtension(AssetDatabase.GetAssetPath(source));
+            AssetDatabase.TryGetGUIDAndLocalFileIdentifier(source, out string _, out long localId);
+            string safe = Sanitize($"{sourceAssetName}_{source.name}_{localId}");
             string path = $"{animFolder}/{safe}.anim";
             AnimationClip target = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
             if (target == null)
@@ -297,11 +327,14 @@ namespace CheatOnYourDayOnes.EditorTools
         {
             SerializedProperty iterator = src.Copy();
             SerializedProperty end = src.GetEndProperty();
+            string prefix = src.propertyPath + ".";
             bool enter = true;
             while (iterator.Next(enter) && !SerializedProperty.EqualContents(iterator, end))
             {
                 enter = false;
-                string relative = iterator.propertyPath.Substring(src.propertyPath.Length).TrimStart('.');
+                string path = iterator.propertyPath;
+                if (!path.StartsWith(prefix, StringComparison.Ordinal)) break;
+                string relative = path.Substring(prefix.Length);
                 SerializedProperty d = string.IsNullOrEmpty(relative) ? dst : dst.FindPropertyRelative(relative);
                 if (d == null) continue;
                 switch (iterator.propertyType)
@@ -316,6 +349,38 @@ namespace CheatOnYourDayOnes.EditorTools
                     case SerializedPropertyType.Vector4: d.vector4Value = iterator.vector4Value; break;
                 }
             }
+        }
+
+        private static void CleanupLeakedBuildInstances()
+        {
+            foreach (GameObject go in Resources.FindObjectsOfTypeAll<GameObject>())
+            {
+                if (go == null || EditorUtility.IsPersistent(go) || !go.scene.IsValid() || go.transform.parent != null) continue;
+                bool leakedTemp = go.name.StartsWith("__CYDOY_RETARGET_TEMP_", StringComparison.Ordinal)
+                    || go.name == "Character01"
+                    || go.name == "Character02";
+                if (!leakedTemp) continue;
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        [MenuItem("Tools/CYDOY/Playable Characters/Rebuild")]
+        private static void RebuildFromMenu()
+        {
+            forceRebuild = true;
+            done = false;
+            nextTry = 0;
+            CleanupLeakedBuildInstances();
+        }
+
+        private static bool OutputsReady()
+        {
+            return AssetDatabase.LoadAssetAtPath<GameObject>(Out01) != null
+                && AssetDatabase.LoadAssetAtPath<GameObject>(Out02) != null
+                && AssetDatabase.LoadAssetAtPath<AnimatorController>(Controller01) != null
+                && AssetDatabase.LoadAssetAtPath<AnimatorController>(Controller02) != null
+                && AssetDatabase.FindAssets("t:AnimationClip", new[] { Anim01Folder }).Length > 0
+                && AssetDatabase.FindAssets("t:AnimationClip", new[] { Anim02Folder }).Length > 0;
         }
 
         private static void ReplaceStateMachineMotions(AnimatorStateMachine sm, Dictionary<AnimationClip, AnimationClip> map)

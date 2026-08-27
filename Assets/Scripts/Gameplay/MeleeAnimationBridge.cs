@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Linq;
 using CheatOnYourDayOnes.Player;
 using CheatOnYourDayOnes.World;
 using UnityEngine;
@@ -9,13 +8,14 @@ public class MeleeAnimationBridge : MonoBehaviour
     [Header("Player")]
     [SerializeField] private Animator playerAnimator;
     [SerializeField] private float minimumAttackGap = 0.08f;
-    [SerializeField] private float crossFade = 0.035f;
+    [SerializeField] private float crossFade = 0.06f;
+    [SerializeField] private float returnToLocomotionBlend = 0.12f;
     [SerializeField, Range(0.75f, 1f)] private float finishNormalizedTime = 0.97f;
     [SerializeField, Range(0.35f, 0.9f)] private float comboWindowNormalized = 0.58f;
     [SerializeField] private float maxAttackAnimationSeconds = 3f;
 
     [Header("Very close melee range")]
-    [SerializeField] private float hitRadius = 1.12f;
+    [SerializeField] private float hitRadius = 1.50f;
     [SerializeField, Range(0.05f, 0.9f)] private float hitMomentNormalized = 0.34f;
 
     private static readonly int[] PunchHashes =
@@ -35,6 +35,7 @@ public class MeleeAnimationBridge : MonoBehaviour
     private bool attackRunning;
     private bool comboWindowOpen;
     private bool queuedPunch;
+    private readonly Collider[] hitBuffer = new Collider[24];
 
     private void Awake() => RefreshReferences();
     private void OnEnable() => RefreshReferences();
@@ -153,8 +154,12 @@ public class MeleeAnimationBridge : MonoBehaviour
         comboWindowOpen = false;
         queuedPunch = false;
 
-        if (locomotionDriver != null) locomotionDriver.enabled = true;
         if (movementController != null) movementController.SetCombatMovementLocked(false);
+        if (locomotionDriver != null)
+        {
+            locomotionDriver.enabled = true;
+            locomotionDriver.ResumeFromCombat(returnToLocomotionBlend);
+        }
         attackRunning = false;
     }
 
@@ -163,41 +168,38 @@ public class MeleeAnimationBridge : MonoBehaviour
         comboWindowOpen = false;
         queuedPunch = false;
         if (movementController != null) movementController.SetCombatMovementLocked(false);
-        if (locomotionDriver != null) locomotionDriver.enabled = true;
+        if (locomotionDriver != null)
+        {
+            locomotionDriver.enabled = true;
+            locomotionDriver.ResumeFromCombat(returnToLocomotionBlend);
+        }
         attackRunning = false;
     }
 
     private void TryHitNearestNpc()
     {
         Vector3 center = transform.position + Vector3.up * 0.9f;
-        Collider[] hits = Physics.OverlapSphere(center, hitRadius, ~0, QueryTriggerInteraction.Collide);
+        int count = Physics.OverlapSphereNonAlloc(center, hitRadius, hitBuffer, ~0, QueryTriggerInteraction.Collide);
+        NPCWanderer best = null;
+        float bestDistance = float.MaxValue;
 
-        NPCWanderer npc = hits
-            .Where(c => c != null && !c.transform.IsChildOf(transform))
-            .Select(c => c.GetComponentInParent<NPCWanderer>() ?? c.GetComponentInChildren<NPCWanderer>(true))
-            .Where(n => n != null)
-            .Distinct()
-            .Where(n => HorizontalDistance(transform.position, n.transform.position) <= hitRadius)
-            .Where(n =>
-            {
-                NPCCombatReaction reaction = n.GetComponent<NPCCombatReaction>();
-                return reaction == null || reaction.CanReceiveHit;
-            })
-            .OrderBy(n => HorizontalDistanceSquared(transform.position, n.transform.position))
-            .FirstOrDefault();
+        for (int i = 0; i < count; i++)
+        {
+            Collider hit = hitBuffer[i];
+            if (hit == null || hit.transform.IsChildOf(transform)) continue;
+            NPCWanderer npc = hit.GetComponentInParent<NPCWanderer>();
+            if (npc == null || npc.IsDown) continue;
 
-        if (npc == null) return;
+            float distance = HorizontalDistanceSquared(transform.position, npc.transform.position);
+            if (distance > hitRadius * hitRadius || distance >= bestDistance) continue;
+            bestDistance = distance;
+            best = npc;
+        }
 
-        NPCCombatReaction combat = npc.GetComponent<NPCCombatReaction>();
-        if (combat == null) combat = npc.gameObject.AddComponent<NPCCombatReaction>();
-        combat.TakePunch(transform);
-    }
-
-    private static float HorizontalDistance(Vector3 a, Vector3 b)
-    {
-        a.y = 0f;
-        b.y = 0f;
-        return Vector3.Distance(a, b);
+        if (best == null) return;
+        Vector3 hitDirection = best.transform.position - transform.position;
+        hitDirection.y = 0f;
+        best.HitByPlayerPunch(hitDirection.normalized, currentPunchIndex + 1, transform);
     }
 
     private static float HorizontalDistanceSquared(Vector3 a, Vector3 b)

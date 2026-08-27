@@ -83,7 +83,7 @@ namespace CheatOnYourDayOnes.Core
 
                 animator.avatar = null;
                 animator.applyRootMotion = false;
-                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                animator.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
                 animator.enabled = true;
             }
         }
@@ -121,7 +121,7 @@ namespace CheatOnYourDayOnes.Core
                 GameObject npc = FindNpcRoot(animator.transform, root.transform).gameObject;
                 if (animator.runtimeAnimatorController == null && _npcController != null) animator.runtimeAnimatorController = _npcController;
                 animator.applyRootMotion = false;
-                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                animator.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
                 animator.enabled = true;
                 CharacterController cc = npc.GetComponent<CharacterController>();
                 if (cc == null)

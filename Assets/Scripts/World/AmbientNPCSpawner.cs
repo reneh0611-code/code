@@ -124,7 +124,7 @@ namespace CheatOnYourDayOnes.World
                 if (!found || hit.point.y > bestY) { bestY = hit.point.y; found = true; }
             }
 
-            point = new Vector3(xz.x, bestY + .03f, xz.z);
+            point = new Vector3(xz.x, bestY + .01f, xz.z);
             return found;
         }
 

@@ -29,6 +29,7 @@ namespace CheatOnYourDayOnes.CameraSystem
         [SerializeField] private float minimumDistance = 0.85f;
         [SerializeField, Min(50f)] private float farClipDistance = 250f;
 
+        private readonly RaycastHit[] _collisionHits = new RaycastHit[10];
         private float _currentDistance;
         private float _yaw;
         private float _pitch = 8f;
@@ -45,7 +46,7 @@ namespace CheatOnYourDayOnes.CameraSystem
             _camera = GetComponent<Camera>();
             if (_camera != null)
             {
-                _camera.farClipPlane = farClipDistance;
+                _camera.farClipPlane = Mathf.Min(farClipDistance, 220f);
                 _camera.nearClipPlane = Mathf.Max(.05f, _camera.nearClipPlane);
                 _camera.layerCullSpherical = true;
             }
@@ -132,11 +133,16 @@ namespace CheatOnYourDayOnes.CameraSystem
             Vector3 backward = -(lookRotation * Vector3.forward);
 
             float desiredDistance = activeDistance;
-            if (Physics.SphereCast(pivot, collisionRadius, backward, out RaycastHit hit, activeDistance, collisionMask, QueryTriggerInteraction.Ignore))
+            int hitCount = Physics.SphereCastNonAlloc(pivot, collisionRadius, backward, _collisionHits, activeDistance, collisionMask, QueryTriggerInteraction.Ignore);
+            float nearestDistance = float.MaxValue;
+            for (int i = 0; i < hitCount; i++)
             {
-                if (!hit.transform.IsChildOf(target) && hit.transform != target)
-                    desiredDistance = Mathf.Max(minimumDistance, hit.distance - 0.08f);
+                RaycastHit hit = _collisionHits[i];
+                if (hit.collider == null || hit.transform == target || hit.transform.IsChildOf(target)) continue;
+                if (hit.distance < nearestDistance) nearestDistance = hit.distance;
             }
+            if (nearestDistance < float.MaxValue)
+                desiredDistance = Mathf.Max(minimumDistance, nearestDistance - 0.08f);
 
             _currentDistance = Mathf.Lerp(_currentDistance, desiredDistance, 1f - Mathf.Exp(-20f * Time.deltaTime));
             Vector3 desiredPosition = pivot + backward * _currentDistance;

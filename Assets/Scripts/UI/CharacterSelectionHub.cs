@@ -268,7 +268,7 @@ namespace CheatOnYourDayOnes.UI
             if (animator == null) animator = visual.AddComponent<Animator>();
             animator.runtimeAnimatorController = controller;
             animator.applyRootMotion = false;
-            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            animator.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
             animator.enabled = true;
             animator.Rebind();
             animator.Update(0f);
@@ -370,6 +370,12 @@ namespace CheatOnYourDayOnes.UI
 
             float deltaY = groundY - b.min.y;
             go.transform.position += Vector3.up * deltaY;
+
+            foreach (SkinnedMeshRenderer skin in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                skin.updateWhenOffscreen = false;
+                skin.forceMatrixRecalculationPerRender = false;
+            }
         }
 
         private static void EnsureEventSystem()
