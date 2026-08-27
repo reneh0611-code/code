@@ -9,10 +9,6 @@ using UnityEngine.SceneManagement;
 
 namespace CheatOnYourDayOnes.Core
 {
-    /// <summary>
-    /// Makes the checked-in project self-starting. The scene/prefabs contain the actual art;
-    /// this class only repairs required runtime links/components so nobody has to run editor Tools.
-    /// </summary>
     public sealed class SharedWorldBootstrap : MonoBehaviour
     {
         private static SharedWorldBootstrap _instance;
@@ -30,51 +26,25 @@ namespace CheatOnYourDayOnes.Core
 
         private void Awake()
         {
-            if (_instance != null && _instance != this)
-            {
-                Destroy(gameObject);
-                return;
-            }
-
+            if (_instance != null && _instance != this) { Destroy(gameObject); return; }
             _instance = this;
             DontDestroyOnLoad(gameObject);
-            _playerController = Resources.Load<RuntimeAnimatorController>("AJ_Locomotion");
+            _playerController = Resources.Load<RuntimeAnimatorController>("Tripo_Locomotion_ExactGeneric");
             _npcController = Resources.Load<RuntimeAnimatorController>("LittleGuys_Locomotion");
             SceneManager.sceneLoaded += OnSceneLoaded;
         }
 
-        private void OnDestroy()
-        {
-            if (_instance == this) SceneManager.sceneLoaded -= OnSceneLoaded;
-        }
-
-        private void Start()
-        {
-            RepairStaticWorld();
-            StartCoroutine(KeepRuntimeLinksHealthy());
-        }
-
-        private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
-        {
-            RepairStaticWorld();
-        }
+        private void OnDestroy(){ if (_instance == this) SceneManager.sceneLoaded -= OnSceneLoaded; }
+        private void Start(){ RepairStaticWorld(); StartCoroutine(KeepRuntimeLinksHealthy()); }
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode){ RepairStaticWorld(); }
 
         private IEnumerator KeepRuntimeLinksHealthy()
         {
             var wait = new WaitForSecondsRealtime(0.5f);
-            while (true)
-            {
-                RepairLocalPlayer();
-                yield return wait;
-            }
+            while (true){ RepairLocalPlayer(); yield return wait; }
         }
 
-        private void RepairStaticWorld()
-        {
-            EnsureHud();
-            RepairCars();
-            RepairNpcs();
-        }
+        private void RepairStaticWorld(){ EnsureHud(); RepairCars(); RepairNpcs(); }
 
         private static void EnsureHud()
         {
@@ -89,16 +59,14 @@ namespace CheatOnYourDayOnes.Core
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening) return;
             NetworkObject local = NetworkManager.Singleton.LocalClient?.PlayerObject;
             if (local == null) return;
-
             GameObject player = local.gameObject;
-            if (player.GetComponent<VehicleInteractor>() == null)
-                player.AddComponent<VehicleInteractor>();
-
-            Animator animator = FindAjAnimator(player.transform);
+            if (player.GetComponent<VehicleInteractor>() == null) player.AddComponent<VehicleInteractor>();
+            Animator animator = FindPlayerAnimator(player.transform);
             if (animator != null)
             {
-                if (animator.runtimeAnimatorController == null && _playerController != null)
+                if (_playerController != null && animator.runtimeAnimatorController != _playerController)
                     animator.runtimeAnimatorController = _playerController;
+                animator.avatar = null;
                 animator.applyRootMotion = false;
                 animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
                 animator.enabled = true;
@@ -107,11 +75,8 @@ namespace CheatOnYourDayOnes.Core
 
         private void RepairCars()
         {
-            DriveableCar[] configuredCars = FindObjectsByType<DriveableCar>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            foreach (DriveableCar car in configuredCars)
-                EnsureCarPhysics(car.gameObject);
-
-            // Recovery for a scene car whose DriveableCar component was accidentally removed.
+            DriveableCar[] cars = FindObjectsByType<DriveableCar>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (DriveableCar car in cars) EnsureCarPhysics(car.gameObject);
             foreach (Transform t in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             {
                 if (t.parent != null) continue;
@@ -136,17 +101,13 @@ namespace CheatOnYourDayOnes.Core
         {
             GameObject root = GameObject.Find("Generated_NPCs");
             if (root == null) return;
-
-            Animator[] animators = root.GetComponentsInChildren<Animator>(true);
-            foreach (Animator animator in animators)
+            foreach (Animator animator in root.GetComponentsInChildren<Animator>(true))
             {
                 GameObject npc = FindNpcRoot(animator.transform, root.transform).gameObject;
-                if (animator.runtimeAnimatorController == null && _npcController != null)
-                    animator.runtimeAnimatorController = _npcController;
+                if (animator.runtimeAnimatorController == null && _npcController != null) animator.runtimeAnimatorController = _npcController;
                 animator.applyRootMotion = false;
                 animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
                 animator.enabled = true;
-
                 CharacterController cc = npc.GetComponent<CharacterController>();
                 if (cc == null)
                 {
@@ -157,7 +118,6 @@ namespace CheatOnYourDayOnes.Core
                     cc.center = npc.transform.InverseTransformPoint(b.center);
                     cc.stepOffset = Mathf.Min(0.22f, cc.height * 0.13f);
                 }
-
                 if (npc.GetComponent<NPCWanderer>() == null)
                 {
                     NPCWanderer wanderer = npc.AddComponent<NPCWanderer>();
@@ -169,17 +129,19 @@ namespace CheatOnYourDayOnes.Core
         private static Transform FindNpcRoot(Transform child, Transform generatedRoot)
         {
             Transform current = child;
-            while (current.parent != null && current.parent != generatedRoot)
-                current = current.parent;
+            while (current.parent != null && current.parent != generatedRoot) current = current.parent;
             return current;
         }
 
-        private static Animator FindAjAnimator(Transform root)
+        private static Animator FindPlayerAnimator(Transform root)
         {
+            Transform visual = root.Find("CharacterVisual");
+            if (visual != null)
+            {
+                Animator a = visual.GetComponentInChildren<Animator>(true);
+                if (a != null) return a;
+            }
             Animator[] all = root.GetComponentsInChildren<Animator>(true);
-            foreach (Animator a in all)
-                if (a.transform.name == "Mixamo_AJ" || a.transform.IsChildOf(root.Find("CharacterVisual") ?? root))
-                    return a;
             return all.Length > 0 ? all[0] : null;
         }
 
