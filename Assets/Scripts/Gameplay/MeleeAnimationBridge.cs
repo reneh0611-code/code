@@ -8,13 +8,14 @@ public class MeleeAnimationBridge : MonoBehaviour
 {
     [Header("Player")]
     [SerializeField] private Animator playerAnimator;
-    [SerializeField] private float attackCooldown = 0.48f;
-    [SerializeField] private float crossFade = 0.035f;
-    [SerializeField] private float locomotionUnlockDelay = 0.44f;
+    [SerializeField] private float minimumAttackGap = 0.18f;
+    [SerializeField] private float crossFade = 0.025f;
+    [SerializeField, Range(0.75f, 1f)] private float finishNormalizedTime = 0.97f;
+    [SerializeField] private float maxAttackAnimationSeconds = 3f;
 
     [Header("360 degree hit detection")]
     [SerializeField] private float hitRadius = 2.15f;
-    [SerializeField, Range(0f, 1f)] private float hitMoment = 0.34f;
+    [SerializeField, Range(0.05f, 0.9f)] private float hitMomentNormalized = 0.34f;
 
     private static readonly int Punch1Hash = Animator.StringToHash("Base Layer.Punch1");
     private static readonly int Punch2Hash = Animator.StringToHash("Base Layer.Punch2");
@@ -22,6 +23,7 @@ public class MeleeAnimationBridge : MonoBehaviour
     private CharacterAnimationDriver locomotionDriver;
     private float nextAttackTime;
     private int attackIndex;
+    private bool attackRunning;
 
     private void Awake() => RefreshReferences();
     private void OnEnable() => RefreshReferences();
@@ -34,45 +36,75 @@ public class MeleeAnimationBridge : MonoBehaviour
 
     private void Update()
     {
-        // LEFT CLICK. Always allowed whether standing, walking or running.
-        if (Input.GetMouseButtonDown(0) && Time.time >= nextAttackTime)
+        // Left click can always REQUEST the next punch. We only prevent the same animation from
+        // being restarted every frame while the current punch is still completing.
+        if (Input.GetMouseButtonDown(0) && Time.time >= nextAttackTime && !attackRunning)
         {
-            nextAttackTime = Time.time + attackCooldown;
+            nextAttackTime = Time.time + minimumAttackGap;
             StartCoroutine(Attack());
         }
     }
 
     private IEnumerator Attack()
     {
+        attackRunning = true;
         RefreshReferences();
         attackIndex++;
         int state = attackIndex % 2 == 1 ? Punch1Hash : Punch2Hash;
+        string stateName = attackIndex % 2 == 1 ? "Punch1" : "Punch2";
 
-        // Prevent the locomotion script from replacing Punch with Idle/Walk/Run on the next frame.
         if (locomotionDriver != null) locomotionDriver.enabled = false;
 
-        if (playerAnimator != null)
+        bool stateExists = playerAnimator != null && playerAnimator.HasState(0, state);
+        if (stateExists)
         {
             playerAnimator.enabled = true;
             playerAnimator.applyRootMotion = false;
             playerAnimator.speed = 1f;
-
-            if (playerAnimator.HasState(0, state))
-            {
-                playerAnimator.CrossFadeInFixedTime(state, crossFade, 0, 0f);
-                Debug.Log($"[CYDOY MELEE] Playing {(attackIndex % 2 == 1 ? "Punch1" : "Punch2")}", playerAnimator);
-            }
-            else
-            {
-                Debug.LogError($"[CYDOY MELEE] Missing {(attackIndex % 2 == 1 ? "Punch1" : "Punch2")} state in {playerAnimator.runtimeAnimatorController?.name}.", playerAnimator);
-            }
+            playerAnimator.CrossFadeInFixedTime(state, crossFade, 0, 0f);
+            Debug.Log($"[CYDOY MELEE] Playing complete {stateName}", playerAnimator);
+        }
+        else
+        {
+            Debug.LogError($"[CYDOY MELEE] Missing {stateName} state in {playerAnimator?.runtimeAnimatorController?.name}.", playerAnimator);
         }
 
-        yield return new WaitForSeconds(Mathf.Max(0.02f, attackCooldown * hitMoment));
-        TryHitNearestNpc360();
+        bool hitApplied = false;
+        float started = Time.time;
+        bool enteredState = false;
 
-        yield return new WaitForSeconds(Mathf.Max(0.02f, locomotionUnlockDelay - attackCooldown * hitMoment));
+        while (stateExists && Time.time - started < maxAttackAnimationSeconds)
+        {
+            AnimatorStateInfo info = playerAnimator.GetCurrentAnimatorStateInfo(0);
+
+            if (info.fullPathHash == state)
+            {
+                enteredState = true;
+
+                if (!hitApplied && info.normalizedTime >= hitMomentNormalized)
+                {
+                    hitApplied = true;
+                    TryHitNearestNpc360();
+                }
+
+                // Do not give locomotion control back until the REAL clip has basically finished.
+                if (info.normalizedTime >= finishNormalizedTime && !playerAnimator.IsInTransition(0))
+                    break;
+            }
+            else if (enteredState)
+            {
+                // State already completed and Animator left it naturally.
+                break;
+            }
+
+            yield return null;
+        }
+
+        // Fallback so hit detection still occurs if a strange clip/controller never reports the expected state.
+        if (!hitApplied) TryHitNearestNpc360();
+
         if (locomotionDriver != null) locomotionDriver.enabled = true;
+        attackRunning = false;
     }
 
     private void TryHitNearestNpc360()
