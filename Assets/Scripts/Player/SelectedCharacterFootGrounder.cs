@@ -1,4 +1,3 @@
-using System.Collections;
 using CheatOnYourDayOnes.Vehicles;
 using CheatOnYourDayOnes.World;
 using Unity.Netcode;
@@ -7,18 +6,23 @@ using UnityEngine;
 namespace CheatOnYourDayOnes.Player
 {
     /// <summary>
-    /// Grounds the stable CharacterVisual wrapper, never the animated model root itself.
-    /// This prevents Animator root curves from undoing the visual Y correction.
+    /// Keeps the selected playable visual planted on the real world surface.
+    /// The stable CharacterVisual wrapper is corrected, never the animated FBX root.
+    /// A small negative sink is intentional: a couple of centimetres into the ground is
+    /// visually preferable to any visible floating gap.
     /// </summary>
     public sealed class SelectedCharacterFootGrounder : MonoBehaviour
     {
         [SerializeField] private float rayStartHeight = 3.0f;
         [SerializeField] private float rayDistance = 12.0f;
-        [SerializeField] private float soleOffset = 0.002f;
-        [SerializeField] private int stabilizationFrames = 12;
+        [SerializeField] private float forcedSink = 0.035f;
+        [SerializeField] private float refreshInterval = 0.10f;
+        [SerializeField] private float maxCorrectionPerPass = 1.0f;
 
-        private Transform _lastVisual;
-        private Coroutine _snapRoutine;
+        private Transform _visualRoot;
+        private Transform _animatedVisual;
+        private float _nextGroundCheck;
+        private bool _prepared;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void InstallOnLocalPlayer()
@@ -32,59 +36,56 @@ namespace CheatOnYourDayOnes.Player
             if (visualRoot == null || visualRoot.childCount == 0) return;
 
             Transform current = visualRoot.GetChild(0);
-            if (current == _lastVisual) return;
+            if (_animatedVisual != current || _visualRoot != visualRoot)
+            {
+                _visualRoot = visualRoot;
+                _animatedVisual = current;
+                _prepared = false;
+                _nextGroundCheck = 0f;
+            }
 
-            _lastVisual = current;
-            if (_snapRoutine != null) StopCoroutine(_snapRoutine);
-            _snapRoutine = StartCoroutine(StabilizeAndGround(visualRoot, current));
+            if (!_prepared)
+            {
+                DisableCompetingGrounders();
+                foreach (SkinnedMeshRenderer skin in _animatedVisual.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    skin.updateWhenOffscreen = false;
+                _prepared = true;
+            }
+
+            if (Time.unscaledTime < _nextGroundCheck) return;
+            _nextGroundCheck = Time.unscaledTime + refreshInterval;
+            GroundNow();
         }
 
-        private IEnumerator StabilizeAndGround(Transform visualRoot, Transform animatedVisual)
+        private void DisableCompetingGrounders()
         {
             FixedWorldVisualGrounder oldWorldGrounder = GetComponent<FixedWorldVisualGrounder>();
             if (oldWorldGrounder != null) oldWorldGrounder.enabled = false;
+
             MixamoRuntimePoseAndGrounder oldMixamoGrounder = GetComponent<MixamoRuntimePoseAndGrounder>();
             if (oldMixamoGrounder != null) oldMixamoGrounder.enabled = false;
-
-            Animator animator = animatedVisual.GetComponentInChildren<Animator>(true);
-            foreach (SkinnedMeshRenderer skin in animatedVisual.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-                skin.updateWhenOffscreen = true;
-
-            // Repeat for several rendered frames so Animator.Rebind/Idle evaluation cannot restore
-            // an old root offset after the first correction.
-            for (int frame = 0; frame < stabilizationFrames; frame++)
-            {
-                yield return new WaitForEndOfFrame();
-                if (visualRoot == null || animatedVisual == null) yield break;
-
-                if (animator != null) animator.Update(0f);
-                GroundOnce(visualRoot, animatedVisual, frame == stabilizationFrames - 1);
-            }
-
-            _snapRoutine = null;
         }
 
-        private void GroundOnce(Transform visualRoot, Transform animatedVisual, bool logResult)
+        private void GroundNow()
         {
-            if (!TryGetBounds(animatedVisual, out Bounds bounds)) return;
+            if (_visualRoot == null || _animatedVisual == null) return;
+            if (!TryGetBounds(_animatedVisual, out Bounds bounds)) return;
             if (!TryFindWorldGround(bounds, out float groundY)) return;
 
-            float correction = (groundY + soleOffset) - bounds.min.y;
+            float desiredBottom = groundY - forcedSink;
+            float correction = desiredBottom - bounds.min.y;
+            correction = Mathf.Clamp(correction, -maxCorrectionPerPass, maxCorrectionPerPass);
 
-            // CRITICAL: move CharacterVisual, not SelectedCharacterVisual. The Animator can own the
-            // selected model's root transform but does not own this wrapper.
-            visualRoot.position += Vector3.up * correction;
-
-            if (logResult && TryGetBounds(animatedVisual, out Bounds check))
-            {
-                float remaining = check.min.y - (groundY + soleOffset);
-                Debug.Log($"[CYDOY GROUND] Stable wrapper grounded by {correction:F3}m. Ground={groundY:F3}, remaining={remaining:F3}m, wrapperLocalY={visualRoot.localPosition.y:F3}.", animatedVisual.gameObject);
-            }
+            // CharacterVisual is outside the animated hierarchy, so animation/root curves cannot
+            // overwrite this offset. Repeating the correction also follows hills and road height.
+            _visualRoot.position += Vector3.up * correction;
         }
 
         private bool TryFindWorldGround(Bounds bounds, out float groundY)
         {
-            Vector3 origin = new(bounds.center.x, bounds.max.y + rayStartHeight, bounds.center.z);
+            // Cast through the player's X/Z position instead of relying on a potentially odd FBX
+            // renderer centre. This keeps the query directly underneath the gameplay capsule.
+            Vector3 origin = new(transform.position.x, Mathf.Max(bounds.max.y, transform.position.y) + rayStartHeight, transform.position.z);
             float distance = rayDistance + bounds.size.y + rayStartHeight;
             RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, distance, ~0, QueryTriggerInteraction.Ignore);
 
@@ -98,10 +99,7 @@ namespace CheatOnYourDayOnes.Player
                 if (c == null || hit.normal.y < .45f) continue;
                 Transform ht = c.transform;
 
-                // Never use any part of this player as ground.
                 if (ht == transform || ht.IsChildOf(transform)) continue;
-
-                // Never stand visually on NPCs, vehicles or other character capsules.
                 if (c.GetComponentInParent<NPCWanderer>() != null) continue;
                 if (c.GetComponentInParent<DriveableCar>() != null) continue;
                 if (c.GetComponentInParent<CharacterController>() != null) continue;
@@ -109,8 +107,6 @@ namespace CheatOnYourDayOnes.Player
                 Rigidbody rb = c.attachedRigidbody;
                 if (rb != null && !rb.isKinematic) continue;
 
-                // Terrain is always valid. Static/non-character environment colliders are valid too,
-                // which keeps roads, sidewalks and building floors usable even if they are not tagged.
                 bool worldSurface = c is TerrainCollider || c.gameObject.isStatic || rb == null;
                 if (!worldSurface) continue;
 
@@ -121,9 +117,6 @@ namespace CheatOnYourDayOnes.Player
                     found = true;
                 }
             }
-
-            if (!found)
-                Debug.LogWarning("[CYDOY GROUND] No valid terrain/road surface found below selected character.", this);
 
             return found;
         }
@@ -142,8 +135,12 @@ namespace CheatOnYourDayOnes.Player
                     combined = r.bounds;
                     has = true;
                 }
-                else combined.Encapsulate(r.bounds);
+                else
+                {
+                    combined.Encapsulate(r.bounds);
+                }
             }
+
             return has;
         }
 
