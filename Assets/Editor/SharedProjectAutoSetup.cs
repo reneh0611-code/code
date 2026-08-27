@@ -1,7 +1,9 @@
 using System.Linq;
+using CheatOnYourDayOnes.Core;
 using CheatOnYourDayOnes.Player;
 using CheatOnYourDayOnes.Vehicles;
 using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -12,7 +14,7 @@ namespace CheatOnYourDayOnes.EditorTools
     [InitializeOnLoad]
     public static class SharedProjectAutoSetup
     {
-        private const string ScenePath = "Assets/Scenes/Prototype_Street.unity";
+        private const string ScenePath = "Assets/zzz.unity";
         private const string PlayerPrefabPath = "Assets/Prefabs/Player/Player.prefab";
         private const string CharacterPath = "Assets/Models/Characters/TripoTest/TripoCharacter.fbx";
         private const string CharacterMaterialPath = "Assets/Models/Characters/TripoTest/TripoCharacter_URP.mat";
@@ -33,7 +35,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EnsureMainSceneInBuild();
             EnsurePlayerPrefabRuntimeParts();
-            EnsureOpenSceneNetworkPlayerReference();
+            EnsureSharedMapGameplayRoot();
             ValidateSharedAssets();
         }
 
@@ -41,14 +43,70 @@ namespace CheatOnYourDayOnes.EditorTools
         {
             if (AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) == null) return;
             EditorBuildSettingsScene[] scenes = EditorBuildSettings.scenes;
-            if (scenes.Any(s => s.path == ScenePath && s.enabled)) return;
-
             var list = scenes.ToList();
             int existing = list.FindIndex(s => s.path == ScenePath);
             if (existing >= 0) list[existing] = new EditorBuildSettingsScene(ScenePath, true);
             else list.Insert(0, new EditorBuildSettingsScene(ScenePath, true));
             EditorBuildSettings.scenes = list.ToArray();
-            Debug.Log("[CYDOY AUTO] Main scene added/enabled in Build Settings.");
+        }
+
+        private static void EnsureSharedMapGameplayRoot()
+        {
+            Scene scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid() || scene.path != ScenePath) return;
+
+            GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            if (playerPrefab == null) return;
+
+            NetworkManager manager = Object.FindFirstObjectByType<NetworkManager>(FindObjectsInactive.Include);
+            bool changed = false;
+
+            if (manager == null)
+            {
+                GameObject networkRoot = new("NetworkManager");
+                manager = networkRoot.AddComponent<NetworkManager>();
+                UnityTransport transport = networkRoot.AddComponent<UnityTransport>();
+                networkRoot.AddComponent<AutoLocalHost>();
+                manager.NetworkConfig.NetworkTransport = transport;
+                changed = true;
+                Debug.Log("[CYDOY AUTO] Added NetworkManager + UnityTransport + AutoLocalHost to zzz.unity.");
+            }
+            else
+            {
+                UnityTransport transport = manager.GetComponent<UnityTransport>();
+                if (transport == null)
+                {
+                    transport = manager.gameObject.AddComponent<UnityTransport>();
+                    manager.NetworkConfig.NetworkTransport = transport;
+                    changed = true;
+                }
+                if (manager.GetComponent<AutoLocalHost>() == null)
+                {
+                    manager.gameObject.AddComponent<AutoLocalHost>();
+                    changed = true;
+                }
+            }
+
+            if (manager.NetworkConfig.PlayerPrefab != playerPrefab)
+            {
+                manager.NetworkConfig.PlayerPrefab = playerPrefab;
+                changed = true;
+            }
+
+            // The player prefab owns its third-person camera. Keep the terrain preview camera only for edit mode.
+            Camera sceneCamera = Object.FindFirstObjectByType<Camera>(FindObjectsInactive.Include);
+            if (sceneCamera != null && sceneCamera.transform.root.GetComponent<NetworkObject>() == null)
+            {
+                sceneCamera.gameObject.name = "Map Preview Camera";
+            }
+
+            if (changed)
+            {
+                EditorUtility.SetDirty(manager);
+                EditorSceneManager.MarkSceneDirty(scene);
+                EditorSceneManager.SaveScene(scene);
+                Debug.Log("[CYDOY AUTO] zzz.unity is now the shared gameplay map and is linked to Player.prefab.");
+            }
         }
 
         private static void EnsurePlayerPrefabRuntimeParts()
@@ -71,12 +129,9 @@ namespace CheatOnYourDayOnes.EditorTools
                 Animator animator = visualRoot != null ? visualRoot.GetComponentInChildren<Animator>(true) : null;
                 Renderer[] currentRenderers = visualRoot != null ? visualRoot.GetComponentsInChildren<Renderer>(true) : System.Array.Empty<Renderer>();
 
-                // If the old AJ source was deleted, the prefab can still contain a dead/broken visual hierarchy.
-                // Replace that hierarchy with the Tripo character that is actually tracked in Git.
                 if ((animator == null || currentRenderers.Length == 0) && characterAsset != null)
                 {
                     if (visualRoot != null) Object.DestroyImmediate(visualRoot.gameObject);
-
                     GameObject holder = new("CharacterVisual");
                     holder.transform.SetParent(root.transform, false);
 
@@ -88,16 +143,12 @@ namespace CheatOnYourDayOnes.EditorTools
                     model.transform.localRotation = Quaternion.identity;
                     model.transform.localScale = Vector3.one;
 
-                    foreach (Collider c in model.GetComponentsInChildren<Collider>(true))
-                        Object.DestroyImmediate(c);
-
+                    foreach (Collider c in model.GetComponentsInChildren<Collider>(true)) Object.DestroyImmediate(c);
                     NormalizeCharacterHeight(model.transform, TargetCharacterHeight);
                     ApplySharedMaterial(model);
                     SnapVisualFeetToPlayerGround(model.transform);
-
                     animator = model.GetComponentInChildren<Animator>(true);
                     changed = true;
-                    Debug.Log("[CYDOY AUTO] Tripo character embedded into Player.prefab from shared Git asset.");
                 }
 
                 RuntimeAnimatorController controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(PlayerControllerPath);
@@ -119,12 +170,12 @@ namespace CheatOnYourDayOnes.EditorTools
                         driver = root.AddComponent<CharacterAnimationDriver>();
                         changed = true;
                     }
-                    SerializedObject driverSO = new(driver);
-                    SerializedProperty animatorProp = driverSO.FindProperty("animator");
+                    SerializedObject so = new(driver);
+                    SerializedProperty animatorProp = so.FindProperty("animator");
                     if (animatorProp != null) animatorProp.objectReferenceValue = animator;
-                    SerializedProperty fallbackProp = driverSO.FindProperty("fallbackController");
+                    SerializedProperty fallbackProp = so.FindProperty("fallbackController");
                     if (fallbackProp != null) fallbackProp.objectReferenceValue = controller;
-                    driverSO.ApplyModifiedPropertiesWithoutUndo();
+                    so.ApplyModifiedPropertiesWithoutUndo();
                 }
 
                 if (changed)
@@ -134,10 +185,7 @@ namespace CheatOnYourDayOnes.EditorTools
                     Debug.Log("[CYDOY AUTO] Player prefab repaired automatically.");
                 }
             }
-            finally
-            {
-                PrefabUtility.UnloadPrefabContents(root);
-            }
+            finally { PrefabUtility.UnloadPrefabContents(root); }
         }
 
         private static void NormalizeCharacterHeight(Transform modelRoot, float targetHeight)
@@ -172,41 +220,12 @@ namespace CheatOnYourDayOnes.EditorTools
             }
         }
 
-        private static void EnsureOpenSceneNetworkPlayerReference()
-        {
-            Scene scene = SceneManager.GetActiveScene();
-            if (!scene.IsValid() || scene.path != ScenePath) return;
-
-            NetworkManager manager = Object.FindFirstObjectByType<NetworkManager>(FindObjectsInactive.Include);
-            GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
-            if (manager == null || playerPrefab == null) return;
-
-            if (manager.NetworkConfig.PlayerPrefab != playerPrefab)
-            {
-                manager.NetworkConfig.PlayerPrefab = playerPrefab;
-                EditorUtility.SetDirty(manager);
-                EditorSceneManager.MarkSceneDirty(scene);
-                EditorSceneManager.SaveScene(scene);
-                Debug.Log("[CYDOY AUTO] NetworkManager linked to the shared Player prefab.");
-            }
-        }
-
         private static void ValidateSharedAssets()
         {
-            string[] required =
-            {
-                PlayerPrefabPath,
-                CharacterPath,
-                "Assets/Models/Animations/Idle.fbx",
-                "Assets/Models/Animations/Walk.fbx",
-                "Assets/Models/Animations/Run.fbx",
-                PlayerControllerPath,
-                NpcControllerPath
-            };
-
+            string[] required = { PlayerPrefabPath, CharacterPath, "Assets/Models/Animations/Idle.fbx", "Assets/Models/Animations/Walk.fbx", "Assets/Models/Animations/Run.fbx", PlayerControllerPath, NpcControllerPath };
             foreach (string path in required)
                 if (AssetDatabase.LoadMainAssetAtPath(path) == null)
-                    Debug.LogError("[CYDOY AUTO] Required shared asset is missing: " + path + ". Make sure it is tracked in Git and pulled on this machine.");
+                    Debug.LogError("[CYDOY AUTO] Required shared asset is missing: " + path);
         }
     }
 }
