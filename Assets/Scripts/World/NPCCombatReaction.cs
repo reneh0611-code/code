@@ -49,9 +49,9 @@ namespace CheatOnYourDayOnes.World
         private int _normalHitToggle;
         private bool _hardLocked;
         private bool _down;
+        private bool _runAlreadyPrepared;
         private Transform _attacker;
 
-        // Bone references. Works with Humanoid rigs and falls back to name matching for Generic rigs.
         private Transform _hips, _head, _leftFoot, _rightFoot, _leftHand, _rightHand;
 
         public bool CanReceiveHit => !_hardLocked && !_down;
@@ -153,6 +153,7 @@ namespace CheatOnYourDayOnes.World
 
             _hitCount++;
             _attacker = attacker;
+            _runAlreadyPrepared = false;
 
             if (_routine != null)
             {
@@ -172,7 +173,6 @@ namespace CheatOnYourDayOnes.World
         private IEnumerator ReactionSequence(int hitNumber)
         {
             _hardLocked = false;
-
             _normalHitToggle++;
             int baseHit = (_normalHitToggle % 2 == 0) ? Hit2Hash : Hit1Hash;
             PlayState(baseHit, hitCrossFade);
@@ -207,8 +207,8 @@ namespace CheatOnYourDayOnes.World
         private IEnumerator KnockdownSequence()
         {
             _down = true;
+            _runAlreadyPrepared = false;
 
-            // Snapshot the actual skeleton before the fall, not merely the renderer bounds.
             BodyPose startPose = CaptureBodyPose();
             Vector3 fallbackStart = _body != null ? _body.bounds.center : transform.position;
 
@@ -239,32 +239,49 @@ namespace CheatOnYourDayOnes.World
                 yield return null;
             }
 
-            // Save the exact final world pose before touching the root.
             BodyPose lyingWorldPose = finalPose.valid ? finalPose : CaptureBodyPose();
             BakeLandingIntoRoot(startPose, finalPose, fallbackEnd - fallbackStart);
 
-            // Hold the authored final knockdown pose at the exact landing transform.
             yield return new WaitForSeconds(knockdownLieSeconds);
 
             if (_animator.HasState(0, GetUpHash))
             {
-                // Sample the first GetUp frame, then align THAT skeleton frame to the stored lying pose.
-                // This removes both positional and left/right rotational pops between the clips.
                 _animator.Play(GetUpHash, 0, 0f);
                 _animator.Update(0f);
                 BodyPose getUpStartPose = CaptureBodyPose();
                 AlignCurrentPoseToTarget(getUpStartPose, lyingWorldPose);
 
-                // Use a tiny blend after alignment; GetUp itself is still allowed to play to 99.7%.
-                if (getUpCrossFade > 0f)
-                {
-                    _animator.CrossFadeInFixedTime(GetUpHash, getUpCrossFade, 0, 0f);
-                }
+                _animator.CrossFadeInFixedTime(GetUpHash, getUpCrossFade, 0, 0f);
                 yield return WaitForStateComplete(GetUpHash, maxStateSeconds, .997f);
+
+                // IMPORTANT: capture where the complete body ACTUALLY finished standing up.
+                BodyPose getUpEndPose = CaptureBodyPose();
+
+                // Sample the first Run frame immediately, restore the visual wrapper, then move/rotate
+                // the gameplay root so Run starts at the exact final GetUp pose. This removes the
+                // brief standstill and the 1-2m position jump after getting up.
+                if (_animator.HasState(0, RunHash))
+                {
+                    _animator.Play(RunHash, 0, 0f);
+                    _animator.Update(0f);
+
+                    if (_visualRoot != null)
+                    {
+                        _visualRoot.localPosition = _visualBaseLocalPosition;
+                        _visualRoot.localRotation = _visualBaseLocalRotation;
+                    }
+
+                    BodyPose runStartPose = CaptureBodyPose();
+                    AlignCurrentPoseToTarget(runStartPose, getUpEndPose);
+                    GroundRootAtCurrentXZ();
+
+                    // Start moving visually right away instead of showing one Idle frame.
+                    _animator.CrossFadeInFixedTime(RunHash, runCrossFade, 0, 0f);
+                    _runAlreadyPrepared = true;
+                }
             }
 
-            // Once fully upright, return the visual wrapper to its normal authored local transform.
-            if (_visualRoot != null)
+            if (_visualRoot != null && !_runAlreadyPrepared)
             {
                 _visualRoot.localPosition = _visualBaseLocalPosition;
                 _visualRoot.localRotation = _visualBaseLocalRotation;
@@ -298,8 +315,6 @@ namespace CheatOnYourDayOnes.World
                 pose.valid = true;
             }
 
-            // Prefer feet for left/right body axis, then hands. This captures the body's actual yaw
-            // even while lying diagonally on the floor.
             Vector3 lateral = Vector3.zero;
             if (_leftFoot != null && _rightFoot != null)
                 lateral = _rightFoot.position - _leftFoot.position;
@@ -337,12 +352,9 @@ namespace CheatOnYourDayOnes.World
                 yaw = Mathf.Clamp(yaw, -maxLandingYawCorrection, maxLandingYawCorrection);
             }
 
-            // Move/rotate gameplay root to where the complete skeleton really ended.
             transform.position += travel;
             transform.rotation = Quaternion.AngleAxis(yaw, Vector3.up) * transform.rotation;
 
-            // Counter-transform the visual wrapper so the currently displayed final fall frame stays
-            // perfectly motionless. The player should see ZERO pop at this exact moment.
             if (_visualRoot != null)
             {
                 _visualRoot.localPosition -= transform.InverseTransformVector(travel);
@@ -356,15 +368,13 @@ namespace CheatOnYourDayOnes.World
         {
             if (!current.valid || !target.valid) return;
 
-            float yaw = 0f;
             if (current.lateral.sqrMagnitude > .001f && target.lateral.sqrMagnitude > .001f)
             {
-                yaw = Vector3.SignedAngle(current.lateral, target.lateral, Vector3.up);
+                float yaw = Vector3.SignedAngle(current.lateral, target.lateral, Vector3.up);
                 yaw = Mathf.Clamp(yaw, -maxLandingYawCorrection, maxLandingYawCorrection);
                 transform.rotation = Quaternion.AngleAxis(yaw, Vector3.up) * transform.rotation;
             }
 
-            // Re-sample after yaw correction because rotating the root moves all skeleton points.
             BodyPose rotated = CaptureBodyPose();
             if (rotated.valid)
             {
@@ -410,13 +420,16 @@ namespace CheatOnYourDayOnes.World
         {
             if (_attacker == null)
             {
+                _runAlreadyPrepared = false;
                 SetWandererEnabled(true);
                 yield break;
             }
 
-            PlayState(RunHash, runCrossFade);
-            float until = Time.time + fleeSeconds;
+            if (!_runAlreadyPrepared)
+                PlayState(RunHash, runCrossFade);
+            _runAlreadyPrepared = false;
 
+            float until = Time.time + fleeSeconds;
             while (Time.time < until)
             {
                 Vector3 away = transform.position - _attacker.position;
@@ -486,6 +499,7 @@ namespace CheatOnYourDayOnes.World
         {
             if (_routine != null) StopCoroutine(_routine);
             _routine = null;
+            _runAlreadyPrepared = false;
             if (_visualRoot != null)
             {
                 _visualRoot.localPosition = _visualBaseLocalPosition;
