@@ -17,6 +17,7 @@ namespace CheatOnYourDayOnes.World
 
         private readonly List<NPCWanderer> _spawned = new();
         private Transform _visualTemplate;
+        private GameObject _frozenNpcTemplate;
         private RuntimeAnimatorController _controller;
         private Transform _root;
         private float _nextCheck;
@@ -36,6 +37,14 @@ namespace CheatOnYourDayOnes.World
 
             Animator a = _visualTemplate.GetComponentInChildren<Animator>(true);
             _controller = a != null ? a.runtimeAnimatorController : Resources.Load<RuntimeAnimatorController>("Tripo_Locomotion_ExactGeneric");
+
+            // Freeze the ORIGINAL main character as the permanent ambient NPC source BEFORE the
+            // character-selection hub replaces the player's visual. This keeps the former player
+            // character in the city while Character01/02 remain player choices.
+            _frozenNpcTemplate = Instantiate(_visualTemplate.gameObject);
+            _frozenNpcTemplate.name = "OriginalCharacter_NPCTemplate";
+            _frozenNpcTemplate.SetActive(false);
+            DontDestroyOnLoad(_frozenNpcTemplate);
 
             GameObject existing = GameObject.Find("Generated_NPCs");
             _root = existing != null ? existing.transform : new GameObject("Generated_NPCs").transform;
@@ -109,7 +118,9 @@ namespace CheatOnYourDayOnes.World
             cc.stepOffset = .22f;
             cc.slopeLimit = 45f;
 
-            GameObject visual = Instantiate(_visualTemplate.gameObject, npc.transform);
+            GameObject source = _frozenNpcTemplate != null ? _frozenNpcTemplate : _visualTemplate.gameObject;
+            GameObject visual = Instantiate(source, npc.transform);
+            visual.SetActive(true);
             visual.name = "CharacterVisual";
             visual.transform.localPosition = Vector3.zero;
             visual.transform.localRotation = Quaternion.identity;
@@ -131,6 +142,11 @@ namespace CheatOnYourDayOnes.World
             NPCWanderer wanderer = npc.AddComponent<NPCWanderer>();
             wanderer.Configure(Random.Range(1.15f, 1.45f), Random.Range(7f, 14f));
             _spawned.Add(wanderer);
+        }
+
+        private void OnDestroy()
+        {
+            if (_frozenNpcTemplate != null) Destroy(_frozenNpcTemplate);
         }
     }
 }
