@@ -7,10 +7,6 @@ using UnityEngine.UI;
 
 namespace CheatOnYourDayOnes.UI
 {
-    /// <summary>
-    /// Runtime start hub: Start -> choose one of two 3D characters -> Start game.
-    /// The gameplay root/prefab stays untouched; only CharacterVisual is swapped.
-    /// </summary>
     public sealed class CharacterSelectionHub : MonoBehaviour
     {
         public static CharacterSelectionHub Instance { get; private set; }
@@ -19,7 +15,8 @@ namespace CheatOnYourDayOnes.UI
 
         private const string Character01Resource = "PlayableCharacters/Character01";
         private const string Character02Resource = "PlayableCharacters/Character02";
-        private const string PlayerControllerResource = "Tripo_Locomotion_ExactGeneric";
+        private const string Character01Controller = "PlayableCharacters/Character01";
+        private const string Character02Controller = "PlayableCharacters/Character02";
 
         private Canvas canvas;
         private GameObject landingPanel;
@@ -82,17 +79,14 @@ namespace CheatOnYourDayOnes.UI
         private void LockGameplay(bool value)
         {
             if (localPlayer == null) return;
-
             NetworkPlayerController controller = localPlayer.GetComponent<NetworkPlayerController>();
             if (controller != null)
             {
                 movement = controller;
                 controller.enabled = !value;
             }
-
             melee = localPlayer.GetComponent<MeleeAnimationBridge>();
             if (melee != null) melee.enabled = !value;
-
             Cursor.visible = value;
             Cursor.lockState = value ? CursorLockMode.None : CursorLockMode.Locked;
         }
@@ -120,11 +114,9 @@ namespace CheatOnYourDayOnes.UI
             Text title = MakeText(landingPanel.transform, "CHEAT ON YOUR DAY ONES", 48, FontStyle.Bold, TextAnchor.MiddleCenter);
             SetRect(title.rectTransform, new Vector2(.5f, .64f), new Vector2(860, 90));
             title.color = new Color(.96f, .96f, .97f, 1f);
-
             Text sub = MakeText(landingPanel.transform, "DEINE STADT. DEINE STORY.", 17, FontStyle.Normal, TextAnchor.MiddleCenter);
             SetRect(sub.rectTransform, new Vector2(.5f, .565f), new Vector2(600, 50));
             sub.color = new Color(.58f, .60f, .65f, 1f);
-
             Button enter = MakeButton(landingPanel.transform, "SPIEL STARTEN", new Vector2(.5f, .42f), new Vector2(300, 72));
             enter.onClick.AddListener(OpenSelection);
 
@@ -135,19 +127,16 @@ namespace CheatOnYourDayOnes.UI
 
             Text choose = MakeText(selectionPanel.transform, "WÄHLE DEINEN CHARAKTER", 38, FontStyle.Bold, TextAnchor.MiddleCenter);
             SetRect(choose.rectTransform, new Vector2(.5f, .91f), new Vector2(820, 70));
-
             Text chooseSub = MakeText(selectionPanel.transform, "Du kannst deine Wahl später wieder ändern.", 16, FontStyle.Normal, TextAnchor.MiddleCenter);
             SetRect(chooseSub.rectTransform, new Vector2(.5f, .855f), new Vector2(700, 42));
             chooseSub.color = new Color(.58f, .60f, .65f, 1f);
 
             card1 = MakeCharacterCard(selectionPanel.transform, "Character01", new Vector2(.34f, .51f), out preview1, () => SelectCharacter(0));
             card2 = MakeCharacterCard(selectionPanel.transform, "Character02", new Vector2(.66f, .51f), out preview2, () => SelectCharacter(1));
-
             Text n1 = MakeText(card1, "RENÉ", 18, FontStyle.Bold, TextAnchor.MiddleCenter);
             SetRect(n1.rectTransform, new Vector2(.5f, .065f), new Vector2(250, 42));
             Text n2 = MakeText(card2, "DAVID", 18, FontStyle.Bold, TextAnchor.MiddleCenter);
             SetRect(n2.rectTransform, new Vector2(.5f, .065f), new Vector2(250, 42));
-
             startSelectionButton = MakeButton(selectionPanel.transform, "STARTEN", new Vector2(.5f, .105f), new Vector2(300, 68));
             startSelectionButton.interactable = false;
             startSelectionButton.onClick.AddListener(ConfirmSelection);
@@ -164,7 +153,6 @@ namespace CheatOnYourDayOnes.UI
             Image bg = card.GetComponent<Image>();
             bg.color = new Color(.07f, .075f, .09f, .94f);
             Button button = card.GetComponent<Button>();
-            button.transition = Selectable.Transition.ColorTint;
             ColorBlock cb = button.colors;
             cb.normalColor = Color.white;
             cb.highlightedColor = new Color(1.06f, 1.06f, 1.06f, 1f);
@@ -221,13 +209,14 @@ namespace CheatOnYourDayOnes.UI
         {
             if (SelectedCharacterIndex < 0 || localPlayer == null) return;
             GameObject selectedPrefab = Resources.Load<GameObject>(SelectedCharacterIndex == 0 ? Character01Resource : Character02Resource);
-            if (selectedPrefab == null)
+            RuntimeAnimatorController selectedController = LoadControllerForIndex(SelectedCharacterIndex);
+            if (selectedPrefab == null || selectedController == null)
             {
-                Debug.LogError("[CYDOY CHARACTER HUB] Playable character resource missing. Let Unity run PlayableCharacterAutoBuilder once.");
+                Debug.LogError("[CYDOY CHARACTER HUB] Character prefab/controller missing. Wait for PlayableCharacterAutoBuilder READY.");
                 return;
             }
 
-            ApplyVisualToPlayer(localPlayer, selectedPrefab);
+            ApplyVisualToPlayer(localPlayer, selectedPrefab, selectedController);
             PlayerPrefs.SetInt("CYDOY_SelectedCharacter", SelectedCharacterIndex);
             PlayerPrefs.Save();
             SelectionFinished = true;
@@ -236,7 +225,12 @@ namespace CheatOnYourDayOnes.UI
             if (previewWorld != null) previewWorld.SetActive(false);
         }
 
-        private static void ApplyVisualToPlayer(GameObject player, GameObject visualPrefab)
+        public static RuntimeAnimatorController LoadControllerForIndex(int index)
+        {
+            return Resources.Load<RuntimeAnimatorController>(index == 0 ? Character01Controller : Character02Controller);
+        }
+
+        private static void ApplyVisualToPlayer(GameObject player, GameObject visualPrefab, RuntimeAnimatorController controller)
         {
             Transform visualRoot = player.transform.Find("CharacterVisual");
             if (visualRoot == null)
@@ -245,21 +239,17 @@ namespace CheatOnYourDayOnes.UI
                 vr.transform.SetParent(player.transform, false);
                 visualRoot = vr.transform;
             }
-
-            for (int i = visualRoot.childCount - 1; i >= 0; i--)
-                Destroy(visualRoot.GetChild(i).gameObject);
+            for (int i = visualRoot.childCount - 1; i >= 0; i--) Destroy(visualRoot.GetChild(i).gameObject);
 
             GameObject visual = Instantiate(visualPrefab, visualRoot);
             visual.name = "SelectedCharacterVisual";
             visual.transform.localPosition = Vector3.zero;
             visual.transform.localRotation = Quaternion.identity;
-
             FitCharacterToHeight(visual, 1.82f);
 
             Animator animator = visual.GetComponentInChildren<Animator>(true);
             if (animator == null) animator = visual.AddComponent<Animator>();
-            RuntimeAnimatorController controller = Resources.Load<RuntimeAnimatorController>(PlayerControllerResource);
-            if (controller != null) animator.runtimeAnimatorController = controller;
+            animator.runtimeAnimatorController = controller;
             animator.applyRootMotion = false;
             animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             animator.enabled = true;
@@ -274,16 +264,14 @@ namespace CheatOnYourDayOnes.UI
             previewWorld = new GameObject("CharacterPreviewWorld");
             previewWorld.transform.SetParent(transform, false);
             previewWorld.transform.position = new Vector3(10000, 10000, 10000);
-
             previewModel1 = Instantiate(p1, previewWorld.transform);
             previewModel2 = Instantiate(p2, previewWorld.transform);
             previewModel1.transform.localPosition = new Vector3(-4, 0, 0);
             previewModel2.transform.localPosition = new Vector3(4, 0, 0);
             FitCharacterToHeight(previewModel1, 2.0f);
             FitCharacterToHeight(previewModel2, 2.0f);
-
-            SetPreviewIdle(previewModel1);
-            SetPreviewIdle(previewModel2);
+            SetPreviewIdle(previewModel1, 0);
+            SetPreviewIdle(previewModel2, 1);
 
             rt1 = new RenderTexture(700, 900, 24, RenderTextureFormat.ARGB32) { name = "Character01_RT" };
             rt2 = new RenderTexture(700, 900, 24, RenderTextureFormat.ARGB32) { name = "Character02_RT" };
@@ -317,11 +305,11 @@ namespace CheatOnYourDayOnes.UI
             return c;
         }
 
-        private static void SetPreviewIdle(GameObject go)
+        private static void SetPreviewIdle(GameObject go, int characterIndex)
         {
             Animator a = go.GetComponentInChildren<Animator>(true);
             if (a == null) return;
-            RuntimeAnimatorController c = Resources.Load<RuntimeAnimatorController>(PlayerControllerResource);
+            RuntimeAnimatorController c = LoadControllerForIndex(characterIndex);
             if (c != null) a.runtimeAnimatorController = c;
             a.applyRootMotion = false;
             a.enabled = true;
@@ -336,10 +324,8 @@ namespace CheatOnYourDayOnes.UI
             Bounds b = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
             if (b.size.y < .01f) return;
-
             float scale = targetHeight / b.size.y;
             go.transform.localScale *= scale;
-
             renderers = go.GetComponentsInChildren<Renderer>(true);
             b = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
@@ -394,7 +380,6 @@ namespace CheatOnYourDayOnes.UI
             cb.pressedColor = new Color(.78f, .79f, .82f, 1f);
             cb.disabledColor = new Color(.35f, .36f, .4f, .65f);
             b.colors = cb;
-
             Text text = MakeText(go.transform, label, 17, FontStyle.Bold, TextAnchor.MiddleCenter);
             text.color = new Color(.05f, .055f, .065f, 1f);
             Stretch(text.rectTransform);
