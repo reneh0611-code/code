@@ -27,12 +27,14 @@ namespace CheatOnYourDayOnes.CameraSystem
         [SerializeField, Min(0.05f)] private float collisionRadius = 0.20f;
         [SerializeField] private LayerMask collisionMask = ~0;
         [SerializeField] private float minimumDistance = 0.85f;
+        [SerializeField, Min(50f)] private float farClipDistance = 250f;
 
         private float _currentDistance;
         private float _yaw;
         private float _pitch = 8f;
         private bool _initialized;
         private bool _vehicleMode;
+        private Camera _camera;
 
         public float CurrentYaw => _yaw;
         public bool VehicleMode => _vehicleMode;
@@ -40,6 +42,13 @@ namespace CheatOnYourDayOnes.CameraSystem
         private void Awake()
         {
             _currentDistance = distance;
+            _camera = GetComponent<Camera>();
+            if (_camera != null)
+            {
+                _camera.farClipPlane = farClipDistance;
+                _camera.nearClipPlane = Mathf.Max(.05f, _camera.nearClipPlane);
+                _camera.layerCullSpherical = true;
+            }
         }
 
         private void OnEnable()
