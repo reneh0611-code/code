@@ -65,15 +65,22 @@ namespace CheatOnYourDayOnes.Core
             if (player.GetComponent<AmbientNPCSpawner>() == null) player.AddComponent<AmbientNPCSpawner>();
             if (player.GetComponent<MeleeAnimationBridge>() == null) player.AddComponent<MeleeAnimationBridge>();
 
-            // Old prototype combat would otherwise compete with the new left-click system.
             PlayerMeleeCombat oldCombat = player.GetComponent<PlayerMeleeCombat>();
             if (oldCombat != null) oldCombat.enabled = false;
 
             Animator animator = FindPlayerAnimator(player.transform);
             if (animator != null)
             {
-                if (_playerController != null && animator.runtimeAnimatorController != _playerController)
-                    animator.runtimeAnimatorController = _playerController;
+                RuntimeAnimatorController desired = _playerController;
+                if (CharacterSelectionHub.SelectionFinished && CharacterSelectionHub.SelectedCharacterIndex >= 0)
+                {
+                    RuntimeAnimatorController selected = CharacterSelectionHub.LoadControllerForIndex(CharacterSelectionHub.SelectedCharacterIndex);
+                    if (selected != null) desired = selected;
+                }
+
+                if (desired != null && animator.runtimeAnimatorController != desired)
+                    animator.runtimeAnimatorController = desired;
+
                 animator.avatar = null;
                 animator.applyRootMotion = false;
                 animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
