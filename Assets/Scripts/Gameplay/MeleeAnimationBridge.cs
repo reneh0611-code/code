@@ -13,17 +13,24 @@ public class MeleeAnimationBridge : MonoBehaviour
     [SerializeField, Range(0.75f, 1f)] private float finishNormalizedTime = 0.97f;
     [SerializeField] private float maxAttackAnimationSeconds = 3f;
 
-    [Header("360 degree hit detection")]
-    [SerializeField] private float hitRadius = 2.15f;
+    [Header("Very close melee range")]
+    [SerializeField] private float hitRadius = 1.12f;
     [SerializeField, Range(0.05f, 0.9f)] private float hitMomentNormalized = 0.34f;
 
-    private static readonly int Punch1Hash = Animator.StringToHash("Base Layer.Punch1");
-    private static readonly int Punch2Hash = Animator.StringToHash("Base Layer.Punch2");
+    private static readonly int[] PunchHashes =
+    {
+        Animator.StringToHash("Base Layer.Punch1"),
+        Animator.StringToHash("Base Layer.Punch2"),
+        Animator.StringToHash("Base Layer.Punch3"),
+        Animator.StringToHash("Base Layer.Punch4"),
+        Animator.StringToHash("Base Layer.Punch5")
+    };
 
     private CharacterAnimationDriver locomotionDriver;
     private NetworkPlayerController movementController;
     private float nextAttackTime;
-    private int attackIndex;
+    private int lastPunchIndex = -1;
+    private int currentPunchIndex;
     private bool attackRunning;
 
     private void Awake() => RefreshReferences();
@@ -45,16 +52,25 @@ public class MeleeAnimationBridge : MonoBehaviour
         }
     }
 
+    private int PickPunchIndex()
+    {
+        if (PunchHashes.Length <= 1) return 0;
+        int index;
+        do index = Random.Range(0, PunchHashes.Length);
+        while (index == lastPunchIndex);
+        lastPunchIndex = index;
+        return index;
+    }
+
     private IEnumerator Attack()
     {
         attackRunning = true;
         RefreshReferences();
-        attackIndex++;
-        int state = attackIndex % 2 == 1 ? Punch1Hash : Punch2Hash;
-        string stateName = attackIndex % 2 == 1 ? "Punch1" : "Punch2";
 
-        // GTA-style commitment: once the punch starts, WASD/sprint/jump are locked
-        // until the actual animation has finished.
+        currentPunchIndex = PickPunchIndex();
+        int state = PunchHashes[currentPunchIndex];
+        string stateName = $"Punch{currentPunchIndex + 1}";
+
         if (movementController != null) movementController.SetCombatMovementLocked(true);
         if (locomotionDriver != null) locomotionDriver.enabled = false;
 
@@ -79,7 +95,6 @@ public class MeleeAnimationBridge : MonoBehaviour
         while (stateExists && Time.time - started < maxAttackAnimationSeconds)
         {
             AnimatorStateInfo info = playerAnimator.GetCurrentAnimatorStateInfo(0);
-
             if (info.fullPathHash == state)
             {
                 enteredState = true;
@@ -87,7 +102,7 @@ public class MeleeAnimationBridge : MonoBehaviour
                 if (!hitApplied && info.normalizedTime >= hitMomentNormalized)
                 {
                     hitApplied = true;
-                    TryHitNearestNpc360();
+                    TryHitNearestNpc();
                 }
 
                 if (info.normalizedTime >= finishNormalizedTime && !playerAnimator.IsInTransition(0))
@@ -97,11 +112,10 @@ public class MeleeAnimationBridge : MonoBehaviour
             {
                 break;
             }
-
             yield return null;
         }
 
-        if (!hitApplied) TryHitNearestNpc360();
+        if (!hitApplied) TryHitNearestNpc();
 
         if (locomotionDriver != null) locomotionDriver.enabled = true;
         if (movementController != null) movementController.SetCombatMovementLocked(false);
@@ -110,14 +124,15 @@ public class MeleeAnimationBridge : MonoBehaviour
 
     private void OnDisable()
     {
-        // Safety: never leave the player permanently frozen if this component gets disabled.
         if (movementController != null) movementController.SetCombatMovementLocked(false);
         if (locomotionDriver != null) locomotionDriver.enabled = true;
         attackRunning = false;
     }
 
-    private void TryHitNearestNpc360()
+    private void TryHitNearestNpc()
     {
+        // The range is intentionally tiny. You need to be practically body-to-body.
+        // It remains 360 degrees so front/back/side positioning is all valid if actually close enough.
         Vector3 center = transform.position + Vector3.up * 0.9f;
         Collider[] hits = Physics.OverlapSphere(center, hitRadius, ~0, QueryTriggerInteraction.Collide);
 
@@ -126,6 +141,7 @@ public class MeleeAnimationBridge : MonoBehaviour
             .Select(c => c.GetComponentInParent<NPCWanderer>() ?? c.GetComponentInChildren<NPCWanderer>(true))
             .Where(n => n != null && !n.IsDown)
             .Distinct()
+            .Where(n => HorizontalDistance(transform.position, n.transform.position) <= hitRadius)
             .OrderBy(n => HorizontalDistanceSquared(transform.position, n.transform.position))
             .FirstOrDefault();
 
@@ -135,8 +151,15 @@ public class MeleeAnimationBridge : MonoBehaviour
         direction.y = 0f;
         if (direction.sqrMagnitude < 0.001f) direction = transform.forward;
 
-        npc.HitByPlayerPunch(direction.normalized, attackIndex % 2 == 1 ? 1 : 2, transform);
-        Debug.Log($"[CYDOY MELEE] Hit {npc.name} with {(attackIndex % 2 == 1 ? "Punch1" : "Punch2")}", npc);
+        npc.HitByPlayerPunch(direction.normalized, currentPunchIndex + 1, transform);
+        Debug.Log($"[CYDOY MELEE] Hit {npc.name} with Punch{currentPunchIndex + 1}", npc);
+    }
+
+    private static float HorizontalDistance(Vector3 a, Vector3 b)
+    {
+        a.y = 0f;
+        b.y = 0f;
+        return Vector3.Distance(a, b);
     }
 
     private static float HorizontalDistanceSquared(Vector3 a, Vector3 b)
