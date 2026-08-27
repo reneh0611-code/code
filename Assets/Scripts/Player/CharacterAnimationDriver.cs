@@ -30,32 +30,50 @@ namespace CheatOnYourDayOnes.Player
             if (characterController == null)
                 characterController = GetComponent<CharacterController>();
 
-            if (animator == null)
-                animator = FindAnimator();
-
             if (fallbackController == null)
                 fallbackController = Resources.Load<RuntimeAnimatorController>("Tripo_Locomotion_ExactGeneric");
 
-            if (animator != null && animator.runtimeAnimatorController == null && fallbackController != null)
-                animator.runtimeAnimatorController = fallbackController;
-
-            ConfigureAnimator();
+            RebindToCurrentVisual();
         }
 
         private void Start()
         {
-            if (animator == null)
+            RebindToCurrentVisual();
+        }
+
+        /// <summary>
+        /// Call this whenever CharacterVisual is replaced at runtime. The old implementation cached
+        /// the original Animator forever, so selectable characters could punch but never Walk/Run.
+        /// </summary>
+        public void RebindToCurrentVisual(RuntimeAnimatorController preferredController = null)
+        {
+            if (characterController == null)
+                characterController = GetComponent<CharacterController>();
+
+            Animator newest = FindAnimator();
+            if (newest == null)
             {
-                Debug.LogError("[CYDOY] CharacterAnimationDriver: Animator not found.", this);
+                _ready = false;
+                animator = null;
+                Debug.LogWarning("[CYDOY] CharacterAnimationDriver: no Animator currently present; waiting for CharacterVisual.", this);
                 return;
             }
 
-            if (animator.runtimeAnimatorController == null && fallbackController != null)
-                animator.runtimeAnimatorController = fallbackController;
+            animator = newest;
+
+            RuntimeAnimatorController desired = preferredController != null
+                ? preferredController
+                : animator.runtimeAnimatorController != null
+                    ? animator.runtimeAnimatorController
+                    : fallbackController;
+
+            if (desired != null && animator.runtimeAnimatorController != desired)
+                animator.runtimeAnimatorController = desired;
 
             if (animator.runtimeAnimatorController == null)
             {
-                Debug.LogError("[CYDOY] CharacterAnimationDriver: no RuntimeAnimatorController.", animator);
+                _ready = false;
+                Debug.LogError("[CYDOY] CharacterAnimationDriver: no RuntimeAnimatorController after rebind.", animator);
                 return;
             }
 
@@ -70,18 +88,28 @@ namespace CheatOnYourDayOnes.Player
 
             if (!idleExists || !walkExists || !runExists)
             {
-                Debug.LogError("[CYDOY] AnimatorController is missing Idle, Walk or Run.", animator);
+                _ready = false;
+                Debug.LogError($"[CYDOY] Locomotion controller invalid after rebind. Idle={idleExists}, Walk={walkExists}, Run={runExists}", animator);
                 return;
             }
 
             _ready = true;
-            animator.Play(IdleHash, 0, 0f);
             _currentState = IdleHash;
+            animator.Play(IdleHash, 0, 0f);
+            animator.Update(0f);
+            Debug.Log($"[CYDOY] CharacterAnimationDriver rebound to '{animator.gameObject.name}' using '{animator.runtimeAnimatorController.name}'.", animator);
         }
 
         private void Update()
         {
-            if (!_ready || animator == null || characterController == null)
+            // If a runtime visual swap happened without an explicit rebind, recover automatically.
+            if (animator == null || !animator)
+            {
+                RebindToCurrentVisual();
+                if (!_ready) return;
+            }
+
+            if (!_ready || characterController == null)
                 return;
 
             if (_jumpStateExists && !characterController.isGrounded)
@@ -138,6 +166,13 @@ namespace CheatOnYourDayOnes.Player
 
         private Animator FindAnimator()
         {
+            Transform visual = transform.Find("CharacterVisual");
+            if (visual != null)
+            {
+                Animator current = visual.GetComponentInChildren<Animator>(true);
+                if (current != null) return current;
+            }
+
             Animator[] animators = GetComponentsInChildren<Animator>(true);
             return animators.Length > 0 ? animators[0] : null;
         }
