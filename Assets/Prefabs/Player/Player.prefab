@@ -20,7 +20,6 @@ GameObject:
   - component: {fileID: 5806823601672899004}
   - component: {fileID: 9219537829159665089}
   - component: {fileID: 345283889893129988}
-  - component: {fileID: 3892634138517423260}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -310,11 +309,6 @@ MonoBehaviour:
   rotationSpeed: 18
   gravity: -26
   jumpHeight: 1.35
-  maxStamina: 100
-  staminaDrainPerSecond: 22
-  staminaRegenPerSecond: 18
-  staminaRegenDelay: 0.8
-  sprintResumeThreshold: 12
   cameraTarget: {fileID: 8491741125697097670}
   playerCamera: {fileID: 4688447741953944486}
   audioListener: {fileID: 5778332021678954214}
@@ -358,19 +352,6 @@ MonoBehaviour:
   idleRunBlend: 0.1
   jumpBlend: 0.06
   landBlend: 0.1
---- !u!114 &3892634138517423260
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 669583366774212533}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 41138a8883bb24dbead2b56301c6e811, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Vehicles.VehicleInteractor
-  enterRadius: 3.5
 --- !u!1 &3031222564111219763
 GameObject:
   m_ObjectHideFlags: 0
