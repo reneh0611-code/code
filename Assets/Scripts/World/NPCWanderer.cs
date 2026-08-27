@@ -16,11 +16,16 @@ namespace CheatOnYourDayOnes.World
         [SerializeField] private float carClearanceBeforeGetUp = 3.2f, extraWaitAfterCarClears = .65f, maxAnimationFallTravel = 4f;
         [SerializeField, Range(-1f, 1f)] private float rearHitDotThreshold = -.25f;
 
-        [Header("Player punch reaction")]
-        [SerializeField] private float fleeAfterPunchSeconds = 6f;
+        [Header("Player punch escalation")]
+        [SerializeField] private float fleeAfterPunchSeconds = 5f;
         [SerializeField] private float punchFleeSpeed = 2.35f;
         [SerializeField, Range(.75f, 1f)] private float hitFinishNormalizedTime = .97f;
         [SerializeField] private float maxHitAnimationSeconds = 3f;
+        [SerializeField] private float secondHitExtraStunSeconds = .9f;
+        [SerializeField] private int knockdownOnHit = 4;
+        [SerializeField] private float knockdownLieSeconds = 2.6f;
+        [SerializeField] private float maxKnockdownAnimationSeconds = 4f;
+        [SerializeField] private float maxGetUpAnimationSeconds = 4f;
 
         private const float ForcedBodyGroundClearance = -.100f;
         private const float ClipFinishedNormalizedTime = .985f;
@@ -34,6 +39,11 @@ namespace CheatOnYourDayOnes.World
         private static readonly int GettingUpRearHash = Animator.StringToHash("Base Layer.GettingUpRear");
         private static readonly int Hit1Hash = Animator.StringToHash("Base Layer.Hit1");
         private static readonly int Hit2Hash = Animator.StringToHash("Base Layer.Hit2");
+        private static readonly int HeavyHitHash = Animator.StringToHash("Base Layer.HeavyHit");
+        private static readonly int KnockdownHash = Animator.StringToHash("Base Layer.Knockdown");
+        private static readonly int GetUpHash = Animator.StringToHash("Base Layer.GetUp");
+
+        private enum MeleePhase { None, Reaction, HeavyReaction, HeavyStun, Knockdown, Lying, GetUp }
 
         private CharacterController _controller;
         private Vector3 _home, _target, _impactAnchor, _fallOriginAnchor, _fallBodyStartCenter;
@@ -45,14 +55,19 @@ namespace CheatOnYourDayOnes.World
         private bool[] _colliderStates;
 
         private Transform _meleeAttacker, _visualRoot;
-        private bool _meleeReacting;
-        private bool _meleeEnteredHitState;
-        private float _meleeReactionStarted;
+        private MeleePhase _meleePhase;
+        private float _meleePhaseStarted;
+        private float _meleePhaseUntil;
         private float _forcedFleeUntil;
-        private int _meleeHitVariant;
+        private int _expectedMeleeState;
+        private bool _enteredExpectedMeleeState;
+        private int _playerHitCount;
+        private int _normalHitToggle;
         private Quaternion _visualBaseRotation;
 
-        public bool IsDown => _fallEarliestGetUp > 0f || _gettingUp;
+        private bool VehicleDown => _fallEarliestGetUp > 0f || _gettingUp;
+        private bool MeleeDown => _meleePhase == MeleePhase.Knockdown || _meleePhase == MeleePhase.Lying || _meleePhase == MeleePhase.GetUp;
+        public bool IsDown => VehicleDown || MeleeDown;
         public Vector3 DownPosition => _impactAnchor;
 
         private void Awake()
@@ -96,42 +111,13 @@ namespace CheatOnYourDayOnes.World
 
         private void Update()
         {
-            if (IsDown)
+            if (VehicleDown)
             {
-                if (!_gettingUp)
-                {
-                    bool fallFinished = IsActiveClipFinished(_rearImpact ? FallRearHash : FallHash, FallHash);
-                    if (Time.time >= _fallEarliestGetUp && fallFinished)
-                    {
-                        if (IsCarTooClose()) _safeGetUpAfter = Time.time + extraWaitAfterCarClears;
-                        else if (Time.time >= _safeGetUpAfter) StartGettingUp();
-                    }
-                }
-                else
-                {
-                    bool getUpFinished = IsActiveClipFinished(_rearImpact ? GettingUpRearHash : GettingUpHash, GettingUpHash);
-                    if (getUpFinished) FinishGettingUp();
-                }
+                UpdateVehicleDown();
                 return;
             }
 
-            if (_meleeReacting)
-            {
-                if (HasHitAnimationFinished())
-                {
-                    _meleeReacting = false;
-                    _forcedFleeUntil = Time.time + fleeAfterPunchSeconds + Random.Range(0f, 1.5f);
-                    _running = false;
-                    SetRunning(true);
-                }
-                else
-                {
-                    SetRunning(false);
-                    SetWalking(false);
-                    ApplyGravityOnly();
-                    return;
-                }
-            }
+            if (UpdateMeleePhase()) return;
 
             FindDangerousCar();
             Vector3 move = Vector3.zero;
@@ -139,7 +125,7 @@ namespace CheatOnYourDayOnes.World
             if (_dangerCar != null)
             {
                 Vector3 away = transform.position - _dangerCar.transform.position;
-                away.y = 0;
+                away.y = 0f;
                 if (away.sqrMagnitude < .01f) away = transform.right;
                 away.Normalize();
                 Face(away, turnSpeed * 1.45f);
@@ -149,26 +135,26 @@ namespace CheatOnYourDayOnes.World
             else if (_meleeAttacker != null && Time.time < _forcedFleeUntil)
             {
                 Vector3 away = transform.position - _meleeAttacker.position;
-                away.y = 0;
+                away.y = 0f;
                 if (away.sqrMagnitude < .01f) away = -transform.forward;
                 away.Normalize();
-                Face(away, turnSpeed * 1.7f);
+                Face(away, turnSpeed * 1.45f);
                 move = away * punchFleeSpeed;
                 SetRunning(true);
             }
-            else if (_pause > 0)
+            else if (_pause > 0f)
             {
                 _meleeAttacker = null;
                 SetRunning(false);
                 _pause -= Time.deltaTime;
-                if (_pause <= 0) PickTarget();
+                if (_pause <= 0f) PickTarget();
             }
             else
             {
                 _meleeAttacker = null;
                 SetRunning(false);
                 Vector3 to = _target - transform.position;
-                to.y = 0;
+                to.y = 0f;
                 if (to.sqrMagnitude < .16f) Pause(Random.Range(minPause, maxPause));
                 else
                 {
@@ -179,36 +165,142 @@ namespace CheatOnYourDayOnes.World
                 }
             }
 
-            if (_controller.isGrounded && _verticalVelocity < 0) _verticalVelocity = -2;
-            else _verticalVelocity += gravity * Time.deltaTime;
-            _controller.Move((move + Vector3.up * _verticalVelocity) * Time.deltaTime);
+            MoveWithGravity(move);
         }
 
-        private bool HasHitAnimationFinished()
+        private void UpdateVehicleDown()
+        {
+            if (!_gettingUp)
+            {
+                bool fallFinished = IsActiveClipFinished(_rearImpact ? FallRearHash : FallHash, FallHash);
+                if (Time.time >= _fallEarliestGetUp && fallFinished)
+                {
+                    if (IsCarTooClose()) _safeGetUpAfter = Time.time + extraWaitAfterCarClears;
+                    else if (Time.time >= _safeGetUpAfter) StartGettingUp();
+                }
+            }
+            else
+            {
+                bool getUpFinished = IsActiveClipFinished(_rearImpact ? GettingUpRearHash : GettingUpHash, GettingUpHash);
+                if (getUpFinished) FinishGettingUp();
+            }
+        }
+
+        private bool UpdateMeleePhase()
+        {
+            switch (_meleePhase)
+            {
+                case MeleePhase.None:
+                    return false;
+
+                case MeleePhase.Reaction:
+                    if (MeleeAnimationFinished(maxHitAnimationSeconds))
+                    {
+                        _meleePhase = MeleePhase.None;
+                        BeginFlee();
+                        return false;
+                    }
+                    ApplyGravityOnly();
+                    return true;
+
+                case MeleePhase.HeavyReaction:
+                    if (MeleeAnimationFinished(maxHitAnimationSeconds))
+                    {
+                        _meleePhase = MeleePhase.HeavyStun;
+                        _meleePhaseUntil = Time.time + secondHitExtraStunSeconds;
+                        PlayState(IdleHash, .06f);
+                    }
+                    ApplyGravityOnly();
+                    return true;
+
+                case MeleePhase.HeavyStun:
+                    if (Time.time >= _meleePhaseUntil)
+                    {
+                        _meleePhase = MeleePhase.None;
+                        BeginFlee();
+                        return false;
+                    }
+                    ApplyGravityOnly();
+                    return true;
+
+                case MeleePhase.Knockdown:
+                    if (MeleeAnimationFinished(maxKnockdownAnimationSeconds))
+                    {
+                        _meleePhase = MeleePhase.Lying;
+                        _meleePhaseUntil = Time.time + knockdownLieSeconds;
+                    }
+                    ApplyGravityOnly();
+                    return true;
+
+                case MeleePhase.Lying:
+                    if (Time.time >= _meleePhaseUntil)
+                    {
+                        StartMeleeGetUp();
+                    }
+                    ApplyGravityOnly();
+                    return true;
+
+                case MeleePhase.GetUp:
+                    if (MeleeAnimationFinished(maxGetUpAnimationSeconds))
+                    {
+                        _meleePhase = MeleePhase.None;
+                        _playerHitCount = 0;
+                        BeginFlee();
+                        return false;
+                    }
+                    ApplyGravityOnly();
+                    return true;
+            }
+            return false;
+        }
+
+        private bool MeleeAnimationFinished(float timeout)
         {
             if (animator == null) return true;
-            int expected = _meleeHitVariant == 2 ? Hit2Hash : Hit1Hash;
             AnimatorStateInfo info = animator.GetCurrentAnimatorStateInfo(0);
 
-            if (info.fullPathHash == expected)
+            if (info.fullPathHash == _expectedMeleeState)
             {
-                _meleeEnteredHitState = true;
+                _enteredExpectedMeleeState = true;
                 if (info.normalizedTime >= hitFinishNormalizedTime && !animator.IsInTransition(0)) return true;
             }
-            else if (_meleeEnteredHitState)
+            else if (_enteredExpectedMeleeState)
             {
                 return true;
             }
 
-            return Time.time - _meleeReactionStarted >= maxHitAnimationSeconds;
+            return Time.time - _meleePhaseStarted >= timeout;
         }
 
-        private void ApplyGravityOnly()
+        private void BeginFlee()
         {
-            if (_controller.isGrounded && _verticalVelocity < 0) _verticalVelocity = -2;
-            else _verticalVelocity += gravity * Time.deltaTime;
-            _controller.Move(Vector3.up * _verticalVelocity * Time.deltaTime);
+            _forcedFleeUntil = Time.time + fleeAfterPunchSeconds + Random.Range(0f, .8f);
+            _running = false;
+            SetRunning(true);
         }
+
+        private void StartMeleeGetUp()
+        {
+            _meleePhase = MeleePhase.GetUp;
+            StartMeleeState(GetUpHash);
+        }
+
+        private void StartMeleeState(int state)
+        {
+            _expectedMeleeState = state;
+            _enteredExpectedMeleeState = false;
+            _meleePhaseStarted = Time.time;
+            PlayState(state, .025f);
+        }
+
+        private void MoveWithGravity(Vector3 planarMove)
+        {
+            if (_controller.isGrounded && _verticalVelocity < 0f) _verticalVelocity = -2f;
+            else _verticalVelocity += gravity * Time.deltaTime;
+            _controller.Move((planarMove + Vector3.up * _verticalVelocity) * Time.deltaTime);
+        }
+
+        private void ApplyGravityOnly() => MoveWithGravity(Vector3.zero);
 
         private void Face(Vector3 direction, float speed)
         {
@@ -220,7 +312,7 @@ namespace CheatOnYourDayOnes.World
         {
             if (_mainSkinnedMesh == null) return;
 
-            if (IsDown && !_gettingUp)
+            if (VehicleDown && !_gettingUp)
             {
                 Bounds body = _mainSkinnedMesh.bounds;
                 if (!_fallMotionTracking)
@@ -231,28 +323,25 @@ namespace CheatOnYourDayOnes.World
                 else
                 {
                     Vector3 travel = body.center - _fallBodyStartCenter;
-                    travel.y = 0;
+                    travel.y = 0f;
                     if (travel.magnitude > maxAnimationFallTravel) travel = travel.normalized * maxAnimationFallTravel;
                     _impactAnchor.x = _fallOriginAnchor.x + travel.x;
                     _impactAnchor.z = _fallOriginAnchor.z + travel.z;
                 }
             }
 
-            if (_visualRoot != null && _visualRoot.localRotation != _visualBaseRotation && !IsDown && !_meleeReacting)
+            if (_visualRoot != null && _visualRoot.localRotation != _visualBaseRotation && !VehicleDown && _meleePhase == MeleePhase.None)
                 _visualRoot.localRotation = Quaternion.Slerp(_visualRoot.localRotation, _visualBaseRotation, 1f - Mathf.Exp(-16f * Time.deltaTime));
 
-            ResolveBodyGroundContact(IsDown ? _impactAnchor : transform.position);
+            ResolveBodyGroundContact(VehicleDown ? _impactAnchor : transform.position);
         }
 
-        public void HitByPlayerPunch(Vector3 hitDirection, int variant, Transform attacker)
+        public void HitByPlayerPunch(Vector3 hitDirection, int punchVariant, Transform attacker)
         {
-            if (IsDown) return;
+            if (VehicleDown || MeleeDown) return;
 
-            _meleeHitVariant = variant == 2 ? 2 : 1;
+            _playerHitCount++;
             _meleeAttacker = attacker;
-            _meleeReactionStarted = Time.time;
-            _meleeReacting = true;
-            _meleeEnteredHitState = false;
             _forcedFleeUntil = 0f;
             _dangerCar = null;
             _walking = false;
@@ -266,18 +355,24 @@ namespace CheatOnYourDayOnes.World
                 if (face.sqrMagnitude > .001f) transform.rotation = Quaternion.LookRotation(face);
             }
 
-            int state = _meleeHitVariant == 2 ? Hit2Hash : Hit1Hash;
-            if (animator != null && animator.runtimeAnimatorController != null && animator.HasState(0, state))
+            if (_playerHitCount >= knockdownOnHit)
             {
-                animator.applyRootMotion = false;
-                animator.speed = 1f;
-                animator.CrossFadeInFixedTime(state, .025f, 0, 0f);
+                _meleePhase = MeleePhase.Knockdown;
+                StartMeleeState(KnockdownHash);
+                return;
             }
-            else
+
+            if (_playerHitCount == 2)
             {
-                _meleeReacting = false;
-                _forcedFleeUntil = Time.time + fleeAfterPunchSeconds;
+                _meleePhase = MeleePhase.HeavyReaction;
+                StartMeleeState(HeavyHitHash);
+                return;
             }
+
+            _normalHitToggle++;
+            int normalHit = (_normalHitToggle % 2 == 0) ? Hit2Hash : Hit1Hash;
+            _meleePhase = MeleePhase.Reaction;
+            StartMeleeState(normalHit);
         }
 
         private void ResolveBodyGroundContact(Vector3 samplePosition)
@@ -289,7 +384,7 @@ namespace CheatOnYourDayOnes.World
             p.y = (ground.y + ForcedBodyGroundClearance) - bottomOffset;
             if (_gettingUp) { p.x = _impactAnchor.x; p.z = _impactAnchor.z; }
             transform.position = p;
-            if (IsDown) _impactAnchor.y = ground.y;
+            if (VehicleDown) _impactAnchor.y = ground.y;
         }
 
         private bool IsActiveClipFinished(int preferredHash, int fallbackHash)
@@ -307,7 +402,7 @@ namespace CheatOnYourDayOnes.World
             {
                 if (car == null) continue;
                 Vector3 d = car.transform.position - _impactAnchor;
-                d.y = 0;
+                d.y = 0f;
                 if (d.sqrMagnitude <= carClearanceBeforeGetUp * carClearanceBeforeGetUp) return true;
             }
             return false;
@@ -363,7 +458,7 @@ namespace CheatOnYourDayOnes.World
         {
             ResolveBodyGroundContact(_impactAnchor);
             _gettingUp = false;
-            _fallEarliestGetUp = 0;
+            _fallEarliestGetUp = 0f;
             _fallMotionTracking = false;
             RestorePhysicalCollision();
             PlayState(IdleHash, .04f);
@@ -374,8 +469,9 @@ namespace CheatOnYourDayOnes.World
         {
             if (animator == null || animator.runtimeAnimatorController == null || !animator.isActiveAndEnabled) return false;
             animator.applyRootMotion = false;
+            animator.speed = 1f;
             if (!animator.HasState(0, hash)) return false;
-            animator.CrossFadeInFixedTime(hash, fade, 0, 0);
+            animator.CrossFadeInFixedTime(hash, fade, 0, 0f);
             return true;
         }
 
@@ -394,19 +490,19 @@ namespace CheatOnYourDayOnes.World
         public bool HitByVehicle(Vector3 carVelocity, Vector3 carPosition)
         {
             float speed = carVelocity.magnitude;
-            if (speed < impactSpeedThreshold || IsDown) return false;
+            if (speed < impactSpeedThreshold || VehicleDown) return false;
 
             _meleeAttacker = null;
-            _meleeReacting = false;
+            _meleePhase = MeleePhase.None;
             _forcedFleeUntil = 0f;
 
             Vector3 toCar = carPosition - transform.position;
-            toCar.y = 0;
+            toCar.y = 0f;
             if (toCar.sqrMagnitude > .001f) toCar.Normalize();
             _rearImpact = Vector3.Dot(transform.forward, toCar) < rearHitDotThreshold;
 
             Vector3 carry = carVelocity;
-            carry.y = 0;
+            carry.y = 0f;
             if (carry.sqrMagnitude > .001f) carry = carry.normalized * impactCarryDistance;
 
             Vector3 hitPoint = transform.position + carry;
@@ -432,7 +528,7 @@ namespace CheatOnYourDayOnes.World
         private void PickTarget()
         {
             Vector2 c = Random.insideUnitCircle * wanderRadius;
-            _target = _home + new Vector3(c.x, 0, c.y);
+            _target = _home + new Vector3(c.x, 0f, c.y);
             SetWalking(true);
         }
 

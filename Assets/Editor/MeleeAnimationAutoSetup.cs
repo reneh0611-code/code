@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Animations;
@@ -11,105 +13,155 @@ namespace CheatOnYourDayOnes.EditorTools
     public static class MeleeAnimationAutoSetup
     {
         private const string AnimationFolder = "Assets/Models/Animations";
+        private const string PlayerControllerPath = "Assets/Resources/Tripo_Locomotion_ExactGeneric.controller";
+        private const string NpcControllerPath = "Assets/Resources/LittleGuys_Locomotion.controller";
 
-        private static readonly string[] Controllers =
+        private static readonly (string state, string file)[] PlayerStates =
         {
-            "Assets/Resources/Tripo_Locomotion_ExactGeneric.controller",
-            "Assets/Resources/LittleGuys_Locomotion.controller"
+            ("Punch1", "Punch1.fbx"),
+            ("Punch2", "Punch2.fbx"),
+            ("Punch3", "Punch3.fbx"),
+            ("Punch4", "Punch4.fbx"),
+            ("Punch5", "Punch5.fbx")
         };
+
+        private static readonly (string state, string file)[] NpcStates =
+        {
+            ("Hit1", "Hit1.fbx"),
+            ("Hit2", "Hit2.fbx"),
+            ("HeavyHit", "HeavyHit.fbx"),
+            ("Knockdown", "Knockdown.fbx"),
+            ("GetUp", "GetUp.fbx")
+        };
+
+        private static double nextAttempt;
+        private static int attempts;
+        private static bool installed;
 
         static MeleeAnimationAutoSetup()
         {
-            EditorApplication.delayCall += InstallIfPossible;
+            EditorApplication.update += RetryUntilInstalled;
+            EditorApplication.delayCall += ForceAttemptSoon;
         }
 
         [DidReloadScripts]
         private static void AfterScriptsReload()
         {
-            EditorApplication.delayCall += InstallIfPossible;
+            installed = false;
+            attempts = 0;
+            EditorApplication.delayCall += ForceAttemptSoon;
         }
 
-        private static void InstallIfPossible()
+        private static void ForceAttemptSoon()
         {
-            if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling || EditorApplication.isUpdating)
-                return;
+            nextAttempt = 0;
+        }
 
-            // IMPORTANT: Mixamo/FBX sub-clips are often NOT named like the FBX file.
-            // Therefore resolve the FBX by filename, then take its actual AnimationClip sub-asset.
-            AnimationClip punch1 = LoadClipFromFbx("Punch1.fbx");
-            AnimationClip punch2 = LoadClipFromFbx("Punch2.fbx");
-            AnimationClip hit1 = LoadClipFromFbx("Hit1.fbx");
-            AnimationClip hit2 = LoadClipFromFbx("Hit2.fbx");
+        private static void RetryUntilInstalled()
+        {
+            if (installed) return;
+            if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+            if (EditorApplication.timeSinceStartup < nextAttempt) return;
 
-            if (punch1 == null || punch2 == null || hit1 == null || hit2 == null)
+            nextAttempt = EditorApplication.timeSinceStartup + 1.0;
+            attempts++;
+            installed = InstallNow();
+
+            if (!installed && attempts == 1)
+                Debug.Log("[CYDOY MELEE AUTO] Waiting for Unity to finish importing combat FBX files; setup will retry automatically.");
+        }
+
+        private static bool InstallNow()
+        {
+            AnimatorController player = AssetDatabase.LoadAssetAtPath<AnimatorController>(PlayerControllerPath);
+            AnimatorController npc = AssetDatabase.LoadAssetAtPath<AnimatorController>(NpcControllerPath);
+            if (player == null || npc == null) return false;
+
+            bool allReady = true;
+            bool changed = false;
+
+            foreach (var entry in PlayerStates)
             {
-                Debug.LogError($"[CYDOY MELEE AUTO] Combat FBX resolution failed. Punch1={punch1 != null}, Punch2={punch2 != null}, Hit1={hit1 != null}, Hit2={hit2 != null}. Expected files directly in {AnimationFolder}.");
-                return;
+                AnimationClip clip = ResolveClip(entry.file);
+                if (clip == null) { allReady = false; continue; }
+                changed |= EnsureState(player, entry.state, clip);
             }
 
-            bool changedAny = false;
-
-            foreach (string path in Controllers)
+            foreach (var entry in NpcStates)
             {
-                AnimatorController controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(path);
-                if (controller == null)
-                {
-                    Debug.LogError("[CYDOY MELEE AUTO] AnimatorController not found: " + path);
-                    continue;
-                }
-
-                bool changed = false;
-                changed |= EnsureState(controller, "Punch1", punch1);
-                changed |= EnsureState(controller, "Punch2", punch2);
-                changed |= EnsureState(controller, "Hit1", hit1);
-                changed |= EnsureState(controller, "Hit2", hit2);
-
-                if (changed)
-                {
-                    EditorUtility.SetDirty(controller);
-                    changedAny = true;
-                }
-
-                Debug.Log($"[CYDOY MELEE AUTO] VERIFIED {controller.name}: Punch1={HasState(controller, "Punch1")}, Punch2={HasState(controller, "Punch2")}, Hit1={HasState(controller, "Hit1")}, Hit2={HasState(controller, "Hit2")}.");
+                AnimationClip clip = ResolveClip(entry.file);
+                if (clip == null) { allReady = false; continue; }
+                changed |= EnsureState(npc, entry.state, clip);
             }
 
-            if (changedAny)
+            // Keep hit states available on the player controller too because ambient NPCs may clone
+            // the player's visual/controller at runtime before SharedWorldBootstrap swaps controllers.
+            foreach (var entry in NpcStates)
             {
+                AnimationClip clip = ResolveClip(entry.file);
+                if (clip != null) changed |= EnsureState(player, entry.state, clip);
+            }
+
+            if (changed)
+            {
+                EditorUtility.SetDirty(player);
+                EditorUtility.SetDirty(npc);
                 AssetDatabase.SaveAssets();
-                AssetDatabase.Refresh();
-                Debug.Log("[CYDOY MELEE AUTO] Combat animation states saved permanently into the Animator Controllers.");
             }
+
+            bool playerVerified = PlayerStates.All(e => HasState(player, e.state));
+            bool npcVerified = NpcStates.All(e => HasState(npc, e.state));
+
+            if (allReady && playerVerified && npcVerified)
+            {
+                Debug.Log("[CYDOY MELEE AUTO] READY: Player Punch1-5 and NPC Hit1/Hit2/HeavyHit/Knockdown/GetUp are permanently wired.");
+                return true;
+            }
+
+            return false;
         }
 
-        private static AnimationClip LoadClipFromFbx(string fileName)
+        private static AnimationClip ResolveClip(string expectedFile)
         {
-            string path = AnimationFolder + "/" + fileName;
-            if (AssetDatabase.LoadMainAssetAtPath(path) == null)
-                return null;
+            // First: exact deterministic path.
+            string exactPath = AnimationFolder + "/" + expectedFile;
+            AnimationClip clip = FirstRealClip(exactPath, Path.GetFileNameWithoutExtension(expectedFile));
+            if (clip != null) return clip;
+
+            // Fallback: locate the FBX anywhere under Models/Animations, case-insensitively.
+            string stem = Path.GetFileNameWithoutExtension(expectedFile);
+            string[] guids = AssetDatabase.FindAssets(stem + " t:Model", new[] { AnimationFolder });
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (!string.Equals(Path.GetFileNameWithoutExtension(path), stem, StringComparison.OrdinalIgnoreCase)) continue;
+                clip = FirstRealClip(path, stem);
+                if (clip != null) return clip;
+            }
+
+            return null;
+        }
+
+        private static AnimationClip FirstRealClip(string path, string preferredName)
+        {
+            if (AssetDatabase.LoadMainAssetAtPath(path) == null) return null;
 
             AnimationClip[] clips = AssetDatabase.LoadAllAssetsAtPath(path)
                 .OfType<AnimationClip>()
                 .Where(c => c != null && !c.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                 .ToArray();
 
-            // FBX normally contains one usable animation clip. Prefer a clip matching the file name,
-            // otherwise deliberately use the first real clip instead of failing because Mixamo renamed it.
-            string stem = System.IO.Path.GetFileNameWithoutExtension(fileName);
-            AnimationClip exact = clips.FirstOrDefault(c => Normalize(c.name) == Normalize(stem));
-            return exact != null ? exact : clips.FirstOrDefault();
+            if (clips.Length == 0) return null;
+            AnimationClip exact = clips.FirstOrDefault(c => Normalize(c.name) == Normalize(preferredName));
+            return exact ?? clips[0];
         }
 
         private static bool EnsureState(AnimatorController controller, string stateName, AnimationClip clip)
         {
-            if (controller.layers == null || controller.layers.Length == 0)
-                return false;
-
             AnimatorStateMachine machine = controller.layers[0].stateMachine;
-            AnimatorState state = machine.states
-                .Select(s => s.state)
-                .FirstOrDefault(s => s != null && s.name == stateName);
-
+            AnimatorState state = machine.states.Select(s => s.state).FirstOrDefault(s => s != null && s.name == stateName);
             bool changed = false;
+
             if (state == null)
             {
                 state = machine.AddState(stateName);
@@ -122,15 +174,15 @@ namespace CheatOnYourDayOnes.EditorTools
                 changed = true;
             }
 
-            state.speed = 1f;
+            if (!Mathf.Approximately(state.speed, 1f)) { state.speed = 1f; changed = true; }
             state.writeDefaultValues = true;
             return changed;
         }
 
-        private static bool HasState(AnimatorController controller, string name)
+        private static bool HasState(AnimatorController controller, string stateName)
         {
-            if (controller == null || controller.layers == null || controller.layers.Length == 0) return false;
-            return controller.layers[0].stateMachine.states.Any(s => s.state != null && s.state.name == name);
+            return controller != null && controller.layers.Length > 0 &&
+                   controller.layers[0].stateMachine.states.Any(s => s.state != null && s.state.name == stateName && s.state.motion != null);
         }
 
         private static string Normalize(string value)
@@ -138,44 +190,30 @@ namespace CheatOnYourDayOnes.EditorTools
             if (string.IsNullOrEmpty(value)) return string.Empty;
             return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
         }
+
+        public static bool IsCombatFile(string file)
+        {
+            return PlayerStates.Concat(NpcStates).Any(e => string.Equals(e.file, file, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
-    // Ensures combat clips behave like attacks/reactions instead of locomotion loops.
     public sealed class MeleeAnimationImportPostprocessor : AssetPostprocessor
     {
         private void OnPreprocessModel()
         {
-            string file = System.IO.Path.GetFileName(assetPath);
-            if (file != "Punch1.fbx" && file != "Punch2.fbx" && file != "Hit1.fbx" && file != "Hit2.fbx")
-                return;
+            string file = Path.GetFileName(assetPath);
+            if (!MeleeAnimationAutoSetup.IsCombatFile(file)) return;
 
             ModelImporter importer = (ModelImporter)assetImporter;
             importer.importAnimation = true;
-            importer.animationType = ModelImporterAnimationType.Generic;
+            // Do not force a rig conversion here. Existing imported rig settings are preserved.
         }
 
         private void OnPostprocessModel(GameObject go)
         {
-            string file = System.IO.Path.GetFileName(assetPath);
-            if (file != "Punch1.fbx" && file != "Punch2.fbx" && file != "Hit1.fbx" && file != "Hit2.fbx")
-                return;
-
-            EditorApplication.delayCall += InstallAfterImport;
-        }
-
-        private static void InstallAfterImport()
-        {
-            // Re-trigger script reload style initialization indirectly by touching the controller assets.
-            foreach (string path in new[]
-            {
-                "Assets/Resources/Tripo_Locomotion_ExactGeneric.controller",
-                "Assets/Resources/LittleGuys_Locomotion.controller"
-            })
-            {
-                UnityEngine.Object obj = AssetDatabase.LoadMainAssetAtPath(path);
-                if (obj != null) EditorUtility.SetDirty(obj);
-            }
-            AssetDatabase.SaveAssets();
+            string file = Path.GetFileName(assetPath);
+            if (!MeleeAnimationAutoSetup.IsCombatFile(file)) return;
+            // InitializeOnLoad update loop will retry after importing finishes.
         }
     }
 }

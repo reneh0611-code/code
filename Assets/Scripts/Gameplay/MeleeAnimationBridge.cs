@@ -8,23 +8,33 @@ public class MeleeAnimationBridge : MonoBehaviour
 {
     [Header("Player")]
     [SerializeField] private Animator playerAnimator;
-    [SerializeField] private float minimumAttackGap = 0.18f;
-    [SerializeField] private float crossFade = 0.025f;
+    [SerializeField] private float minimumAttackGap = 0.08f;
+    [SerializeField] private float crossFade = 0.035f;
     [SerializeField, Range(0.75f, 1f)] private float finishNormalizedTime = 0.97f;
+    [SerializeField, Range(0.35f, 0.9f)] private float comboWindowNormalized = 0.58f;
     [SerializeField] private float maxAttackAnimationSeconds = 3f;
 
-    [Header("360 degree hit detection")]
-    [SerializeField] private float hitRadius = 2.15f;
+    [Header("Very close melee range")]
+    [SerializeField] private float hitRadius = 1.12f;
     [SerializeField, Range(0.05f, 0.9f)] private float hitMomentNormalized = 0.34f;
 
-    private static readonly int Punch1Hash = Animator.StringToHash("Base Layer.Punch1");
-    private static readonly int Punch2Hash = Animator.StringToHash("Base Layer.Punch2");
+    private static readonly int[] PunchHashes =
+    {
+        Animator.StringToHash("Base Layer.Punch1"),
+        Animator.StringToHash("Base Layer.Punch2"),
+        Animator.StringToHash("Base Layer.Punch3"),
+        Animator.StringToHash("Base Layer.Punch4"),
+        Animator.StringToHash("Base Layer.Punch5")
+    };
 
     private CharacterAnimationDriver locomotionDriver;
     private NetworkPlayerController movementController;
     private float nextAttackTime;
-    private int attackIndex;
+    private int lastPunchIndex = -1;
+    private int currentPunchIndex;
     private bool attackRunning;
+    private bool comboWindowOpen;
+    private bool queuedPunch;
 
     private void Awake() => RefreshReferences();
     private void OnEnable() => RefreshReferences();
@@ -38,70 +48,110 @@ public class MeleeAnimationBridge : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetMouseButtonDown(0) && Time.time >= nextAttackTime && !attackRunning)
+        if (!Input.GetMouseButtonDown(0) || Time.time < nextAttackTime) return;
+
+        nextAttackTime = Time.time + minimumAttackGap;
+
+        if (!attackRunning)
         {
-            nextAttackTime = Time.time + minimumAttackGap;
-            StartCoroutine(Attack());
+            StartCoroutine(AttackChain());
+            return;
         }
+
+        if (comboWindowOpen)
+            queuedPunch = true;
     }
 
-    private IEnumerator Attack()
+    private int PickPunchIndex()
+    {
+        if (PunchHashes.Length <= 1) return 0;
+        int index;
+        do index = Random.Range(0, PunchHashes.Length);
+        while (index == lastPunchIndex);
+        lastPunchIndex = index;
+        return index;
+    }
+
+    private IEnumerator AttackChain()
     {
         attackRunning = true;
+        queuedPunch = false;
         RefreshReferences();
-        attackIndex++;
-        int state = attackIndex % 2 == 1 ? Punch1Hash : Punch2Hash;
-        string stateName = attackIndex % 2 == 1 ? "Punch1" : "Punch2";
 
-        // GTA-style commitment: once the punch starts, WASD/sprint/jump are locked
-        // until the actual animation has finished.
         if (movementController != null) movementController.SetCombatMovementLocked(true);
         if (locomotionDriver != null) locomotionDriver.enabled = false;
 
-        bool stateExists = playerAnimator != null && playerAnimator.HasState(0, state);
-        if (stateExists)
+        bool continueCombo;
+        do
         {
-            playerAnimator.enabled = true;
-            playerAnimator.applyRootMotion = false;
-            playerAnimator.speed = 1f;
-            playerAnimator.CrossFadeInFixedTime(state, crossFade, 0, 0f);
-            Debug.Log($"[CYDOY MELEE] Playing complete {stateName}", playerAnimator);
-        }
-        else
-        {
-            Debug.LogError($"[CYDOY MELEE] Missing {stateName} state in {playerAnimator?.runtimeAnimatorController?.name}.", playerAnimator);
-        }
+            continueCombo = false;
+            comboWindowOpen = false;
+            queuedPunch = false;
 
-        bool hitApplied = false;
-        float started = Time.time;
-        bool enteredState = false;
+            currentPunchIndex = PickPunchIndex();
+            int state = PunchHashes[currentPunchIndex];
+            string stateName = $"Punch{currentPunchIndex + 1}";
 
-        while (stateExists && Time.time - started < maxAttackAnimationSeconds)
-        {
-            AnimatorStateInfo info = playerAnimator.GetCurrentAnimatorStateInfo(0);
-
-            if (info.fullPathHash == state)
+            bool stateExists = playerAnimator != null && playerAnimator.HasState(0, state);
+            if (stateExists)
             {
-                enteredState = true;
+                playerAnimator.enabled = true;
+                playerAnimator.applyRootMotion = false;
+                playerAnimator.speed = 1f;
+                playerAnimator.CrossFadeInFixedTime(state, crossFade, 0, 0f);
+            }
+            else
+            {
+                Debug.LogError($"[CYDOY MELEE] Missing {stateName} state in {playerAnimator?.runtimeAnimatorController?.name}.", playerAnimator);
+            }
 
-                if (!hitApplied && info.normalizedTime >= hitMomentNormalized)
+            bool hitApplied = false;
+            float started = Time.time;
+            bool enteredState = false;
+
+            while (stateExists && Time.time - started < maxAttackAnimationSeconds)
+            {
+                AnimatorStateInfo info = playerAnimator.GetCurrentAnimatorStateInfo(0);
+
+                if (info.fullPathHash == state)
                 {
-                    hitApplied = true;
-                    TryHitNearestNpc360();
+                    enteredState = true;
+
+                    if (!hitApplied && info.normalizedTime >= hitMomentNormalized)
+                    {
+                        hitApplied = true;
+                        TryHitNearestNpc();
+                    }
+
+                    if (info.normalizedTime >= comboWindowNormalized)
+                        comboWindowOpen = true;
+
+                    if (queuedPunch && comboWindowOpen)
+                    {
+                        continueCombo = true;
+                        break;
+                    }
+
+                    if (info.normalizedTime >= finishNormalizedTime && !playerAnimator.IsInTransition(0))
+                        break;
+                }
+                else if (enteredState)
+                {
+                    break;
                 }
 
-                if (info.normalizedTime >= finishNormalizedTime && !playerAnimator.IsInTransition(0))
-                    break;
-            }
-            else if (enteredState)
-            {
-                break;
+                yield return null;
             }
 
-            yield return null;
-        }
+            if (!hitApplied) TryHitNearestNpc();
 
-        if (!hitApplied) TryHitNearestNpc360();
+            if (queuedPunch && comboWindowOpen)
+                continueCombo = true;
+
+        } while (continueCombo);
+
+        comboWindowOpen = false;
+        queuedPunch = false;
 
         if (locomotionDriver != null) locomotionDriver.enabled = true;
         if (movementController != null) movementController.SetCombatMovementLocked(false);
@@ -110,13 +160,14 @@ public class MeleeAnimationBridge : MonoBehaviour
 
     private void OnDisable()
     {
-        // Safety: never leave the player permanently frozen if this component gets disabled.
+        comboWindowOpen = false;
+        queuedPunch = false;
         if (movementController != null) movementController.SetCombatMovementLocked(false);
         if (locomotionDriver != null) locomotionDriver.enabled = true;
         attackRunning = false;
     }
 
-    private void TryHitNearestNpc360()
+    private void TryHitNearestNpc()
     {
         Vector3 center = transform.position + Vector3.up * 0.9f;
         Collider[] hits = Physics.OverlapSphere(center, hitRadius, ~0, QueryTriggerInteraction.Collide);
@@ -124,19 +175,29 @@ public class MeleeAnimationBridge : MonoBehaviour
         NPCWanderer npc = hits
             .Where(c => c != null && !c.transform.IsChildOf(transform))
             .Select(c => c.GetComponentInParent<NPCWanderer>() ?? c.GetComponentInChildren<NPCWanderer>(true))
-            .Where(n => n != null && !n.IsDown)
+            .Where(n => n != null)
             .Distinct()
+            .Where(n => HorizontalDistance(transform.position, n.transform.position) <= hitRadius)
+            .Where(n =>
+            {
+                NPCCombatReaction reaction = n.GetComponent<NPCCombatReaction>();
+                return reaction == null || reaction.CanReceiveHit;
+            })
             .OrderBy(n => HorizontalDistanceSquared(transform.position, n.transform.position))
             .FirstOrDefault();
 
         if (npc == null) return;
 
-        Vector3 direction = npc.transform.position - transform.position;
-        direction.y = 0f;
-        if (direction.sqrMagnitude < 0.001f) direction = transform.forward;
+        NPCCombatReaction combat = npc.GetComponent<NPCCombatReaction>();
+        if (combat == null) combat = npc.gameObject.AddComponent<NPCCombatReaction>();
+        combat.TakePunch(transform);
+    }
 
-        npc.HitByPlayerPunch(direction.normalized, attackIndex % 2 == 1 ? 1 : 2, transform);
-        Debug.Log($"[CYDOY MELEE] Hit {npc.name} with {(attackIndex % 2 == 1 ? "Punch1" : "Punch2")}", npc);
+    private static float HorizontalDistance(Vector3 a, Vector3 b)
+    {
+        a.y = 0f;
+        b.y = 0f;
+        return Vector3.Distance(a, b);
     }
 
     private static float HorizontalDistanceSquared(Vector3 a, Vector3 b)
