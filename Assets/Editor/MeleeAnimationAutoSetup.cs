@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Animations;
@@ -18,6 +19,20 @@ namespace CheatOnYourDayOnes.EditorTools
             "Assets/Resources/LittleGuys_Locomotion.controller"
         };
 
+        private static readonly (string state, string file)[] CombatClips =
+        {
+            ("Punch1", "Punch1.fbx"),
+            ("Punch2", "Punch2.fbx"),
+            ("Punch3", "Punch3.fbx"),
+            ("Punch4", "Punch4.fbx"),
+            ("Punch5", "Punch5.fbx"),
+            ("Hit1", "Hit1.fbx"),
+            ("Hit2", "Hit2.fbx"),
+            ("HeavyHit", "HeavyHit.fbx"),
+            ("Knockdown", "Knockdown.fbx"),
+            ("GetUp", "GetUp.fbx")
+        };
+
         static MeleeAnimationAutoSetup()
         {
             EditorApplication.delayCall += InstallIfPossible;
@@ -34,21 +49,19 @@ namespace CheatOnYourDayOnes.EditorTools
             if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling || EditorApplication.isUpdating)
                 return;
 
-            // IMPORTANT: Mixamo/FBX sub-clips are often NOT named like the FBX file.
-            // Therefore resolve the FBX by filename, then take its actual AnimationClip sub-asset.
-            AnimationClip punch1 = LoadClipFromFbx("Punch1.fbx");
-            AnimationClip punch2 = LoadClipFromFbx("Punch2.fbx");
-            AnimationClip hit1 = LoadClipFromFbx("Hit1.fbx");
-            AnimationClip hit2 = LoadClipFromFbx("Hit2.fbx");
-
-            if (punch1 == null || punch2 == null || hit1 == null || hit2 == null)
+            var resolved = new Dictionary<string, AnimationClip>();
+            foreach (var entry in CombatClips)
             {
-                Debug.LogError($"[CYDOY MELEE AUTO] Combat FBX resolution failed. Punch1={punch1 != null}, Punch2={punch2 != null}, Hit1={hit1 != null}, Hit2={hit2 != null}. Expected files directly in {AnimationFolder}.");
-                return;
+                AnimationClip clip = LoadClipFromFbx(entry.file);
+                if (clip == null)
+                {
+                    Debug.LogError($"[CYDOY MELEE AUTO] Missing/invalid combat animation: {AnimationFolder}/{entry.file}");
+                    return;
+                }
+                resolved[entry.state] = clip;
             }
 
             bool changedAny = false;
-
             foreach (string path in Controllers)
             {
                 AnimatorController controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(path);
@@ -59,10 +72,8 @@ namespace CheatOnYourDayOnes.EditorTools
                 }
 
                 bool changed = false;
-                changed |= EnsureState(controller, "Punch1", punch1);
-                changed |= EnsureState(controller, "Punch2", punch2);
-                changed |= EnsureState(controller, "Hit1", hit1);
-                changed |= EnsureState(controller, "Hit2", hit2);
+                foreach (var entry in CombatClips)
+                    changed |= EnsureState(controller, entry.state, resolved[entry.state]);
 
                 if (changed)
                 {
@@ -70,30 +81,28 @@ namespace CheatOnYourDayOnes.EditorTools
                     changedAny = true;
                 }
 
-                Debug.Log($"[CYDOY MELEE AUTO] VERIFIED {controller.name}: Punch1={HasState(controller, "Punch1")}, Punch2={HasState(controller, "Punch2")}, Hit1={HasState(controller, "Hit1")}, Hit2={HasState(controller, "Hit2")}.");
+                bool verified = CombatClips.All(e => HasState(controller, e.state));
+                Debug.Log($"[CYDOY MELEE AUTO] VERIFIED {controller.name}: extended combat states={verified} (Punch1-5, Hit1-2, HeavyHit, Knockdown, GetUp).");
             }
 
             if (changedAny)
             {
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
-                Debug.Log("[CYDOY MELEE AUTO] Combat animation states saved permanently into the Animator Controllers.");
+                Debug.Log("[CYDOY MELEE AUTO] Extended combat animation states saved permanently.");
             }
         }
 
         private static AnimationClip LoadClipFromFbx(string fileName)
         {
             string path = AnimationFolder + "/" + fileName;
-            if (AssetDatabase.LoadMainAssetAtPath(path) == null)
-                return null;
+            if (AssetDatabase.LoadMainAssetAtPath(path) == null) return null;
 
             AnimationClip[] clips = AssetDatabase.LoadAllAssetsAtPath(path)
                 .OfType<AnimationClip>()
                 .Where(c => c != null && !c.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase))
                 .ToArray();
 
-            // FBX normally contains one usable animation clip. Prefer a clip matching the file name,
-            // otherwise deliberately use the first real clip instead of failing because Mixamo renamed it.
             string stem = System.IO.Path.GetFileNameWithoutExtension(fileName);
             AnimationClip exact = clips.FirstOrDefault(c => Normalize(c.name) == Normalize(stem));
             return exact != null ? exact : clips.FirstOrDefault();
@@ -101,13 +110,9 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static bool EnsureState(AnimatorController controller, string stateName, AnimationClip clip)
         {
-            if (controller.layers == null || controller.layers.Length == 0)
-                return false;
-
+            if (controller.layers == null || controller.layers.Length == 0) return false;
             AnimatorStateMachine machine = controller.layers[0].stateMachine;
-            AnimatorState state = machine.states
-                .Select(s => s.state)
-                .FirstOrDefault(s => s != null && s.name == stateName);
+            AnimatorState state = machine.states.Select(s => s.state).FirstOrDefault(s => s != null && s.name == stateName);
 
             bool changed = false;
             if (state == null)
@@ -129,8 +134,8 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static bool HasState(AnimatorController controller, string name)
         {
-            if (controller == null || controller.layers == null || controller.layers.Length == 0) return false;
-            return controller.layers[0].stateMachine.states.Any(s => s.state != null && s.state.name == name);
+            return controller != null && controller.layers != null && controller.layers.Length > 0 &&
+                   controller.layers[0].stateMachine.states.Any(s => s.state != null && s.state.name == name);
         }
 
         private static string Normalize(string value)
@@ -138,16 +143,19 @@ namespace CheatOnYourDayOnes.EditorTools
             if (string.IsNullOrEmpty(value)) return string.Empty;
             return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
         }
+
+        public static bool IsCombatFile(string file)
+        {
+            return CombatClips.Any(e => string.Equals(e.file, file, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
-    // Ensures combat clips behave like attacks/reactions instead of locomotion loops.
     public sealed class MeleeAnimationImportPostprocessor : AssetPostprocessor
     {
         private void OnPreprocessModel()
         {
             string file = System.IO.Path.GetFileName(assetPath);
-            if (file != "Punch1.fbx" && file != "Punch2.fbx" && file != "Hit1.fbx" && file != "Hit2.fbx")
-                return;
+            if (!MeleeAnimationAutoSetup.IsCombatFile(file)) return;
 
             ModelImporter importer = (ModelImporter)assetImporter;
             importer.importAnimation = true;
@@ -157,15 +165,12 @@ namespace CheatOnYourDayOnes.EditorTools
         private void OnPostprocessModel(GameObject go)
         {
             string file = System.IO.Path.GetFileName(assetPath);
-            if (file != "Punch1.fbx" && file != "Punch2.fbx" && file != "Hit1.fbx" && file != "Hit2.fbx")
-                return;
-
-            EditorApplication.delayCall += InstallAfterImport;
+            if (!MeleeAnimationAutoSetup.IsCombatFile(file)) return;
+            EditorApplication.delayCall += TouchControllers;
         }
 
-        private static void InstallAfterImport()
+        private static void TouchControllers()
         {
-            // Re-trigger script reload style initialization indirectly by touching the controller assets.
             foreach (string path in new[]
             {
                 "Assets/Resources/Tripo_Locomotion_ExactGeneric.controller",
