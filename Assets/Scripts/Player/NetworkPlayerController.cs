@@ -39,6 +39,8 @@ namespace CheatOnYourDayOnes.Player
         private Vector3 _serverPlanarVelocity;
         private float _lastSprintTime = -999f;
         private bool _sprintExhausted;
+        private bool _combatMovementLocked;
+        private bool _serverCombatMovementLocked;
 
         private readonly NetworkVariable<Vector3> _serverPosition = new(default,
             NetworkVariableReadPermission.Everyone,
@@ -55,7 +57,8 @@ namespace CheatOnYourDayOnes.Player
         public float Stamina => _stamina.Value;
         public float MaxStamina => maxStamina;
         public float Stamina01 => maxStamina <= 0f ? 0f : Mathf.Clamp01(_stamina.Value / maxStamina);
-        public bool IsSprinting => _sprintInput && _moveInput.sqrMagnitude > 0.01f && !_sprintExhausted && _stamina.Value > 0f;
+        public bool IsSprinting => !_combatMovementLocked && _sprintInput && _moveInput.sqrMagnitude > 0.01f && !_sprintExhausted && _stamina.Value > 0f;
+        public bool IsCombatMovementLocked => _combatMovementLocked;
 
         private void Awake()
         {
@@ -88,6 +91,26 @@ namespace CheatOnYourDayOnes.Player
             }
         }
 
+        public void SetCombatMovementLocked(bool locked)
+        {
+            if (!IsOwner) return;
+            _combatMovementLocked = locked;
+            if (locked)
+            {
+                _moveInput = Vector2.zero;
+                _sprintInput = false;
+            }
+            SetCombatMovementLockedRpc(locked);
+        }
+
+        [Rpc(SendTo.Server)]
+        private void SetCombatMovementLockedRpc(bool locked)
+        {
+            _serverCombatMovementLocked = locked;
+            if (locked)
+                _serverPlanarVelocity = Vector3.zero;
+        }
+
         private void OnApplicationFocus(bool hasFocus)
         {
             if (!IsOwner) return;
@@ -100,9 +123,20 @@ namespace CheatOnYourDayOnes.Player
             if (!IsSpawned || NetworkManager == null || !NetworkManager.IsListening) return;
             if (IsOwner)
             {
-                ReadMovementInput();
+                if (_combatMovementLocked)
+                {
+                    _moveInput = Vector2.zero;
+                    _sprintInput = false;
+                }
+                else
+                {
+                    ReadMovementInput();
+                }
+
                 SendMovementInputRpc(_moveInput, _sprintInput, GetLookYaw());
-                if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame) RequestJumpRpc();
+
+                if (!_combatMovementLocked && Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+                    RequestJumpRpc();
             }
             if (!IsServer)
             {
@@ -142,7 +176,17 @@ namespace CheatOnYourDayOnes.Player
         {
             if (!IsServer || NetworkManager == null || !NetworkManager.IsListening) return;
 
-            input = Vector2.ClampMagnitude(input, 1f);
+            if (_serverCombatMovementLocked)
+            {
+                input = Vector2.zero;
+                sprintRequested = false;
+                _serverPlanarVelocity = Vector3.zero;
+            }
+            else
+            {
+                input = Vector2.ClampMagnitude(input, 1f);
+            }
+
             bool moving = input.sqrMagnitude > 0.01f;
 
             if (_sprintExhausted && _stamina.Value >= sprintResumeThreshold)
@@ -187,7 +231,7 @@ namespace CheatOnYourDayOnes.Player
         [Rpc(SendTo.Server)]
         private void RequestJumpRpc()
         {
-            if (!IsServer || !_controller.isGrounded) return;
+            if (!IsServer || _serverCombatMovementLocked || !_controller.isGrounded) return;
             _verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
         }
     }

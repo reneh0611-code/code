@@ -59,8 +59,16 @@ namespace CheatOnYourDayOnes.Core
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening) return;
             NetworkObject local = NetworkManager.Singleton.LocalClient?.PlayerObject;
             if (local == null) return;
+
             GameObject player = local.gameObject;
             if (player.GetComponent<VehicleInteractor>() == null) player.AddComponent<VehicleInteractor>();
+            if (player.GetComponent<AmbientNPCSpawner>() == null) player.AddComponent<AmbientNPCSpawner>();
+            if (player.GetComponent<MeleeAnimationBridge>() == null) player.AddComponent<MeleeAnimationBridge>();
+
+            // Old prototype combat would otherwise compete with the new left-click system.
+            PlayerMeleeCombat oldCombat = player.GetComponent<PlayerMeleeCombat>();
+            if (oldCombat != null) oldCombat.enabled = false;
+
             Animator animator = FindPlayerAnimator(player.transform);
             if (animator != null)
             {
