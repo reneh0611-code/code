@@ -1,17 +1,33 @@
+using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace CheatOnYourDayOnes.World
 {
     public sealed class NPCCombatReaction : MonoBehaviour
     {
-        [SerializeField] private float normalStateFinish = .985f;
+        [Header("Reaction timing")]
+        [SerializeField] private float normalStateFinish = .99f;
         [SerializeField] private float maxStateSeconds = 4f;
         [SerializeField] private float secondHitExtraStun = .9f;
         [SerializeField] private float knockdownLieSeconds = 2.6f;
+
+        [Header("Smooth transitions")]
+        [SerializeField] private float hitCrossFade = .055f;
+        [SerializeField] private float heavyHitCrossFade = .07f;
+        [SerializeField] private float knockdownCrossFade = .055f;
+        [SerializeField] private float getUpCrossFade = .08f;
+        [SerializeField] private float runCrossFade = .10f;
+
+        [Header("Flee")]
         [SerializeField] private float fleeSeconds = 4.5f;
         [SerializeField] private float fleeSpeed = 2.25f;
+
+        [Header("Knockdown pose tracking")]
         [SerializeField] private float maxKnockdownTravel = 3.5f;
+        [SerializeField] private float maxLandingYawCorrection = 115f;
 
         private static readonly int Hit1Hash = Animator.StringToHash("Base Layer.Hit1");
         private static readonly int Hit2Hash = Animator.StringToHash("Base Layer.Hit2");
@@ -27,6 +43,7 @@ namespace CheatOnYourDayOnes.World
         private SkinnedMeshRenderer _body;
         private Transform _visualRoot;
         private Vector3 _visualBaseLocalPosition;
+        private Quaternion _visualBaseLocalRotation;
         private Coroutine _routine;
         private int _hitCount;
         private int _normalHitToggle;
@@ -34,10 +51,18 @@ namespace CheatOnYourDayOnes.World
         private bool _down;
         private Transform _attacker;
 
-        // Normal Hit/HeavyHit/Stun/Flee can be interrupted by the player's next combo punch.
-        // Knockdown, lying and GetUp are intentionally protected.
+        // Bone references. Works with Humanoid rigs and falls back to name matching for Generic rigs.
+        private Transform _hips, _head, _leftFoot, _rightFoot, _leftHand, _rightHand;
+
         public bool CanReceiveHit => !_hardLocked && !_down;
         public bool IsDown => _down;
+
+        private struct BodyPose
+        {
+            public bool valid;
+            public Vector3 center;
+            public Vector3 lateral;
+        }
 
         private void Awake()
         {
@@ -49,8 +74,10 @@ namespace CheatOnYourDayOnes.World
             {
                 _visualRoot = _animator.transform;
                 _visualBaseLocalPosition = _visualRoot.localPosition;
+                _visualBaseLocalRotation = _visualRoot.localRotation;
                 _animator.applyRootMotion = false;
                 _animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                CacheBodyReferences();
             }
 
             float best = -1f;
@@ -62,6 +89,62 @@ namespace CheatOnYourDayOnes.World
                 if (volume > best) { best = volume; _body = skin; }
             }
             if (_body != null) _body.updateWhenOffscreen = true;
+        }
+
+        private void CacheBodyReferences()
+        {
+            if (_animator == null) return;
+
+            if (_animator.isHuman)
+            {
+                _hips = SafeHumanBone(HumanBodyBones.Hips);
+                _head = SafeHumanBone(HumanBodyBones.Head);
+                _leftFoot = SafeHumanBone(HumanBodyBones.LeftFoot);
+                _rightFoot = SafeHumanBone(HumanBodyBones.RightFoot);
+                _leftHand = SafeHumanBone(HumanBodyBones.LeftHand);
+                _rightHand = SafeHumanBone(HumanBodyBones.RightHand);
+            }
+
+            Transform[] all = _animator.GetComponentsInChildren<Transform>(true);
+            _hips ??= FindBone(all, "hips", "pelvis", "hip");
+            _head ??= FindBone(all, "head");
+            _leftFoot ??= FindSideBone(all, true, "foot", "ankle");
+            _rightFoot ??= FindSideBone(all, false, "foot", "ankle");
+            _leftHand ??= FindSideBone(all, true, "hand", "wrist");
+            _rightHand ??= FindSideBone(all, false, "hand", "wrist");
+        }
+
+        private Transform SafeHumanBone(HumanBodyBones bone)
+        {
+            try { return _animator.GetBoneTransform(bone); }
+            catch { return null; }
+        }
+
+        private static Transform FindBone(IEnumerable<Transform> all, params string[] tokens)
+        {
+            return all.FirstOrDefault(t =>
+            {
+                string n = Normalize(t.name);
+                return tokens.Any(token => n.Contains(Normalize(token)));
+            });
+        }
+
+        private static Transform FindSideBone(IEnumerable<Transform> all, bool left, params string[] bodyTokens)
+        {
+            string[] sideTokens = left ? new[] { "left", "l" } : new[] { "right", "r" };
+            return all.FirstOrDefault(t =>
+            {
+                string n = Normalize(t.name);
+                bool body = bodyTokens.Any(token => n.Contains(Normalize(token)));
+                if (!body) return false;
+                return sideTokens.Any(side => n.StartsWith(side) || n.EndsWith(side) || n.Contains("_" + side) || n.Contains(side + "_"));
+            });
+        }
+
+        private static string Normalize(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
         }
 
         public void TakePunch(Transform attacker)
@@ -81,15 +164,9 @@ namespace CheatOnYourDayOnes.World
             FaceAttacker();
 
             if (_hitCount >= 4)
-            {
-                // Fourth punch is special: if the NPC is still inside Hit3's reaction,
-                // that reaction is cancelled immediately and Knockdown starts NOW.
                 _routine = StartCoroutine(FourthHitKnockdownSequence());
-            }
             else
-            {
                 _routine = StartCoroutine(ReactionSequence(_hitCount));
-            }
         }
 
         private IEnumerator ReactionSequence(int hitNumber)
@@ -98,15 +175,14 @@ namespace CheatOnYourDayOnes.World
 
             _normalHitToggle++;
             int baseHit = (_normalHitToggle % 2 == 0) ? Hit2Hash : Hit1Hash;
-            PlayState(baseHit, .02f);
+            PlayState(baseHit, hitCrossFade);
             yield return WaitForStateComplete(baseHit, maxStateSeconds);
 
             if (hitNumber == 2)
             {
-                // This can also be interrupted by a third combo hit.
-                PlayState(HeavyHitHash, .025f);
+                PlayState(HeavyHitHash, heavyHitCrossFade);
                 yield return WaitForStateComplete(HeavyHitHash, maxStateSeconds);
-                PlayState(IdleHash, .04f);
+                PlayState(IdleHash, .08f);
                 yield return InterruptibleWait(secondHitExtraStun);
             }
 
@@ -117,8 +193,6 @@ namespace CheatOnYourDayOnes.World
 
         private IEnumerator FourthHitKnockdownSequence()
         {
-            // No extra Hit animation here: the player is striking INTO the currently playing
-            // third-hit reaction, so the fourth impact itself immediately launches Knockdown.
             _hardLocked = true;
             yield return KnockdownSequence();
             _hitCount = 0;
@@ -133,26 +207,27 @@ namespace CheatOnYourDayOnes.World
         private IEnumerator KnockdownSequence()
         {
             _down = true;
-            Vector3 bodyStart = _body != null ? _body.bounds.center : transform.position;
-            Vector3 lastTravel = Vector3.zero;
 
-            PlayState(KnockdownHash, .02f);
+            // Snapshot the actual skeleton before the fall, not merely the renderer bounds.
+            BodyPose startPose = CaptureBodyPose();
+            Vector3 fallbackStart = _body != null ? _body.bounds.center : transform.position;
+
+            PlayState(KnockdownHash, knockdownCrossFade);
 
             float started = Time.time;
             bool entered = false;
+            BodyPose finalPose = startPose;
+            Vector3 fallbackEnd = fallbackStart;
+
             while (Time.time - started < maxStateSeconds)
             {
                 AnimatorStateInfo info = _animator.GetCurrentAnimatorStateInfo(0);
                 if (info.fullPathHash == KnockdownHash)
                 {
                     entered = true;
-                    if (_body != null)
-                    {
-                        lastTravel = _body.bounds.center - bodyStart;
-                        lastTravel.y = 0f;
-                        if (lastTravel.magnitude > maxKnockdownTravel)
-                            lastTravel = lastTravel.normalized * maxKnockdownTravel;
-                    }
+                    BodyPose current = CaptureBodyPose();
+                    if (current.valid) finalPose = current;
+                    if (_body != null) fallbackEnd = _body.bounds.center;
 
                     if (info.normalizedTime >= normalStateFinish && !_animator.IsInTransition(0))
                         break;
@@ -164,37 +239,147 @@ namespace CheatOnYourDayOnes.World
                 yield return null;
             }
 
-            BakeLandingIntoRoot(lastTravel);
+            // Save the exact final world pose before touching the root.
+            BodyPose lyingWorldPose = finalPose.valid ? finalPose : CaptureBodyPose();
+            BakeLandingIntoRoot(startPose, finalPose, fallbackEnd - fallbackStart);
+
+            // Hold the authored final knockdown pose at the exact landing transform.
             yield return new WaitForSeconds(knockdownLieSeconds);
 
             if (_animator.HasState(0, GetUpHash))
             {
+                // Sample the first GetUp frame, then align THAT skeleton frame to the stored lying pose.
+                // This removes both positional and left/right rotational pops between the clips.
                 _animator.Play(GetUpHash, 0, 0f);
                 _animator.Update(0f);
-                if (_visualRoot != null) _visualRoot.localPosition = _visualBaseLocalPosition;
-                yield return WaitForStateComplete(GetUpHash, maxStateSeconds, .995f);
+                BodyPose getUpStartPose = CaptureBodyPose();
+                AlignCurrentPoseToTarget(getUpStartPose, lyingWorldPose);
+
+                // Use a tiny blend after alignment; GetUp itself is still allowed to play to 99.7%.
+                if (getUpCrossFade > 0f)
+                {
+                    _animator.CrossFadeInFixedTime(GetUpHash, getUpCrossFade, 0, 0f);
+                }
+                yield return WaitForStateComplete(GetUpHash, maxStateSeconds, .997f);
             }
 
-            if (_visualRoot != null) _visualRoot.localPosition = _visualBaseLocalPosition;
+            // Once fully upright, return the visual wrapper to its normal authored local transform.
+            if (_visualRoot != null)
+            {
+                _visualRoot.localPosition = _visualBaseLocalPosition;
+                _visualRoot.localRotation = _visualBaseLocalRotation;
+            }
+
             _down = false;
         }
 
-        private IEnumerator InterruptibleWait(float seconds)
+        private BodyPose CaptureBodyPose()
         {
-            float until = Time.time + seconds;
-            while (Time.time < until)
-                yield return null;
+            var points = new List<Vector3>(6);
+            AddPoint(points, _hips);
+            AddPoint(points, _head);
+            AddPoint(points, _leftFoot);
+            AddPoint(points, _rightFoot);
+            AddPoint(points, _leftHand);
+            AddPoint(points, _rightHand);
+
+            BodyPose pose = new BodyPose();
+            if (points.Count >= 2)
+            {
+                Vector3 center = Vector3.zero;
+                foreach (Vector3 p in points) center += p;
+                center /= points.Count;
+                pose.center = center;
+                pose.valid = true;
+            }
+            else if (_body != null)
+            {
+                pose.center = _body.bounds.center;
+                pose.valid = true;
+            }
+
+            // Prefer feet for left/right body axis, then hands. This captures the body's actual yaw
+            // even while lying diagonally on the floor.
+            Vector3 lateral = Vector3.zero;
+            if (_leftFoot != null && _rightFoot != null)
+                lateral = _rightFoot.position - _leftFoot.position;
+            else if (_leftHand != null && _rightHand != null)
+                lateral = _rightHand.position - _leftHand.position;
+
+            lateral.y = 0f;
+            if (lateral.sqrMagnitude > .0004f)
+                pose.lateral = lateral.normalized;
+            else
+                pose.lateral = transform.right;
+
+            return pose;
         }
 
-        private void BakeLandingIntoRoot(Vector3 worldTravel)
+        private static void AddPoint(List<Vector3> points, Transform t)
         {
-            if (worldTravel.sqrMagnitude < .0001f) return;
+            if (t != null) points.Add(t.position);
+        }
 
-            transform.position += worldTravel;
+        private void BakeLandingIntoRoot(BodyPose startPose, BodyPose finalPose, Vector3 fallbackTravel)
+        {
+            Vector3 travel = fallbackTravel;
+            if (startPose.valid && finalPose.valid)
+                travel = finalPose.center - startPose.center;
 
+            travel.y = 0f;
+            if (travel.magnitude > maxKnockdownTravel)
+                travel = travel.normalized * maxKnockdownTravel;
+
+            float yaw = 0f;
+            if (startPose.valid && finalPose.valid && startPose.lateral.sqrMagnitude > .001f && finalPose.lateral.sqrMagnitude > .001f)
+            {
+                yaw = Vector3.SignedAngle(startPose.lateral, finalPose.lateral, Vector3.up);
+                yaw = Mathf.Clamp(yaw, -maxLandingYawCorrection, maxLandingYawCorrection);
+            }
+
+            // Move/rotate gameplay root to where the complete skeleton really ended.
+            transform.position += travel;
+            transform.rotation = Quaternion.AngleAxis(yaw, Vector3.up) * transform.rotation;
+
+            // Counter-transform the visual wrapper so the currently displayed final fall frame stays
+            // perfectly motionless. The player should see ZERO pop at this exact moment.
             if (_visualRoot != null)
-                _visualRoot.localPosition -= transform.InverseTransformVector(worldTravel);
+            {
+                _visualRoot.localPosition -= transform.InverseTransformVector(travel);
+                _visualRoot.localRotation = Quaternion.AngleAxis(-yaw, Vector3.up) * _visualRoot.localRotation;
+            }
 
+            GroundRootAtCurrentXZ();
+        }
+
+        private void AlignCurrentPoseToTarget(BodyPose current, BodyPose target)
+        {
+            if (!current.valid || !target.valid) return;
+
+            float yaw = 0f;
+            if (current.lateral.sqrMagnitude > .001f && target.lateral.sqrMagnitude > .001f)
+            {
+                yaw = Vector3.SignedAngle(current.lateral, target.lateral, Vector3.up);
+                yaw = Mathf.Clamp(yaw, -maxLandingYawCorrection, maxLandingYawCorrection);
+                transform.rotation = Quaternion.AngleAxis(yaw, Vector3.up) * transform.rotation;
+            }
+
+            // Re-sample after yaw correction because rotating the root moves all skeleton points.
+            BodyPose rotated = CaptureBodyPose();
+            if (rotated.valid)
+            {
+                Vector3 delta = target.center - rotated.center;
+                delta.y = 0f;
+                if (delta.magnitude > maxKnockdownTravel)
+                    delta = delta.normalized * maxKnockdownTravel;
+                transform.position += delta;
+            }
+
+            GroundRootAtCurrentXZ();
+        }
+
+        private void GroundRootAtCurrentXZ()
+        {
             Vector3 origin = transform.position + Vector3.up * 5f;
             RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, 12f, ~0, QueryTriggerInteraction.Ignore);
             float bestY = float.NegativeInfinity;
@@ -214,6 +399,13 @@ namespace CheatOnYourDayOnes.World
             }
         }
 
+        private IEnumerator InterruptibleWait(float seconds)
+        {
+            float until = Time.time + seconds;
+            while (Time.time < until)
+                yield return null;
+        }
+
         private IEnumerator FleeSequence()
         {
             if (_attacker == null)
@@ -222,12 +414,11 @@ namespace CheatOnYourDayOnes.World
                 yield break;
             }
 
-            PlayState(RunHash, .055f);
+            PlayState(RunHash, runCrossFade);
             float until = Time.time + fleeSeconds;
 
             while (Time.time < until)
             {
-                // Vulnerable while fleeing too; a new punch simply cancels this coroutine.
                 Vector3 away = transform.position - _attacker.position;
                 away.y = 0f;
                 if (away.sqrMagnitude < .001f) away = -transform.forward;
@@ -283,7 +474,7 @@ namespace CheatOnYourDayOnes.World
             Vector3 toward = _attacker.position - transform.position;
             toward.y = 0f;
             if (toward.sqrMagnitude > .001f)
-                transform.rotation = Quaternion.LookRotation(toward.normalized);
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(toward.normalized), .85f);
         }
 
         private void SetWandererEnabled(bool value)
@@ -295,7 +486,11 @@ namespace CheatOnYourDayOnes.World
         {
             if (_routine != null) StopCoroutine(_routine);
             _routine = null;
-            if (_visualRoot != null) _visualRoot.localPosition = _visualBaseLocalPosition;
+            if (_visualRoot != null)
+            {
+                _visualRoot.localPosition = _visualBaseLocalPosition;
+                _visualRoot.localRotation = _visualBaseLocalRotation;
+            }
             if (_wanderer != null) _wanderer.enabled = true;
         }
     }
