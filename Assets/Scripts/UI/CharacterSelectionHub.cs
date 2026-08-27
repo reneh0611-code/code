@@ -17,6 +17,7 @@ namespace CheatOnYourDayOnes.UI
         private const string Character02Resource = "PlayableCharacters/Character02";
         private const string Character01Controller = "PlayableCharacters/Character01";
         private const string Character02Controller = "PlayableCharacters/Character02";
+        private const string FallbackController = "Tripo_Locomotion_ExactGeneric";
 
         private Canvas canvas;
         private GameObject landingPanel;
@@ -208,11 +209,24 @@ namespace CheatOnYourDayOnes.UI
         private void ConfirmSelection()
         {
             if (SelectedCharacterIndex < 0 || localPlayer == null) return;
+
             GameObject selectedPrefab = Resources.Load<GameObject>(SelectedCharacterIndex == 0 ? Character01Resource : Character02Resource);
-            RuntimeAnimatorController selectedController = LoadControllerForIndex(SelectedCharacterIndex);
-            if (selectedPrefab == null || selectedController == null)
+            if (selectedPrefab == null)
             {
-                Debug.LogError("[CYDOY CHARACTER HUB] Character prefab/controller missing. Wait for PlayableCharacterAutoBuilder READY.");
+                Debug.LogError("[CYDOY CHARACTER HUB] Character prefab missing. Wait for PlayableCharacterAutoBuilder READY.");
+                return;
+            }
+
+            RuntimeAnimatorController selectedController = LoadControllerForIndex(SelectedCharacterIndex);
+            if (selectedController == null)
+            {
+                selectedController = Resources.Load<RuntimeAnimatorController>(FallbackController);
+                Debug.LogWarning($"[CYDOY CHARACTER HUB] Dedicated controller for Character{SelectedCharacterIndex + 1:00} missing; using stable locomotion fallback.");
+            }
+
+            if (selectedController == null)
+            {
+                Debug.LogError("[CYDOY CHARACTER HUB] No usable animation controller found.");
                 return;
             }
 
@@ -227,7 +241,8 @@ namespace CheatOnYourDayOnes.UI
 
         public static RuntimeAnimatorController LoadControllerForIndex(int index)
         {
-            return Resources.Load<RuntimeAnimatorController>(index == 0 ? Character01Controller : Character02Controller);
+            RuntimeAnimatorController dedicated = Resources.Load<RuntimeAnimatorController>(index == 0 ? Character01Controller : Character02Controller);
+            return dedicated != null ? dedicated : Resources.Load<RuntimeAnimatorController>(FallbackController);
         }
 
         private static void ApplyVisualToPlayer(GameObject player, GameObject visualPrefab, RuntimeAnimatorController controller)
@@ -239,13 +254,15 @@ namespace CheatOnYourDayOnes.UI
                 vr.transform.SetParent(player.transform, false);
                 visualRoot = vr.transform;
             }
-            for (int i = visualRoot.childCount - 1; i >= 0; i--) Destroy(visualRoot.GetChild(i).gameObject);
+
+            for (int i = visualRoot.childCount - 1; i >= 0; i--)
+                Destroy(visualRoot.GetChild(i).gameObject);
 
             GameObject visual = Instantiate(visualPrefab, visualRoot);
             visual.name = "SelectedCharacterVisual";
             visual.transform.localPosition = Vector3.zero;
             visual.transform.localRotation = Quaternion.identity;
-            FitCharacterToHeight(visual, 1.82f);
+            FitCharacterToHeightAndGround(visual, 1.82f, visualRoot.position.y);
 
             Animator animator = visual.GetComponentInChildren<Animator>(true);
             if (animator == null) animator = visual.AddComponent<Animator>();
@@ -253,6 +270,14 @@ namespace CheatOnYourDayOnes.UI
             animator.applyRootMotion = false;
             animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             animator.enabled = true;
+            animator.Rebind();
+            animator.Update(0f);
+
+            CharacterAnimationDriver driver = player.GetComponent<CharacterAnimationDriver>();
+            if (driver == null) driver = player.AddComponent<CharacterAnimationDriver>();
+            driver.RebindToCurrentVisual(controller);
+
+            Debug.Log($"[CYDOY CHARACTER HUB] Selected Character{SelectedCharacterIndex + 1:00}; locomotion rebound to '{controller.name}' and feet grounded.");
         }
 
         private void BuildPreviewWorld()
@@ -268,8 +293,8 @@ namespace CheatOnYourDayOnes.UI
             previewModel2 = Instantiate(p2, previewWorld.transform);
             previewModel1.transform.localPosition = new Vector3(-4, 0, 0);
             previewModel2.transform.localPosition = new Vector3(4, 0, 0);
-            FitCharacterToHeight(previewModel1, 2.0f);
-            FitCharacterToHeight(previewModel2, 2.0f);
+            FitCharacterToHeightAndGround(previewModel1, 2.0f, previewWorld.transform.position.y);
+            FitCharacterToHeightAndGround(previewModel2, 2.0f, previewWorld.transform.position.y);
             SetPreviewIdle(previewModel1, 0);
             SetPreviewIdle(previewModel2, 1);
 
@@ -312,27 +337,39 @@ namespace CheatOnYourDayOnes.UI
             RuntimeAnimatorController c = LoadControllerForIndex(characterIndex);
             if (c != null) a.runtimeAnimatorController = c;
             a.applyRootMotion = false;
+            a.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             a.enabled = true;
+            a.Rebind();
+            a.Update(0f);
             int idle = Animator.StringToHash("Base Layer.Idle");
             if (a.HasState(0, idle)) a.Play(idle, 0, Random.Range(0f, .25f));
         }
 
-        private static void FitCharacterToHeight(GameObject go, float targetHeight)
+        private static void FitCharacterToHeightAndGround(GameObject go, float targetHeight, float groundY)
         {
             Renderer[] renderers = go.GetComponentsInChildren<Renderer>(true);
             if (renderers.Length == 0) return;
+
             Bounds b = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
             if (b.size.y < .01f) return;
+
             float scale = targetHeight / b.size.y;
             go.transform.localScale *= scale;
+
+            // Force an exact renderer-bounds refresh after scaling before calculating the sole height.
+            foreach (SkinnedMeshRenderer skin in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                skin.updateWhenOffscreen = true;
+                skin.forceMatrixRecalculationPerRender = true;
+            }
+
             renderers = go.GetComponentsInChildren<Renderer>(true);
             b = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
-            Vector3 localBottom = go.transform.parent.InverseTransformPoint(new Vector3(b.center.x, b.min.y, b.center.z));
-            Vector3 lp = go.transform.localPosition;
-            lp.y -= localBottom.y;
-            go.transform.localPosition = lp;
+
+            float deltaY = groundY - b.min.y;
+            go.transform.position += Vector3.up * deltaY;
         }
 
         private static void EnsureEventSystem()
