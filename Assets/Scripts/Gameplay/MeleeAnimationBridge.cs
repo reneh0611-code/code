@@ -21,6 +21,7 @@ public class MeleeAnimationBridge : MonoBehaviour
     private static readonly int Punch2Hash = Animator.StringToHash("Base Layer.Punch2");
 
     private CharacterAnimationDriver locomotionDriver;
+    private NetworkPlayerController movementController;
     private float nextAttackTime;
     private int attackIndex;
     private bool attackRunning;
@@ -32,12 +33,11 @@ public class MeleeAnimationBridge : MonoBehaviour
     {
         if (!playerAnimator) playerAnimator = GetComponentInChildren<Animator>(true);
         if (!locomotionDriver) locomotionDriver = GetComponent<CharacterAnimationDriver>();
+        if (!movementController) movementController = GetComponent<NetworkPlayerController>();
     }
 
     private void Update()
     {
-        // Left click can always REQUEST the next punch. We only prevent the same animation from
-        // being restarted every frame while the current punch is still completing.
         if (Input.GetMouseButtonDown(0) && Time.time >= nextAttackTime && !attackRunning)
         {
             nextAttackTime = Time.time + minimumAttackGap;
@@ -53,6 +53,9 @@ public class MeleeAnimationBridge : MonoBehaviour
         int state = attackIndex % 2 == 1 ? Punch1Hash : Punch2Hash;
         string stateName = attackIndex % 2 == 1 ? "Punch1" : "Punch2";
 
+        // GTA-style commitment: once the punch starts, WASD/sprint/jump are locked
+        // until the actual animation has finished.
+        if (movementController != null) movementController.SetCombatMovementLocked(true);
         if (locomotionDriver != null) locomotionDriver.enabled = false;
 
         bool stateExists = playerAnimator != null && playerAnimator.HasState(0, state);
@@ -87,22 +90,28 @@ public class MeleeAnimationBridge : MonoBehaviour
                     TryHitNearestNpc360();
                 }
 
-                // Do not give locomotion control back until the REAL clip has basically finished.
                 if (info.normalizedTime >= finishNormalizedTime && !playerAnimator.IsInTransition(0))
                     break;
             }
             else if (enteredState)
             {
-                // State already completed and Animator left it naturally.
                 break;
             }
 
             yield return null;
         }
 
-        // Fallback so hit detection still occurs if a strange clip/controller never reports the expected state.
         if (!hitApplied) TryHitNearestNpc360();
 
+        if (locomotionDriver != null) locomotionDriver.enabled = true;
+        if (movementController != null) movementController.SetCombatMovementLocked(false);
+        attackRunning = false;
+    }
+
+    private void OnDisable()
+    {
+        // Safety: never leave the player permanently frozen if this component gets disabled.
+        if (movementController != null) movementController.SetCombatMovementLocked(false);
         if (locomotionDriver != null) locomotionDriver.enabled = true;
         attackRunning = false;
     }
