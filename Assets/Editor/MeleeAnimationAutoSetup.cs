@@ -37,6 +37,7 @@ namespace CheatOnYourDayOnes.EditorTools
         private static double nextAttempt;
         private static int attempts;
         private static bool installed;
+        private static bool normalizingImporters;
 
         static MeleeAnimationAutoSetup()
         {
@@ -52,14 +53,11 @@ namespace CheatOnYourDayOnes.EditorTools
             EditorApplication.delayCall += ForceAttemptSoon;
         }
 
-        private static void ForceAttemptSoon()
-        {
-            nextAttempt = 0;
-        }
+        private static void ForceAttemptSoon() => nextAttempt = 0;
 
         private static void RetryUntilInstalled()
         {
-            if (installed) return;
+            if (installed || normalizingImporters) return;
             if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling || EditorApplication.isUpdating) return;
             if (EditorApplication.timeSinceStartup < nextAttempt) return;
 
@@ -73,6 +71,8 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static bool InstallNow()
         {
+            if (!NormalizeAllCombatImporters()) return false;
+
             AnimatorController player = AssetDatabase.LoadAssetAtPath<AnimatorController>(PlayerControllerPath);
             AnimatorController npc = AssetDatabase.LoadAssetAtPath<AnimatorController>(NpcControllerPath);
             if (player == null || npc == null) return false;
@@ -94,8 +94,6 @@ namespace CheatOnYourDayOnes.EditorTools
                 changed |= EnsureState(npc, entry.state, clip);
             }
 
-            // Keep hit states available on the player controller too because ambient NPCs may clone
-            // the player's visual/controller at runtime before SharedWorldBootstrap swaps controllers.
             foreach (var entry in NpcStates)
             {
                 AnimationClip clip = ResolveClip(entry.file);
@@ -114,21 +112,50 @@ namespace CheatOnYourDayOnes.EditorTools
 
             if (allReady && playerVerified && npcVerified)
             {
-                Debug.Log("[CYDOY MELEE AUTO] READY: Player Punch1-5 and NPC Hit1/Hit2/HeavyHit/Knockdown/GetUp are permanently wired.");
+                Debug.Log("[CYDOY MELEE AUTO] READY: Combat FBX files are Generic and all combat states are wired to the current clips.");
                 return true;
             }
 
             return false;
         }
 
+        private static bool NormalizeAllCombatImporters()
+        {
+            foreach (var entry in PlayerStates.Concat(NpcStates))
+            {
+                string path = AnimationFolder + "/" + entry.file;
+                ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
+                if (importer == null) return false;
+
+                bool dirty = false;
+                if (!importer.importAnimation) { importer.importAnimation = true; dirty = true; }
+                if (importer.animationType != ModelImporterAnimationType.Generic)
+                {
+                    importer.animationType = ModelImporterAnimationType.Generic;
+                    dirty = true;
+                }
+
+                if (dirty)
+                {
+                    normalizingImporters = true;
+                    Debug.Log($"[CYDOY MELEE AUTO] Repairing {entry.file}: forcing Generic animation import.");
+                    importer.SaveAndReimport();
+                    normalizingImporters = false;
+                    installed = false;
+                    nextAttempt = EditorApplication.timeSinceStartup + .5;
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         private static AnimationClip ResolveClip(string expectedFile)
         {
-            // First: exact deterministic path.
             string exactPath = AnimationFolder + "/" + expectedFile;
             AnimationClip clip = FirstRealClip(exactPath, Path.GetFileNameWithoutExtension(expectedFile));
             if (clip != null) return clip;
 
-            // Fallback: locate the FBX anywhere under Models/Animations, case-insensitively.
             string stem = Path.GetFileNameWithoutExtension(expectedFile);
             string[] guids = AssetDatabase.FindAssets(stem + " t:Model", new[] { AnimationFolder });
             foreach (string guid in guids)
@@ -206,14 +233,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
             ModelImporter importer = (ModelImporter)assetImporter;
             importer.importAnimation = true;
-            // Do not force a rig conversion here. Existing imported rig settings are preserved.
-        }
-
-        private void OnPostprocessModel(GameObject go)
-        {
-            string file = Path.GetFileName(assetPath);
-            if (!MeleeAnimationAutoSetup.IsCombatFile(file)) return;
-            // InitializeOnLoad update loop will retry after importing finishes.
+            importer.animationType = ModelImporterAnimationType.Generic;
         }
     }
 }
