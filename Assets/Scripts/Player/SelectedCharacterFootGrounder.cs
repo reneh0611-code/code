@@ -1,5 +1,4 @@
 using System.Collections;
-using CheatOnYourDayOnes.UI;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -7,12 +6,14 @@ namespace CheatOnYourDayOnes.Player
 {
     /// <summary>
     /// One-shot visual grounding for runtime-selected playable characters.
-    /// Waits until the skinned mesh has evaluated its idle pose, then aligns the actual
-    /// renderer sole to the CharacterController bottom. It never adjusts continuously,
-    /// so locomotion animation cannot create vertical bobbing.
+    /// Uses the actual world surface below the character instead of the player root/controller.
     /// </summary>
     public sealed class SelectedCharacterFootGrounder : MonoBehaviour
     {
+        [SerializeField] private float rayStartHeight = 3.0f;
+        [SerializeField] private float rayDistance = 10.0f;
+        [SerializeField] private float soleOffset = 0.005f;
+
         private Transform _lastVisual;
         private Coroutine _snapRoutine;
 
@@ -37,59 +38,91 @@ namespace CheatOnYourDayOnes.Player
 
         private IEnumerator SnapAfterRender(Transform visual)
         {
-            // Let Instantiate -> controller assignment -> Animator.Rebind -> Idle evaluation finish.
             yield return null;
             yield return new WaitForEndOfFrame();
             yield return new WaitForEndOfFrame();
 
             if (visual == null) yield break;
 
+            // Disable older one-shot grounders on the selected playable character so they cannot
+            // overwrite the world-ground result afterwards.
+            FixedWorldVisualGrounder oldWorldGrounder = GetComponent<FixedWorldVisualGrounder>();
+            if (oldWorldGrounder != null) oldWorldGrounder.enabled = false;
+            MixamoRuntimePoseAndGrounder oldMixamoGrounder = GetComponent<MixamoRuntimePoseAndGrounder>();
+            if (oldMixamoGrounder != null) oldMixamoGrounder.enabled = false;
+
             Animator animator = visual.GetComponentInChildren<Animator>(true);
-            if (animator != null)
-            {
-                animator.Update(0f);
-            }
+            if (animator != null) animator.Update(0f);
 
             foreach (SkinnedMeshRenderer skin in visual.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 skin.updateWhenOffscreen = true;
 
-            Renderer[] renderers = visual.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0) yield break;
+            if (!TryGetBounds(visual, out Bounds bounds)) yield break;
 
-            Bounds bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
+            // Ray from above the visual center straight down through the player and onto the real
+            // terrain/road. Ignore every collider belonging to this player hierarchy.
+            Vector3 origin = new Vector3(bounds.center.x, bounds.max.y + rayStartHeight, bounds.center.z);
+            RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, rayDistance + bounds.size.y + rayStartHeight, ~0, QueryTriggerInteraction.Ignore);
 
-            CharacterController cc = GetComponent<CharacterController>();
+            bool found = false;
+            float nearestDistance = float.MaxValue;
+            float groundY = 0f;
 
-            // The player's transform is not necessarily the floor. The gameplay capsule bottom is.
-            float targetGroundY;
-            if (cc != null)
+            foreach (RaycastHit hit in hits)
             {
-                Vector3 centerWorld = transform.TransformPoint(cc.center);
-                float worldHalfHeight = cc.height * Mathf.Abs(transform.lossyScale.y) * 0.5f;
-                targetGroundY = centerWorld.y - worldHalfHeight;
-            }
-            else
-            {
-                targetGroundY = transform.position.y;
+                if (hit.collider == null) continue;
+                Transform ht = hit.collider.transform;
+                if (ht == transform || ht.IsChildOf(transform)) continue;
+                if (hit.normal.y < 0.45f) continue;
+
+                if (hit.distance < nearestDistance)
+                {
+                    nearestDistance = hit.distance;
+                    groundY = hit.point.y;
+                    found = true;
+                }
             }
 
-            float correction = targetGroundY - bounds.min.y;
+            if (!found)
+            {
+                Debug.LogWarning("[CYDOY GROUND] No world surface found below selected character.", visual.gameObject);
+                yield break;
+            }
+
+            float correction = (groundY + soleOffset) - bounds.min.y;
             visual.position += Vector3.up * correction;
 
-            // Re-evaluate once after moving the wrapper and log the remaining error for diagnostics.
             if (animator != null) animator.Update(0f);
-            renderers = visual.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length > 0)
+
+            float remaining = 0f;
+            if (TryGetBounds(visual, out Bounds check))
+                remaining = check.min.y - (groundY + soleOffset);
+
+            Debug.Log($"[CYDOY GROUND] '{visual.name}' WORLD grounded by {correction:F3}m. GroundY={groundY:F3}, remaining sole offset={remaining:F3}m.", visual.gameObject);
+            _snapRoutine = null;
+        }
+
+        private static bool TryGetBounds(Transform visual, out Bounds combined)
+        {
+            Renderer[] renderers = visual.GetComponentsInChildren<Renderer>(true);
+            bool has = false;
+            combined = default;
+
+            foreach (Renderer r in renderers)
             {
-                Bounds check = renderers[0].bounds;
-                for (int i = 1; i < renderers.Length; i++) check.Encapsulate(renderers[i].bounds);
-                float remaining = check.min.y - targetGroundY;
-                Debug.Log($"[CYDOY GROUND] '{visual.name}' snapped by {correction:F3}m. Remaining sole offset: {remaining:F3}m.", visual.gameObject);
+                if (r == null || !r.enabled || !r.gameObject.activeInHierarchy) continue;
+                if (!has)
+                {
+                    combined = r.bounds;
+                    has = true;
+                }
+                else
+                {
+                    combined.Encapsulate(r.bounds);
+                }
             }
 
-            _snapRoutine = null;
+            return has;
         }
 
         private sealed class RuntimeInstaller : MonoBehaviour
