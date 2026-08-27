@@ -58,8 +58,6 @@ public class MeleeAnimationBridge : MonoBehaviour
             return;
         }
 
-        // Movement can NEVER cancel a punch, but another punch can chain once the actual strike
-        // has happened. This removes the dead pause between attacks without animation spam.
         if (comboWindowOpen)
             queuedPunch = true;
     }
@@ -80,7 +78,6 @@ public class MeleeAnimationBridge : MonoBehaviour
         queuedPunch = false;
         RefreshReferences();
 
-        // Lock locomotion ONCE for the complete combo chain.
         if (movementController != null) movementController.SetCombatMovementLocked(true);
         if (locomotionDriver != null) locomotionDriver.enabled = false;
 
@@ -129,7 +126,6 @@ public class MeleeAnimationBridge : MonoBehaviour
                     if (info.normalizedTime >= comboWindowNormalized)
                         comboWindowOpen = true;
 
-                    // A queued punch is allowed to cancel ONLY the recovery part of the previous punch.
                     if (queuedPunch && comboWindowOpen)
                     {
                         continueCombo = true;
@@ -149,8 +145,6 @@ public class MeleeAnimationBridge : MonoBehaviour
 
             if (!hitApplied) TryHitNearestNpc();
 
-            // If the player clicked just after the loop ended but while the combo window was open,
-            // keep the chain alive instead of briefly returning to Idle.
             if (queuedPunch && comboWindowOpen)
                 continueCombo = true;
 
@@ -181,19 +175,22 @@ public class MeleeAnimationBridge : MonoBehaviour
         NPCWanderer npc = hits
             .Where(c => c != null && !c.transform.IsChildOf(transform))
             .Select(c => c.GetComponentInParent<NPCWanderer>() ?? c.GetComponentInChildren<NPCWanderer>(true))
-            .Where(n => n != null && !n.IsDown)
+            .Where(n => n != null)
             .Distinct()
             .Where(n => HorizontalDistance(transform.position, n.transform.position) <= hitRadius)
+            .Where(n =>
+            {
+                NPCCombatReaction reaction = n.GetComponent<NPCCombatReaction>();
+                return reaction == null || reaction.CanReceiveHit;
+            })
             .OrderBy(n => HorizontalDistanceSquared(transform.position, n.transform.position))
             .FirstOrDefault();
 
         if (npc == null) return;
 
-        Vector3 direction = npc.transform.position - transform.position;
-        direction.y = 0f;
-        if (direction.sqrMagnitude < 0.001f) direction = transform.forward;
-
-        npc.HitByPlayerPunch(direction.normalized, currentPunchIndex + 1, transform);
+        NPCCombatReaction combat = npc.GetComponent<NPCCombatReaction>();
+        if (combat == null) combat = npc.gameObject.AddComponent<NPCCombatReaction>();
+        combat.TakePunch(transform);
     }
 
     private static float HorizontalDistance(Vector3 a, Vector3 b)
