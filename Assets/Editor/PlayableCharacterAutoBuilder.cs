@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEditor.Callbacks;
 using UnityEngine;
 
@@ -15,9 +17,15 @@ namespace CheatOnYourDayOnes.EditorTools
         private const string ResourceFolder = "Assets/Resources/PlayableCharacters";
         private const string Out01 = ResourceFolder + "/Character01.prefab";
         private const string Out02 = ResourceFolder + "/Character02.prefab";
+        private const string ControllerSource = "Assets/Resources/Tripo_Locomotion_ExactGeneric.controller";
+        private const string Controller01 = ResourceFolder + "/Character01.controller";
+        private const string Controller02 = ResourceFolder + "/Character02.controller";
+        private const string Anim01Folder = ResourceFolder + "/Character01_Animations";
+        private const string Anim02Folder = ResourceFolder + "/Character02_Animations";
 
         private static double nextTry;
         private static bool done;
+        private static bool reimporting;
 
         static PlayableCharacterAutoBuilder()
         {
@@ -36,7 +44,7 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static void Tick()
         {
-            if (done || EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+            if (done || reimporting || EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling || EditorApplication.isUpdating) return;
             if (EditorApplication.timeSinceStartup < nextTry) return;
             nextTry = EditorApplication.timeSinceStartup + 1.0;
             done = BuildAll();
@@ -54,6 +62,8 @@ namespace CheatOnYourDayOnes.EditorTools
 
             EnsureFolder("Assets/Resources");
             EnsureFolder(ResourceFolder);
+            EnsureFolder(Anim01Folder);
+            EnsureFolder(Anim02Folder);
 
             bool importReady = NormalizeImporter(fbx01) & NormalizeImporter(fbx02);
             if (!importReady) return false;
@@ -62,9 +72,13 @@ namespace CheatOnYourDayOnes.EditorTools
             GameObject p2 = BuildPrefab(fbx02, Out02, "Character02");
             if (p1 == null || p2 == null) return false;
 
+            bool c1 = BuildRetargetedController(p1, Controller01, Anim01Folder, "Character01");
+            bool c2 = BuildRetargetedController(p2, Controller02, Anim02Folder, "Character02");
+            if (!c1 || !c2) return false;
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log($"[CYDOY PLAYABLE] READY: {Out01} + {Out02}. Start hub can now use both characters.");
+            Debug.Log("[CYDOY PLAYABLE] READY: both playable characters + retargeted Idle/Walk/Run/Jump/Punch animations are built.");
             return true;
         }
 
@@ -86,15 +100,11 @@ namespace CheatOnYourDayOnes.EditorTools
 
             bool changed = false;
             if (!importer.importAnimation) { importer.importAnimation = true; changed = true; }
-
-            // The current locomotion/combat controller is Generic, matching the existing player pipeline.
-            // Keep the imported skeleton hierarchy intact instead of trying to remap it to a Humanoid avatar.
             if (importer.animationType != ModelImporterAnimationType.Generic)
             {
                 importer.animationType = ModelImporterAnimationType.Generic;
                 changed = true;
             }
-
             if (importer.optimizeGameObjects)
             {
                 importer.optimizeGameObjects = false;
@@ -103,8 +113,11 @@ namespace CheatOnYourDayOnes.EditorTools
 
             if (changed)
             {
-                Debug.Log($"[CYDOY PLAYABLE] Normalizing rig import for {Path.GetFileName(path)} (Generic, hierarchy preserved).");
+                reimporting = true;
+                Debug.Log($"[CYDOY PLAYABLE] Preparing skeleton hierarchy for {Path.GetFileName(path)}.");
                 importer.SaveAndReimport();
+                reimporting = false;
+                nextTry = EditorApplication.timeSinceStartup + .6;
                 return false;
             }
             return true;
@@ -122,7 +135,6 @@ namespace CheatOnYourDayOnes.EditorTools
             instance.transform.rotation = Quaternion.identity;
             instance.transform.localScale = Vector3.one;
 
-            // Do not leave cameras/lights imported by external tools inside character visuals.
             foreach (Camera c in instance.GetComponentsInChildren<Camera>(true)) UnityEngine.Object.DestroyImmediate(c.gameObject);
             foreach (Light l in instance.GetComponentsInChildren<Light>(true)) UnityEngine.Object.DestroyImmediate(l.gameObject);
 
@@ -134,6 +146,213 @@ namespace CheatOnYourDayOnes.EditorTools
             GameObject saved = PrefabUtility.SaveAsPrefabAsset(instance, outputPath);
             UnityEngine.Object.DestroyImmediate(instance);
             return saved;
+        }
+
+        private static bool BuildRetargetedController(GameObject targetPrefab, string outputController, string animFolder, string label)
+        {
+            AnimatorController sourceController = AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerSource);
+            if (sourceController == null)
+            {
+                Debug.LogError("[CYDOY PLAYABLE] Source player controller missing: " + ControllerSource);
+                return false;
+            }
+
+            if (AssetDatabase.LoadAssetAtPath<AnimatorController>(outputController) == null)
+            {
+                if (!AssetDatabase.CopyAsset(ControllerSource, outputController)) return false;
+                AssetDatabase.ImportAsset(outputController);
+            }
+
+            AnimatorController targetController = AssetDatabase.LoadAssetAtPath<AnimatorController>(outputController);
+            if (targetController == null) return false;
+
+            GameObject temp = PrefabUtility.InstantiatePrefab(targetPrefab) as GameObject;
+            if (temp == null) temp = UnityEngine.Object.Instantiate(targetPrefab);
+            Animator animator = temp.GetComponentInChildren<Animator>(true);
+            Transform animRoot = animator != null ? animator.transform : temp.transform;
+
+            Dictionary<string, string> targetPaths = BuildBonePathMap(animRoot);
+            if (targetPaths.Count < 10)
+            {
+                UnityEngine.Object.DestroyImmediate(temp);
+                Debug.LogError($"[CYDOY PLAYABLE] {label}: no usable rig hierarchy found. The FBX must contain the Mixamo rig, not only the mesh.");
+                return false;
+            }
+
+            Dictionary<AnimationClip, AnimationClip> clipMap = new();
+            foreach (AnimatorControllerLayer layer in sourceController.layers)
+                CollectAndRetargetMotions(layer.stateMachine, targetPaths, animFolder, label, clipMap);
+
+            foreach (AnimatorControllerLayer layer in targetController.layers)
+                ReplaceStateMachineMotions(layer.stateMachine, clipMap);
+
+            EditorUtility.SetDirty(targetController);
+            AssetDatabase.SaveAssets();
+            UnityEngine.Object.DestroyImmediate(temp);
+
+            int converted = clipMap.Values.Count(v => v != null);
+            Debug.Log($"[CYDOY PLAYABLE] {label}: retargeted {converted} animation clips to its own skeleton.");
+            return converted > 0;
+        }
+
+        private static Dictionary<string, string> BuildBonePathMap(Transform root)
+        {
+            Dictionary<string, string> map = new(StringComparer.OrdinalIgnoreCase);
+            foreach (Transform t in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (t == root) continue;
+                string key = NormalizeBoneName(t.name);
+                if (string.IsNullOrEmpty(key) || map.ContainsKey(key)) continue;
+                map[key] = AnimationUtility.CalculateTransformPath(t, root);
+            }
+            return map;
+        }
+
+        private static void CollectAndRetargetMotions(AnimatorStateMachine sm, Dictionary<string, string> targetPaths, string animFolder, string label, Dictionary<AnimationClip, AnimationClip> map)
+        {
+            foreach (ChildAnimatorState child in sm.states)
+                CollectMotion(child.state.motion, targetPaths, animFolder, label, map);
+            foreach (ChildAnimatorStateMachine child in sm.stateMachines)
+                CollectAndRetargetMotions(child.stateMachine, targetPaths, animFolder, label, map);
+        }
+
+        private static void CollectMotion(Motion motion, Dictionary<string, string> targetPaths, string animFolder, string label, Dictionary<AnimationClip, AnimationClip> map)
+        {
+            if (motion == null) return;
+            if (motion is AnimationClip clip)
+            {
+                if (!map.ContainsKey(clip)) map[clip] = CreateRetargetedClip(clip, targetPaths, animFolder, label);
+                return;
+            }
+            if (motion is BlendTree tree)
+                foreach (ChildMotion child in tree.children) CollectMotion(child.motion, targetPaths, animFolder, label, map);
+        }
+
+        private static AnimationClip CreateRetargetedClip(AnimationClip source, Dictionary<string, string> targetPaths, string animFolder, string label)
+        {
+            string safe = Sanitize(source.name);
+            string path = $"{animFolder}/{safe}.anim";
+            AnimationClip target = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+            if (target == null)
+            {
+                target = new AnimationClip { name = source.name, frameRate = source.frameRate };
+                AssetDatabase.CreateAsset(target, path);
+            }
+            else
+            {
+                target.ClearCurves();
+                target.frameRate = source.frameRate;
+            }
+
+            int mapped = 0;
+            foreach (EditorCurveBinding binding in AnimationUtility.GetCurveBindings(source))
+            {
+                EditorCurveBinding dst = binding;
+                if (binding.type == typeof(Transform) && !string.IsNullOrEmpty(binding.path))
+                {
+                    string leaf = binding.path.Split('/').Last();
+                    string key = NormalizeBoneName(leaf);
+                    if (!targetPaths.TryGetValue(key, out string newPath)) continue;
+                    dst.path = newPath;
+                    mapped++;
+                }
+                AnimationCurve curve = AnimationUtility.GetEditorCurve(source, binding);
+                AnimationUtility.SetEditorCurve(target, dst, curve);
+            }
+
+            foreach (EditorCurveBinding binding in AnimationUtility.GetObjectReferenceCurveBindings(source))
+            {
+                EditorCurveBinding dst = binding;
+                if (!string.IsNullOrEmpty(binding.path))
+                {
+                    string leaf = binding.path.Split('/').Last();
+                    if (targetPaths.TryGetValue(NormalizeBoneName(leaf), out string newPath)) dst.path = newPath;
+                }
+                AnimationUtility.SetObjectReferenceCurve(target, dst, AnimationUtility.GetObjectReferenceCurve(source, binding));
+            }
+
+            AnimationUtility.SetAnimationEvents(target, AnimationUtility.GetAnimationEvents(source));
+            CopyClipSettings(source, target);
+            EditorUtility.SetDirty(target);
+
+            if (mapped == 0)
+                Debug.LogWarning($"[CYDOY PLAYABLE] {label}/{source.name}: no Transform curves could be mapped.");
+            return target;
+        }
+
+        private static void CopyClipSettings(AnimationClip source, AnimationClip target)
+        {
+            SerializedObject src = new SerializedObject(source);
+            SerializedObject dst = new SerializedObject(target);
+            SerializedProperty srcSettings = src.FindProperty("m_AnimationClipSettings");
+            SerializedProperty dstSettings = dst.FindProperty("m_AnimationClipSettings");
+            if (srcSettings != null && dstSettings != null)
+            {
+                CopyProperty(srcSettings, dstSettings);
+                dst.ApplyModifiedPropertiesWithoutUndo();
+            }
+        }
+
+        private static void CopyProperty(SerializedProperty src, SerializedProperty dst)
+        {
+            SerializedProperty iterator = src.Copy();
+            SerializedProperty end = src.GetEndProperty();
+            bool enter = true;
+            while (iterator.Next(enter) && !SerializedProperty.EqualContents(iterator, end))
+            {
+                enter = false;
+                string relative = iterator.propertyPath.Substring(src.propertyPath.Length).TrimStart('.');
+                SerializedProperty d = string.IsNullOrEmpty(relative) ? dst : dst.FindPropertyRelative(relative);
+                if (d == null) continue;
+                switch (iterator.propertyType)
+                {
+                    case SerializedPropertyType.Boolean: d.boolValue = iterator.boolValue; break;
+                    case SerializedPropertyType.Integer: d.intValue = iterator.intValue; break;
+                    case SerializedPropertyType.Float: d.floatValue = iterator.floatValue; break;
+                    case SerializedPropertyType.String: d.stringValue = iterator.stringValue; break;
+                    case SerializedPropertyType.Enum: d.enumValueIndex = iterator.enumValueIndex; break;
+                    case SerializedPropertyType.Vector2: d.vector2Value = iterator.vector2Value; break;
+                    case SerializedPropertyType.Vector3: d.vector3Value = iterator.vector3Value; break;
+                    case SerializedPropertyType.Vector4: d.vector4Value = iterator.vector4Value; break;
+                }
+            }
+        }
+
+        private static void ReplaceStateMachineMotions(AnimatorStateMachine sm, Dictionary<AnimationClip, AnimationClip> map)
+        {
+            foreach (ChildAnimatorState child in sm.states)
+                child.state.motion = ReplaceMotion(child.state.motion, map);
+            foreach (ChildAnimatorStateMachine child in sm.stateMachines)
+                ReplaceStateMachineMotions(child.stateMachine, map);
+        }
+
+        private static Motion ReplaceMotion(Motion motion, Dictionary<AnimationClip, AnimationClip> map)
+        {
+            if (motion is AnimationClip clip)
+                return map.TryGetValue(clip, out AnimationClip replacement) && replacement != null ? replacement : motion;
+            if (motion is BlendTree tree)
+            {
+                ChildMotion[] children = tree.children;
+                for (int i = 0; i < children.Length; i++) children[i].motion = ReplaceMotion(children[i].motion, map);
+                tree.children = children;
+                EditorUtility.SetDirty(tree);
+            }
+            return motion;
+        }
+
+        private static string NormalizeBoneName(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            int colon = value.LastIndexOf(':');
+            if (colon >= 0 && colon < value.Length - 1) value = value.Substring(colon + 1);
+            value = value.Replace("mixamorig", "", StringComparison.OrdinalIgnoreCase);
+            return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+        }
+
+        private static string Sanitize(string value)
+        {
+            foreach (char c in Path.GetInvalidFileNameChars()) value = value.Replace(c, '_');
+            return value.Replace('/', '_').Replace('\\', '_');
         }
 
         private static void EnsureFolder(string path)
