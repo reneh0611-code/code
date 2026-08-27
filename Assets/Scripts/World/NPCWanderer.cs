@@ -18,7 +18,7 @@ namespace CheatOnYourDayOnes.World
 
         [Header("Player punch reaction")]
         [SerializeField] private float fleeAfterPunchSeconds = 6f;
-        [SerializeField] private float punchFleeSpeed = 3.6f;
+        [SerializeField] private float punchFleeSpeed = 2.35f;
         [SerializeField, Range(.75f, 1f)] private float hitFinishNormalizedTime = .97f;
         [SerializeField] private float maxHitAnimationSeconds = 3f;
 
@@ -115,7 +115,6 @@ namespace CheatOnYourDayOnes.World
                 return;
             }
 
-            // A punch reaction owns the animator until the ACTUAL Hit clip is basically complete.
             if (_meleeReacting)
             {
                 if (HasHitAnimationFinished())
@@ -123,7 +122,7 @@ namespace CheatOnYourDayOnes.World
                     _meleeReacting = false;
                     _forcedFleeUntil = Time.time + fleeAfterPunchSeconds + Random.Range(0f, 1.5f);
                     _running = false;
-                    SetRunning(true); // instantly switch to the real Run animation after Hit finishes.
+                    SetRunning(true);
                 }
                 else
                 {
@@ -201,7 +200,6 @@ namespace CheatOnYourDayOnes.World
                 return true;
             }
 
-            // Safety only: never freeze an NPC forever because of a malformed animation/controller.
             return Time.time - _meleeReactionStarted >= maxHitAnimationSeconds;
         }
 
@@ -277,7 +275,6 @@ namespace CheatOnYourDayOnes.World
             }
             else
             {
-                // No valid hit state: don't lock the NPC for the full safety timeout.
                 _meleeReacting = false;
                 _forcedFleeUntil = Time.time + fleeAfterPunchSeconds;
             }
