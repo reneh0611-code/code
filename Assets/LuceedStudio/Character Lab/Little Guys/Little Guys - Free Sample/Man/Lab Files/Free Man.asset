@@ -1,0 +1,228 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 925f4c80b707d4e668029668eaa28819, type: 3}
+  m_Name: Free Man
+  m_EditorClassIdentifier: 
+  Name: Free Man
+  BodyGroupName: Guys
+  ModelSaveDatas:
+  - TabHierarchyIndexes: {x: 0, y: 0, z: 0}
+    IsActive: 1
+    ModelName: Man
+    CurrentAlternativeIndex: 0
+    CurrentSeparatedAlternativeIndex: 0
+    CurrentPresetName: 00
+    CustomizationSaveDatas:
+    - Name: Color R
+      PaletteItemName: Skin
+      CustomColor: {r: 0.9294118, g: 0.73333335, b: 0.5882353, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+    - Name: Color G
+      PaletteItemName: Blush
+      CustomColor: {r: 0.87843144, g: 0.454902, b: 0.454902, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+  - TabHierarchyIndexes: {x: 0, y: 1, z: 0}
+    IsActive: 1
+    ModelName: Stylized
+    CurrentAlternativeIndex: 0
+    CurrentSeparatedAlternativeIndex: 0
+    CurrentPresetName: Brown
+    CustomizationSaveDatas:
+    - Name: Color
+      PaletteItemName: Color
+      CustomColor: {r: 0.20784315, g: 0.15686275, b: 0.10588236, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: -1
+    - Name: Color R
+      PaletteItemName: Highlight
+      CustomColor: {r: 0.5058824, g: 0.34509805, b: 0.27450982, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+    - Name: Color G
+      PaletteItemName: White
+      CustomColor: {r: 1, g: 1, b: 1, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+    - Name: Color B
+      PaletteItemName: Lashes
+      CustomColor: {r: 0.11320752, g: 0.11320752, b: 0.11320752, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+  - TabHierarchyIndexes: {x: 0, y: 2, z: 0}
+    IsActive: 1
+    ModelName: Hairstyle 02
+    CurrentAlternativeIndex: 0
+    CurrentSeparatedAlternativeIndex: 0
+    CurrentPresetName: Light Brown
+    CustomizationSaveDatas:
+    - Name: Color
+      PaletteItemName: Color
+      CustomColor: {r: 0.3882353, g: 0.26666668, b: 0.16470589, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: -1
+    - Name: Color R
+      PaletteItemName: Color R
+      CustomColor: {r: 0.31764707, g: 0.19607845, b: 0.1254902, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+    - Name: Color G
+      PaletteItemName: Custom
+      CustomColor: {r: 1, g: 1, b: 1, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 0
+    - Name: Color B
+      PaletteItemName: Highlights
+      CustomColor: {r: 0.48627454, g: 0.3254902, b: 0.15686275, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+  - TabHierarchyIndexes: {x: 0, y: 3, z: 0}
+    IsActive: 1
+    ModelName: Eyebrows
+    CurrentAlternativeIndex: 0
+    CurrentSeparatedAlternativeIndex: 0
+    CurrentPresetName: Light Brown
+    CustomizationSaveDatas:
+    - Name: Color
+      PaletteItemName: Color
+      CustomColor: {r: 0.3882353, g: 0.26666668, b: 0.16470589, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: -1
+    - Name: Color R
+      PaletteItemName: Color R
+      CustomColor: {r: 0.31764707, g: 0.19607845, b: 0.1254902, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+    - Name: Color G
+      PaletteItemName: Custom
+      CustomColor: {r: 1, g: 1, b: 1, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 0
+    - Name: Color B
+      PaletteItemName: Highlights
+      CustomColor: {r: 0.48627454, g: 0.3254902, b: 0.15686275, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+  - TabHierarchyIndexes: {x: 1, y: 0, z: 0}
+    IsActive: 1
+    ModelName: TShirt
+    CurrentAlternativeIndex: 0
+    CurrentSeparatedAlternativeIndex: 0
+    CurrentPresetName: Plain White
+    CustomizationSaveDatas:
+    - Name: Color
+      PaletteItemName: Color
+      CustomColor: {r: 0.81960785, g: 0.81960785, b: 0.81960785, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: -1
+    - Name: Color R
+      PaletteItemName: Custom
+      CustomColor: {r: 1, g: 1, b: 1, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 0
+    - Name: Color G
+      PaletteItemName: Custom
+      CustomColor: {r: 1, g: 1, b: 1, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 0
+    - Name: Color B
+      PaletteItemName: Custom
+      CustomColor: {r: 1, g: 1, b: 1, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 0
+    - Name: Texture
+      PaletteItemName: RGB Mask A
+      CustomColor: {r: 0, g: 0, b: 0, a: 0}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: -1
+  - TabHierarchyIndexes: {x: 1, y: 1, z: 0}
+    IsActive: 1
+    ModelName: Jeans
+    CurrentAlternativeIndex: 0
+    CurrentSeparatedAlternativeIndex: 0
+    CurrentPresetName: Dark
+    CustomizationSaveDatas:
+    - Name: Color
+      PaletteItemName: Color
+      CustomColor: {r: 0.14117648, g: 0.19607845, b: 0.32941177, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: -1
+    - Name: Color R
+      PaletteItemName: Highlight
+      CustomColor: {r: 0.2392157, g: 0.37647063, b: 0.45882356, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+    - Name: Color G
+      PaletteItemName: Stitches
+      CustomColor: {r: 0.59607846, g: 0.32941177, b: 0.078431375, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+    - Name: Color B
+      PaletteItemName: Button
+      CustomColor: {r: 0.41960788, g: 0.32941177, b: 0.23137257, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+  - TabHierarchyIndexes: {x: 1, y: 2, z: 0}
+    IsActive: 1
+    ModelName: Shoes03
+    CurrentAlternativeIndex: 0
+    CurrentSeparatedAlternativeIndex: 0
+    CurrentPresetName: White
+    CustomizationSaveDatas:
+    - Name: Color
+      PaletteItemName: Color
+      CustomColor: {r: 0.8313726, g: 0.8313726, b: 0.8313726, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: -1
+    - Name: Color R
+      PaletteItemName: Color B
+      CustomColor: {r: 0.9607844, g: 0.9607844, b: 0.9607844, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 1
+    - Name: Color G
+      PaletteItemName: Custom
+      CustomColor: {r: 1, g: 1, b: 1, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 0
+    - Name: Color B
+      PaletteItemName: Custom
+      CustomColor: {r: 1, g: 1, b: 1, a: 1}
+      Tiling: {x: 1, y: 1}
+      Offset: {x: 0, y: 0}
+      DesactivationBoolValue: 0

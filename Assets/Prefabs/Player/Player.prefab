@@ -1,0 +1,640 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &669583366774212533
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3260751382379770364}
+  - component: {fileID: 8700160010155521570}
+  - component: {fileID: 2858039366888725873}
+  - component: {fileID: 8123247313123781559}
+  - component: {fileID: 1188620109127140186}
+  - component: {fileID: 4462042081517789624}
+  - component: {fileID: 4554197386848023755}
+  - component: {fileID: 4033196922136811485}
+  - component: {fileID: 8946434736608595292}
+  - component: {fileID: 5806823601672899004}
+  - component: {fileID: 9219537829159665089}
+  - component: {fileID: 345283889893129988}
+  m_Layer: 0
+  m_Name: Player
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3260751382379770364
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 1.05, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 8491741125697097670}
+  - {fileID: 6653107540406730837}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!143 &8700160010155521570
+CharacterController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Height: 1.9
+  m_Radius: 0.34
+  m_SlopeLimit: 48
+  m_StepOffset: 0.3
+  m_SkinWidth: 0.08
+  m_MinMoveDistance: 0.001
+  m_Center: {x: 0, y: 0.95, z: 0}
+--- !u!114 &2858039366888725873
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 4232053624
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &8123247313123781559
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a906a613e8f5d4e7bbe864ecd0ecd5bf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Player.PlayerData
+  ShowTopMostFoldoutHeaderGroup: 1
+  PlayerName:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue:
+      utf8LengthInBytes: 6
+      bytes:
+        offset0000:
+          byte0000: 80
+          byte0001: 108
+          byte0002: 97
+          byte0003: 121
+          byte0004: 101
+          byte0005: 114
+          byte0006: 0
+          byte0007: 0
+          byte0008: 0
+          byte0009: 0
+          byte0010: 0
+          byte0011: 0
+          byte0012: 0
+          byte0013: 0
+          byte0014: 0
+          byte0015: 0
+        offset0016:
+          byte0000: 0
+          byte0001: 0
+          byte0002: 0
+          byte0003: 0
+          byte0004: 0
+          byte0005: 0
+          byte0006: 0
+          byte0007: 0
+          byte0008: 0
+          byte0009: 0
+          byte0010: 0
+          byte0011: 0
+          byte0012: 0
+          byte0013: 0
+          byte0014: 0
+          byte0015: 0
+        offset0032:
+          byte0000: 0
+          byte0001: 0
+          byte0002: 0
+          byte0003: 0
+          byte0004: 0
+          byte0005: 0
+          byte0006: 0
+          byte0007: 0
+          byte0008: 0
+          byte0009: 0
+          byte0010: 0
+          byte0011: 0
+          byte0012: 0
+          byte0013: 0
+          byte0014: 0
+          byte0015: 0
+        byte0048: 0
+        byte0049: 0
+        byte0050: 0
+        byte0051: 0
+        byte0052: 0
+        byte0053: 0
+        byte0054: 0
+        byte0055: 0
+        byte0056: 0
+        byte0057: 0
+        byte0058: 0
+        byte0059: 0
+        byte0060: 0
+        byte0061: 0
+  Reputation:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 0
+  Followers:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 0
+--- !u!114 &1188620109127140186
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a29401c57bc5a4d1a8d6eb923a076fa7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Economy.PlayerWallet
+  ShowTopMostFoldoutHeaderGroup: 1
+  Cash:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 1500
+  Bank:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 0
+--- !u!114 &4462042081517789624
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 96ba6e5ea8c1142949d85d1c55698243, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Player.AuraSystem
+  ShowTopMostFoldoutHeaderGroup: 1
+  Aura:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 0
+--- !u!114 &4554197386848023755
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 020ec83ba8b9041669d09fe1a5d045a3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Player.NeedsSystem
+  ShowTopMostFoldoutHeaderGroup: 1
+  hungerDrainPerMinute: 3
+  energyDrainPerMinute: 2
+  starvationDamagePerMinute: 10
+  tickInterval: 1
+  Health:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 100
+  Hunger:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 100
+  Energy:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 100
+--- !u!114 &4033196922136811485
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3e37e7253b5a544678395823eb2e1f37, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Inventory.PlayerInventory
+  ShowTopMostFoldoutHeaderGroup: 1
+  maxSlots: 24
+--- !u!114 &8946434736608595292
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef8a6467c79944022b1ad9c77cccc9c2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Player.PlayerAgent
+  ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &5806823601672899004
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b1eac2026dcc64baca753ab362364cb5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Player.NetworkPlayerController
+  ShowTopMostFoldoutHeaderGroup: 1
+  walkSpeed: 3.7
+  sprintSpeed: 6.8
+  acceleration: 18
+  deceleration: 22
+  rotationSpeed: 18
+  gravity: -26
+  jumpHeight: 1.35
+  cameraTarget: {fileID: 8491741125697097670}
+  playerCamera: {fileID: 4688447741953944486}
+  audioListener: {fileID: 5778332021678954214}
+--- !u!114 &9219537829159665089
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dd9781cc8408f47f2b2a385630f1a0b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Interaction.PlayerInteractor
+  ShowTopMostFoldoutHeaderGroup: 1
+  playerCamera: {fileID: 4688447741953944486}
+  interactionDistance: 3.25
+  interactionMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+--- !u!114 &345283889893129988
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9daea007edec4bb08b100d53841a4ff, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Player.CharacterAnimationDriver
+  animator: {fileID: 6020039368730957742}
+  characterController: {fileID: 8700160010155521570}
+  fallbackController: {fileID: 9100000, guid: a63a0568432d4429eae0847312bc1794, type: 2}
+  walkThreshold: 0.35
+  runThreshold: 5.1
+  idleWalkBlend: 0.1
+  walkRunBlend: 0.08
+  idleRunBlend: 0.1
+  jumpBlend: 0.06
+  landBlend: 0.1
+--- !u!1 &3031222564111219763
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8491741125697097670}
+  m_Layer: 0
+  m_Name: CameraRoot
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8491741125697097670
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3031222564111219763}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 5196297198159608959}
+  m_Father: {fileID: 3260751382379770364}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &3131455099842909803
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5196297198159608959}
+  - component: {fileID: 4688447741953944486}
+  - component: {fileID: 5778332021678954214}
+  - component: {fileID: 2204319018087456920}
+  m_Layer: 0
+  m_Name: PlayerCamera
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5196297198159608959
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3131455099842909803}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.12186935, y: 0, z: 0, w: 0.99254614}
+  m_LocalPosition: {x: 0.65, y: 1.65, z: -4.8}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8491741125697097670}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!20 &4688447741953944486
+Camera:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3131455099842909803}
+  m_Enabled: 1
+  serializedVersion: 2
+  m_ClearFlags: 1
+  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_projectionMatrixMode: 1
+  m_GateFitMode: 2
+  m_FOVAxisMode: 0
+  m_Iso: 200
+  m_ShutterSpeed: 0.005
+  m_Aperture: 16
+  m_FocusDistance: 10
+  m_FocalLength: 50
+  m_BladeCount: 5
+  m_Curvature: {x: 2, y: 11}
+  m_BarrelClipping: 0.25
+  m_Anamorphism: 0
+  m_SensorSize: {x: 36, y: 24}
+  m_LensShift: {x: 0, y: 0}
+  m_NormalizedViewPortRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  near clip plane: 0.06
+  far clip plane: 1000
+  field of view: 60
+  orthographic: 0
+  orthographic size: 5
+  m_Depth: 0
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_RenderingPath: -1
+  m_TargetTexture: {fileID: 0}
+  m_TargetDisplay: 0
+  m_TargetEye: 3
+  m_HDR: 1
+  m_AllowMSAA: 1
+  m_AllowDynamicResolution: 0
+  m_ForceIntoRT: 0
+  m_OcclusionCulling: 1
+  m_StereoConvergence: 10
+  m_StereoSeparation: 0.022
+--- !u!81 &5778332021678954214
+AudioListener:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3131455099842909803}
+  m_Enabled: 1
+--- !u!114 &2204319018087456920
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3131455099842909803}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a03c0b2d22814cadb400c9d9a126431, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.CameraSystem.ThirdPersonCamera
+  target: {fileID: 3260751382379770364}
+  pivotOffset: {x: 0.28, y: 1.48, z: 0}
+  distance: 1.85
+  mouseSensitivity: 0.14
+  minPitch: -35
+  maxPitch: 65
+  vehiclePivotOffset: {x: 0, y: 1.55, z: 0}
+  vehicleDistance: 5.4
+  vehiclePitch: 10
+  vehicleYawFollow: 10
+  vehiclePositionFollow: 12
+  followSmooth: 20
+  rotationSmooth: 18
+  collisionRadius: 0.18
+  collisionMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  minimumDistance: 0.75
+--- !u!1 &6832226492209183316
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6653107540406730837}
+  m_Layer: 0
+  m_Name: CharacterVisual
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6653107540406730837
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6832226492209183316}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 390499515568655828}
+  m_Father: {fileID: 3260751382379770364}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &207706821498235455
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 6653107540406730837}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1.7050346
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1.7050346
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1.7050346
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_Name
+      value: Tripo_Test_Character
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_Avatar
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: a63a0568432d4429eae0847312bc1794, type: 2}
+    - target: {fileID: 5866666021909216657, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_CullingMode
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: m_ApplyRootMotion
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7465131295068470905, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: c531f1c762bef43138338e4acd519398, type: 2}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+--- !u!4 &390499515568655828 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+  m_PrefabInstance: {fileID: 207706821498235455}
+  m_PrefabAsset: {fileID: 0}
+--- !u!95 &6020039368730957742 stripped
+Animator:
+  m_CorrespondingSourceObject: {fileID: 5866666021909216657, guid: 7eb9d5afd0d304888a8f66fceca2f916, type: 3}
+  m_PrefabInstance: {fileID: 207706821498235455}
+  m_PrefabAsset: {fileID: 0}
