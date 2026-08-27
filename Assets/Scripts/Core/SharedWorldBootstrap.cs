@@ -61,6 +61,9 @@ namespace CheatOnYourDayOnes.Core
             if (local == null) return;
             GameObject player = local.gameObject;
             if (player.GetComponent<VehicleInteractor>() == null) player.AddComponent<VehicleInteractor>();
+            if (player.GetComponent<PlayerMeleeCombat>() == null) player.AddComponent<PlayerMeleeCombat>();
+            if (player.GetComponent<AmbientNPCSpawner>() == null) player.AddComponent<AmbientNPCSpawner>();
+
             Animator animator = FindPlayerAnimator(player.transform);
             if (animator != null)
             {
