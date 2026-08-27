@@ -3,10 +3,6 @@ using UnityEngine;
 
 namespace CheatOnYourDayOnes.World
 {
-    /// <summary>
-    /// Owns NPC melee reactions independently from wandering so combat animations cannot be
-    /// overwritten by locomotion. Keeps the NPC root at the visual knockdown landing position.
-    /// </summary>
     public sealed class NPCCombatReaction : MonoBehaviour
     {
         [SerializeField] private float normalStateFinish = .985f;
@@ -34,11 +30,13 @@ namespace CheatOnYourDayOnes.World
         private Coroutine _routine;
         private int _hitCount;
         private int _normalHitToggle;
-        private bool _reactionLocked;
+        private bool _hardLocked;
         private bool _down;
         private Transform _attacker;
 
-        public bool CanReceiveHit => !_reactionLocked && !_down;
+        // Normal Hit/HeavyHit/Stun/Flee can be interrupted by the player's next combo punch.
+        // Knockdown, lying and GetUp are intentionally protected.
+        public bool CanReceiveHit => !_hardLocked && !_down;
         public bool IsDown => _down;
 
         private void Awake()
@@ -73,18 +71,31 @@ namespace CheatOnYourDayOnes.World
             _hitCount++;
             _attacker = attacker;
 
-            if (_routine != null) StopCoroutine(_routine);
-            _routine = StartCoroutine(ReactionSequence(_hitCount));
+            if (_routine != null)
+            {
+                StopCoroutine(_routine);
+                _routine = null;
+            }
+
+            SetWandererEnabled(false);
+            FaceAttacker();
+
+            if (_hitCount >= 4)
+            {
+                // Fourth punch is special: if the NPC is still inside Hit3's reaction,
+                // that reaction is cancelled immediately and Knockdown starts NOW.
+                _routine = StartCoroutine(FourthHitKnockdownSequence());
+            }
+            else
+            {
+                _routine = StartCoroutine(ReactionSequence(_hitCount));
+            }
         }
 
         private IEnumerator ReactionSequence(int hitNumber)
         {
-            _reactionLocked = true;
-            SetWandererEnabled(false);
+            _hardLocked = false;
 
-            FaceAttacker();
-
-            // EVERY successful hit always gets a visible base Hit reaction first.
             _normalHitToggle++;
             int baseHit = (_normalHitToggle % 2 == 0) ? Hit2Hash : Hit1Hash;
             PlayState(baseHit, .02f);
@@ -92,21 +103,27 @@ namespace CheatOnYourDayOnes.World
 
             if (hitNumber == 2)
             {
-                // Second hit: normal hit PLUS the heavier reaction and a short stun.
+                // This can also be interrupted by a third combo hit.
                 PlayState(HeavyHitHash, .025f);
                 yield return WaitForStateComplete(HeavyHitHash, maxStateSeconds);
                 PlayState(IdleHash, .04f);
-                yield return new WaitForSeconds(secondHitExtraStun);
-            }
-            else if (hitNumber >= 4)
-            {
-                // Fourth hit: normal hit PLUS knockdown. The animation's horizontal travel is baked
-                // into the NPC root so GetUp begins where the body actually landed.
-                yield return KnockdownSequence();
-                _hitCount = 0;
+                yield return InterruptibleWait(secondHitExtraStun);
             }
 
-            _reactionLocked = false;
+            if (_routine == null) yield break;
+            yield return FleeSequence();
+            _routine = null;
+        }
+
+        private IEnumerator FourthHitKnockdownSequence()
+        {
+            // No extra Hit animation here: the player is striking INTO the currently playing
+            // third-hit reaction, so the fourth impact itself immediately launches Knockdown.
+            _hardLocked = true;
+            yield return KnockdownSequence();
+            _hitCount = 0;
+            _hardLocked = false;
+
             if (!_down)
                 yield return FleeSequence();
 
@@ -116,11 +133,10 @@ namespace CheatOnYourDayOnes.World
         private IEnumerator KnockdownSequence()
         {
             _down = true;
-
             Vector3 bodyStart = _body != null ? _body.bounds.center : transform.position;
             Vector3 lastTravel = Vector3.zero;
 
-            PlayState(KnockdownHash, .025f);
+            PlayState(KnockdownHash, .02f);
 
             float started = Time.time;
             bool entered = false;
@@ -149,12 +165,8 @@ namespace CheatOnYourDayOnes.World
             }
 
             BakeLandingIntoRoot(lastTravel);
-
-            // Keep the final knockdown pose exactly where it landed.
             yield return new WaitForSeconds(knockdownLieSeconds);
 
-            // Force the first frame of GetUp at the NEW root position, then remove the temporary
-            // visual counter-offset. This prevents the body teleporting back to its old position.
             if (_animator.HasState(0, GetUpHash))
             {
                 _animator.Play(GetUpHash, 0, 0f);
@@ -167,27 +179,38 @@ namespace CheatOnYourDayOnes.World
             _down = false;
         }
 
+        private IEnumerator InterruptibleWait(float seconds)
+        {
+            float until = Time.time + seconds;
+            while (Time.time < until)
+                yield return null;
+        }
+
         private void BakeLandingIntoRoot(Vector3 worldTravel)
         {
             if (worldTravel.sqrMagnitude < .0001f) return;
 
-            // Move the actual NPC/gameplay root to the visual body's landing point.
             transform.position += worldTravel;
 
-            // Counter-shift the visual while holding the knockdown end pose so there is no pop now.
             if (_visualRoot != null)
                 _visualRoot.localPosition -= transform.InverseTransformVector(worldTravel);
 
-            // Keep the root grounded at its new X/Z location.
             Vector3 origin = transform.position + Vector3.up * 5f;
-            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 12f, ~0, QueryTriggerInteraction.Ignore))
+            RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, 12f, ~0, QueryTriggerInteraction.Ignore);
+            float bestY = float.NegativeInfinity;
+            bool found = false;
+            foreach (RaycastHit hit in hits)
             {
-                if (hit.collider != null && !hit.transform.IsChildOf(transform))
-                {
-                    Vector3 p = transform.position;
-                    p.y = hit.point.y + .05f;
-                    transform.position = p;
-                }
+                if (hit.collider == null || hit.transform.IsChildOf(transform)) continue;
+                if (hit.normal.y < .55f) continue;
+                if (!found || hit.point.y > bestY) { bestY = hit.point.y; found = true; }
+            }
+
+            if (found)
+            {
+                Vector3 p = transform.position;
+                p.y = bestY + .05f;
+                transform.position = p;
             }
         }
 
@@ -204,9 +227,7 @@ namespace CheatOnYourDayOnes.World
 
             while (Time.time < until)
             {
-                // A new valid punch can interrupt fleeing, but not an active Hit/Knockdown/GetUp.
-                _reactionLocked = false;
-
+                // Vulnerable while fleeing too; a new punch simply cancels this coroutine.
                 Vector3 away = transform.position - _attacker.position;
                 away.y = 0f;
                 if (away.sqrMagnitude < .001f) away = -transform.forward;
@@ -222,7 +243,6 @@ namespace CheatOnYourDayOnes.World
                 yield return null;
             }
 
-            _reactionLocked = false;
             SetWandererEnabled(true);
         }
 
@@ -273,6 +293,8 @@ namespace CheatOnYourDayOnes.World
 
         private void OnDisable()
         {
+            if (_routine != null) StopCoroutine(_routine);
+            _routine = null;
             if (_visualRoot != null) _visualRoot.localPosition = _visualBaseLocalPosition;
             if (_wanderer != null) _wanderer.enabled = true;
         }
