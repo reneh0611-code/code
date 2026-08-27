@@ -108,7 +108,6 @@ namespace CheatOnYourDayOnes.EditorTools
             string[] required =
             {
                 PlayerPrefabPath,
-                "Assets/Models/Characters/Aj.fbx",
                 "Assets/Models/Animations/Idle.fbx",
                 "Assets/Models/Animations/Walk.fbx",
                 "Assets/Models/Animations/Run.fbx",
@@ -119,6 +118,10 @@ namespace CheatOnYourDayOnes.EditorTools
             foreach (string path in required)
                 if (AssetDatabase.LoadMainAssetAtPath(path) == null)
                     Debug.LogError("[CYDOY AUTO] Required shared asset is missing: " + path + ". Make sure it is tracked in Git and pulled on this machine.");
+
+            GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            if (playerPrefab != null && playerPrefab.GetComponentInChildren<Animator>(true) == null)
+                Debug.LogWarning("[CYDOY AUTO] Player.prefab currently contains no Animator/character visual. The deleted AJ source FBX is no longer required; only the character actually embedded/referenced by Player.prefab matters.");
         }
     }
 }
