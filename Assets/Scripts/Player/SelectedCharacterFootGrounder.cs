@@ -1,18 +1,21 @@
 using System.Collections;
+using CheatOnYourDayOnes.Vehicles;
+using CheatOnYourDayOnes.World;
 using Unity.Netcode;
 using UnityEngine;
 
 namespace CheatOnYourDayOnes.Player
 {
     /// <summary>
-    /// One-shot visual grounding for runtime-selected playable characters.
-    /// Uses the actual world surface below the character instead of the player root/controller.
+    /// Grounds the stable CharacterVisual wrapper, never the animated model root itself.
+    /// This prevents Animator root curves from undoing the visual Y correction.
     /// </summary>
     public sealed class SelectedCharacterFootGrounder : MonoBehaviour
     {
         [SerializeField] private float rayStartHeight = 3.0f;
-        [SerializeField] private float rayDistance = 10.0f;
-        [SerializeField] private float soleOffset = 0.005f;
+        [SerializeField] private float rayDistance = 12.0f;
+        [SerializeField] private float soleOffset = 0.002f;
+        [SerializeField] private int stabilizationFrames = 12;
 
         private Transform _lastVisual;
         private Coroutine _snapRoutine;
@@ -33,73 +36,96 @@ namespace CheatOnYourDayOnes.Player
 
             _lastVisual = current;
             if (_snapRoutine != null) StopCoroutine(_snapRoutine);
-            _snapRoutine = StartCoroutine(SnapAfterRender(current));
+            _snapRoutine = StartCoroutine(StabilizeAndGround(visualRoot, current));
         }
 
-        private IEnumerator SnapAfterRender(Transform visual)
+        private IEnumerator StabilizeAndGround(Transform visualRoot, Transform animatedVisual)
         {
-            yield return null;
-            yield return new WaitForEndOfFrame();
-            yield return new WaitForEndOfFrame();
-
-            if (visual == null) yield break;
-
-            // Disable older one-shot grounders on the selected playable character so they cannot
-            // overwrite the world-ground result afterwards.
             FixedWorldVisualGrounder oldWorldGrounder = GetComponent<FixedWorldVisualGrounder>();
             if (oldWorldGrounder != null) oldWorldGrounder.enabled = false;
             MixamoRuntimePoseAndGrounder oldMixamoGrounder = GetComponent<MixamoRuntimePoseAndGrounder>();
             if (oldMixamoGrounder != null) oldMixamoGrounder.enabled = false;
 
-            Animator animator = visual.GetComponentInChildren<Animator>(true);
-            if (animator != null) animator.Update(0f);
-
-            foreach (SkinnedMeshRenderer skin in visual.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            Animator animator = animatedVisual.GetComponentInChildren<Animator>(true);
+            foreach (SkinnedMeshRenderer skin in animatedVisual.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 skin.updateWhenOffscreen = true;
 
-            if (!TryGetBounds(visual, out Bounds bounds)) yield break;
+            // Repeat for several rendered frames so Animator.Rebind/Idle evaluation cannot restore
+            // an old root offset after the first correction.
+            for (int frame = 0; frame < stabilizationFrames; frame++)
+            {
+                yield return new WaitForEndOfFrame();
+                if (visualRoot == null || animatedVisual == null) yield break;
 
-            // Ray from above the visual center straight down through the player and onto the real
-            // terrain/road. Ignore every collider belonging to this player hierarchy.
-            Vector3 origin = new Vector3(bounds.center.x, bounds.max.y + rayStartHeight, bounds.center.z);
-            RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, rayDistance + bounds.size.y + rayStartHeight, ~0, QueryTriggerInteraction.Ignore);
+                if (animator != null) animator.Update(0f);
+                GroundOnce(visualRoot, animatedVisual, frame == stabilizationFrames - 1);
+            }
+
+            _snapRoutine = null;
+        }
+
+        private void GroundOnce(Transform visualRoot, Transform animatedVisual, bool logResult)
+        {
+            if (!TryGetBounds(animatedVisual, out Bounds bounds)) return;
+            if (!TryFindWorldGround(bounds, out float groundY)) return;
+
+            float correction = (groundY + soleOffset) - bounds.min.y;
+
+            // CRITICAL: move CharacterVisual, not SelectedCharacterVisual. The Animator can own the
+            // selected model's root transform but does not own this wrapper.
+            visualRoot.position += Vector3.up * correction;
+
+            if (logResult && TryGetBounds(animatedVisual, out Bounds check))
+            {
+                float remaining = check.min.y - (groundY + soleOffset);
+                Debug.Log($"[CYDOY GROUND] Stable wrapper grounded by {correction:F3}m. Ground={groundY:F3}, remaining={remaining:F3}m, wrapperLocalY={visualRoot.localPosition.y:F3}.", animatedVisual.gameObject);
+            }
+        }
+
+        private bool TryFindWorldGround(Bounds bounds, out float groundY)
+        {
+            Vector3 origin = new(bounds.center.x, bounds.max.y + rayStartHeight, bounds.center.z);
+            float distance = rayDistance + bounds.size.y + rayStartHeight;
+            RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, distance, ~0, QueryTriggerInteraction.Ignore);
 
             bool found = false;
-            float nearestDistance = float.MaxValue;
-            float groundY = 0f;
+            float bestDistance = float.MaxValue;
+            groundY = 0f;
 
             foreach (RaycastHit hit in hits)
             {
-                if (hit.collider == null) continue;
-                Transform ht = hit.collider.transform;
-                if (ht == transform || ht.IsChildOf(transform)) continue;
-                if (hit.normal.y < 0.45f) continue;
+                Collider c = hit.collider;
+                if (c == null || hit.normal.y < .45f) continue;
+                Transform ht = c.transform;
 
-                if (hit.distance < nearestDistance)
+                // Never use any part of this player as ground.
+                if (ht == transform || ht.IsChildOf(transform)) continue;
+
+                // Never stand visually on NPCs, vehicles or other character capsules.
+                if (c.GetComponentInParent<NPCWanderer>() != null) continue;
+                if (c.GetComponentInParent<DriveableCar>() != null) continue;
+                if (c.GetComponentInParent<CharacterController>() != null) continue;
+
+                Rigidbody rb = c.attachedRigidbody;
+                if (rb != null && !rb.isKinematic) continue;
+
+                // Terrain is always valid. Static/non-character environment colliders are valid too,
+                // which keeps roads, sidewalks and building floors usable even if they are not tagged.
+                bool worldSurface = c is TerrainCollider || c.gameObject.isStatic || rb == null;
+                if (!worldSurface) continue;
+
+                if (hit.distance < bestDistance)
                 {
-                    nearestDistance = hit.distance;
+                    bestDistance = hit.distance;
                     groundY = hit.point.y;
                     found = true;
                 }
             }
 
             if (!found)
-            {
-                Debug.LogWarning("[CYDOY GROUND] No world surface found below selected character.", visual.gameObject);
-                yield break;
-            }
+                Debug.LogWarning("[CYDOY GROUND] No valid terrain/road surface found below selected character.", this);
 
-            float correction = (groundY + soleOffset) - bounds.min.y;
-            visual.position += Vector3.up * correction;
-
-            if (animator != null) animator.Update(0f);
-
-            float remaining = 0f;
-            if (TryGetBounds(visual, out Bounds check))
-                remaining = check.min.y - (groundY + soleOffset);
-
-            Debug.Log($"[CYDOY GROUND] '{visual.name}' WORLD grounded by {correction:F3}m. GroundY={groundY:F3}, remaining sole offset={remaining:F3}m.", visual.gameObject);
-            _snapRoutine = null;
+            return found;
         }
 
         private static bool TryGetBounds(Transform visual, out Bounds combined)
@@ -116,12 +142,8 @@ namespace CheatOnYourDayOnes.Player
                     combined = r.bounds;
                     has = true;
                 }
-                else
-                {
-                    combined.Encapsulate(r.bounds);
-                }
+                else combined.Encapsulate(r.bounds);
             }
-
             return has;
         }
 
