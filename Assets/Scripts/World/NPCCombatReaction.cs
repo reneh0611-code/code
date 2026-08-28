@@ -19,11 +19,13 @@ namespace CheatOnYourDayOnes.World
         [SerializeField] private float heavyHitCrossFade = .07f;
         [SerializeField] private float knockdownCrossFade = .055f;
         [SerializeField] private float getUpCrossFade = .08f;
-        [SerializeField] private float runCrossFade = .10f;
+        [SerializeField] private float runCrossFade = .14f;
 
         [Header("Flee")]
         [SerializeField] private float fleeSeconds = 4.5f;
         [SerializeField] private float fleeSpeed = 2.25f;
+        [SerializeField] private float fleeTurnSpeed = 4.5f;
+        [SerializeField] private float fleeAccelerationSeconds = .28f;
 
         [Header("Knockdown pose tracking")]
         [SerializeField] private float maxKnockdownTravel = 3.5f;
@@ -246,6 +248,15 @@ namespace CheatOnYourDayOnes.World
 
             if (_animator.HasState(0, GetUpHash))
             {
+                // Reset the visual wrapper BEFORE GetUp starts, then align the gameplay root to the
+                // lying pose. This means the wrapper stays at its normal local transform for the
+                // ENTIRE GetUp animation, so there is nothing left to snap back by ~20 cm at the end.
+                if (_visualRoot != null)
+                {
+                    _visualRoot.localPosition = _visualBaseLocalPosition;
+                    _visualRoot.localRotation = _visualBaseLocalRotation;
+                }
+
                 _animator.Play(GetUpHash, 0, 0f);
                 _animator.Update(0f);
                 BodyPose getUpStartPose = CaptureBodyPose();
@@ -254,37 +265,13 @@ namespace CheatOnYourDayOnes.World
                 _animator.CrossFadeInFixedTime(GetUpHash, getUpCrossFade, 0, 0f);
                 yield return WaitForStateComplete(GetUpHash, maxStateSeconds, .997f);
 
-                // IMPORTANT: capture where the complete body ACTUALLY finished standing up.
-                BodyPose getUpEndPose = CaptureBodyPose();
-
-                // Sample the first Run frame immediately, restore the visual wrapper, then move/rotate
-                // the gameplay root so Run starts at the exact final GetUp pose. This removes the
-                // brief standstill and the 1-2m position jump after getting up.
+                // Do NOT re-align the root to the Run clip here. The exact position reached by GetUp
+                // is authoritative. Just blend into Run at that same root position.
                 if (_animator.HasState(0, RunHash))
                 {
-                    _animator.Play(RunHash, 0, 0f);
-                    _animator.Update(0f);
-
-                    if (_visualRoot != null)
-                    {
-                        _visualRoot.localPosition = _visualBaseLocalPosition;
-                        _visualRoot.localRotation = _visualBaseLocalRotation;
-                    }
-
-                    BodyPose runStartPose = CaptureBodyPose();
-                    AlignCurrentPoseToTarget(runStartPose, getUpEndPose);
-                    GroundRootAtCurrentXZ();
-
-                    // Start moving visually right away instead of showing one Idle frame.
                     _animator.CrossFadeInFixedTime(RunHash, runCrossFade, 0, 0f);
                     _runAlreadyPrepared = true;
                 }
-            }
-
-            if (_visualRoot != null && !_runAlreadyPrepared)
-            {
-                _visualRoot.localPosition = _visualBaseLocalPosition;
-                _visualRoot.localRotation = _visualBaseLocalRotation;
             }
 
             _down = false;
@@ -429,7 +416,8 @@ namespace CheatOnYourDayOnes.World
                 PlayState(RunHash, runCrossFade);
             _runAlreadyPrepared = false;
 
-            float until = Time.time + fleeSeconds;
+            float started = Time.time;
+            float until = started + fleeSeconds;
             while (Time.time < until)
             {
                 Vector3 away = transform.position - _attacker.position;
@@ -437,12 +425,25 @@ namespace CheatOnYourDayOnes.World
                 if (away.sqrMagnitude < .001f) away = -transform.forward;
                 away.Normalize();
 
-                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(away), 1f - Mathf.Exp(-8f * Time.deltaTime));
+                // Turn progressively instead of instantly changing heading after GetUp.
+                Quaternion desired = Quaternion.LookRotation(away);
+                transform.rotation = Quaternion.Slerp(
+                    transform.rotation,
+                    desired,
+                    1f - Mathf.Exp(-fleeTurnSpeed * Time.deltaTime));
+
+                // Ramp movement in for a few tenths of a second. The character begins moving while
+                // turning, rather than standing still, snapping direction, then running.
+                float ramp = fleeAccelerationSeconds <= .001f
+                    ? 1f
+                    : Mathf.Clamp01((Time.time - started) / fleeAccelerationSeconds);
+                float easedRamp = ramp * ramp * (3f - 2f * ramp);
+                Vector3 move = transform.forward * (fleeSpeed * easedRamp);
 
                 if (_controller != null && _controller.enabled)
-                    _controller.Move(away * fleeSpeed * Time.deltaTime);
+                    _controller.Move(move * Time.deltaTime);
                 else
-                    transform.position += away * fleeSpeed * Time.deltaTime;
+                    transform.position += move * Time.deltaTime;
 
                 yield return null;
             }

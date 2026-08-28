@@ -30,21 +30,29 @@ namespace CheatOnYourDayOnes.UI
         private Text _cash,_bank,_aura,_clock,_day,_interactionText,_healthValue,_hungerValue,_energyValue,_staminaValue,_speedText;
         private Image _healthFill,_hungerFill,_energyFill,_staminaFill,_needle;
         private GameObject _interactionRoot,_tachoRoot;
+        private DriveableCar _occupiedCar;
+        private float _nextHudRefresh;
 
         private void Awake(){_font=Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");_roundSprite=MakeRoundedSprite(96,22);_circleSprite=MakeCircleSprite(128);BuildCanvas();}
 
         private void Update()
         {
             TryBind(); if(_player==null)return;
-            DriveableCar car=FindOccupiedCar();
-            _cash.text="$ "+_player.Wallet.Cash.Value.ToString("N0");_bank.text="$ "+_player.Wallet.Bank.Value.ToString("N0");_aura.text=_player.Aura.Aura.Value.ToString("+0;-0;0");
-            UpdateNeed(_healthValue,_healthFill,_player.Needs.Health.Value);UpdateNeed(_hungerValue,_hungerFill,_player.Needs.Hunger.Value);UpdateNeed(_energyValue,_energyFill,_player.Needs.Energy.Value);
-            if(_movement!=null){_staminaValue.text=Mathf.RoundToInt(_movement.Stamina)+"%";_staminaFill.fillAmount=_movement.Stamina01;}
-            DateTime now=DateTime.Now;_clock.text="☀  "+now.ToString("HH:mm");_day.text=GermanDay(now.DayOfWeek);
-            bool onFoot=car==null;string prompt=null;
-            if(onFoot&&_vehicleInteractor!=null&&_vehicleInteractor.enabled&&_vehicleInteractor.CanEnterVehicle)prompt="Fahren";else if(onFoot&&_interactor!=null&&_interactor.enabled&&!string.IsNullOrWhiteSpace(_interactor.CurrentPrompt))prompt=CleanPrompt(_interactor.CurrentPrompt);
-            _interactionRoot.SetActive(onFoot&&!string.IsNullOrWhiteSpace(prompt));if(_interactionRoot.activeSelf)_interactionText.text=prompt;
-            _tachoRoot.SetActive(car!=null);if(car!=null){float kmh=car.SpeedKmh;_speedText.text=Mathf.RoundToInt(kmh).ToString();float angle=Mathf.Lerp(-130f,130f,Mathf.Clamp01(kmh/50f));_needle.rectTransform.localRotation=Quaternion.Euler(0,0,-angle);}
+            if(Time.unscaledTime>=_nextHudRefresh)
+            {
+                _nextHudRefresh=Time.unscaledTime+.1f;
+                _occupiedCar=FindOccupiedCar();
+                _cash.text="$ "+_player.Wallet.Cash.Value.ToString("N0");_bank.text="$ "+_player.Wallet.Bank.Value.ToString("N0");_aura.text=_player.Aura.Aura.Value.ToString("+0;-0;0");
+                UpdateNeed(_healthValue,_healthFill,_player.Needs.Health.Value);UpdateNeed(_hungerValue,_hungerFill,_player.Needs.Hunger.Value);UpdateNeed(_energyValue,_energyFill,_player.Needs.Energy.Value);
+                if(_movement!=null){_staminaValue.text=Mathf.RoundToInt(_movement.Stamina)+"%";_staminaFill.fillAmount=_movement.Stamina01;}
+                DateTime now=DateTime.Now;_clock.text="☀  "+now.ToString("HH:mm");_day.text=GermanDay(now.DayOfWeek);
+                bool onFoot=_occupiedCar==null;string prompt=null;
+                if(onFoot&&_vehicleInteractor!=null&&_vehicleInteractor.enabled&&_vehicleInteractor.CanEnterVehicle)prompt="Fahren";else if(onFoot&&_interactor!=null&&_interactor.enabled&&!string.IsNullOrWhiteSpace(_interactor.CurrentPrompt))prompt=CleanPrompt(_interactor.CurrentPrompt);
+                _interactionRoot.SetActive(onFoot&&!string.IsNullOrWhiteSpace(prompt));if(_interactionRoot.activeSelf)_interactionText.text=prompt;
+                _tachoRoot.SetActive(_occupiedCar!=null);
+            }
+
+            if(_occupiedCar!=null){float kmh=_occupiedCar.SpeedKmh;string speed=Mathf.RoundToInt(kmh).ToString();if(_speedText.text!=speed)_speedText.text=speed;float angle=Mathf.Lerp(-130f,130f,Mathf.Clamp01(kmh/50f));_needle.rectTransform.localRotation=Quaternion.Euler(0,0,-angle);}
         }
 
         private static void UpdateNeed(Text value,Image fill,float raw){float v=Mathf.Clamp(raw,0,100);value.text=Mathf.RoundToInt(v)+"%";fill.fillAmount=v/100f;}
@@ -109,7 +117,7 @@ namespace CheatOnYourDayOnes.UI
         private RectTransform Empty(Transform parent,string name,Vector2 pos,Vector2 size,Vector2 anchor){GameObject go=new(name,typeof(RectTransform));go.transform.SetParent(parent,false);RectTransform rt=go.GetComponent<RectTransform>();SetRect(rt,pos,size,anchor);return rt;}
         private static void SetRect(RectTransform rt,Vector2 pos,Vector2 size,Vector2 anchor){rt.anchorMin=rt.anchorMax=anchor;rt.pivot=anchor;rt.anchoredPosition=pos;rt.sizeDelta=size;}
         private static void Stretch(RectTransform rt){rt.anchorMin=Vector2.zero;rt.anchorMax=Vector2.one;rt.offsetMin=Vector2.zero;rt.offsetMax=Vector2.zero;}
-        private static DriveableCar FindOccupiedCar(){foreach(var car in UnityEngine.Object.FindObjectsByType<DriveableCar>(FindObjectsSortMode.None))if(car!=null&&car.IsOccupied)return car;return null;}
+        private static DriveableCar FindOccupiedCar(){foreach(DriveableCar car in DriveableCar.ActiveCars)if(car!=null&&car.IsOccupied)return car;return null;}
         private static string CleanPrompt(string p){p=p.Trim().Replace("[ E ]","").Replace("[E]","").Replace("(E)","").Replace("E -","").Trim();return string.IsNullOrWhiteSpace(p)?"Interagieren":p;}
         private static string GermanDay(DayOfWeek d)=>d switch{DayOfWeek.Monday=>"MONTAG",DayOfWeek.Tuesday=>"DIENSTAG",DayOfWeek.Wednesday=>"MITTWOCH",DayOfWeek.Thursday=>"DONNERSTAG",DayOfWeek.Friday=>"FREITAG",DayOfWeek.Saturday=>"SAMSTAG",_=>"SONNTAG"};
 

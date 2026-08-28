@@ -8,13 +8,18 @@ namespace CheatOnYourDayOnes.Vehicles
         [SerializeField] private float enterRadius = 3.5f;
 
         private DriveableCar _nearbyCar;
+        private float _nextVehicleScan;
 
         public DriveableCar NearbyCar => _nearbyCar;
         public bool CanEnterVehicle => _nearbyCar != null;
 
         private void Update()
         {
-            _nearbyCar = FindNearestAvailableCar();
+            if (Time.time >= _nextVehicleScan)
+            {
+                _nextVehicleScan = Time.time + .15f;
+                _nearbyCar = FindNearestAvailableCar();
+            }
 
             if (_nearbyCar == null || Keyboard.current == null)
                 return;
@@ -32,7 +37,7 @@ namespace CheatOnYourDayOnes.Vehicles
             DriveableCar nearest = null;
             float best = enterRadius;
 
-            foreach (DriveableCar car in Object.FindObjectsByType<DriveableCar>(FindObjectsSortMode.None))
+            foreach (DriveableCar car in DriveableCar.ActiveCars)
             {
                 if (car == null || car.IsOccupied)
                     continue;

@@ -7,16 +7,17 @@ namespace CheatOnYourDayOnes.World
 {
     public sealed class AmbientNPCSpawner : MonoBehaviour
     {
-        [SerializeField] private int targetCount = 12;
-        [SerializeField] private float minSpawnRadius = 10f;
-        [SerializeField] private float maxSpawnRadius = 28f;
-        [SerializeField] private float despawnRadius = 55f;
-        [SerializeField] private float respawnCheckInterval = 1.25f;
-        [SerializeField] private float rayHeight = 120f;
+        [SerializeField] private int targetCount = 7;
+        [SerializeField] private float minSpawnRadius = 8f;
+        [SerializeField] private float maxSpawnRadius = 20f;
+        [SerializeField] private float despawnRadius = 30f;
+        [SerializeField] private float respawnCheckInterval = 2.0f;
+        [SerializeField] private float rayHeight = 80f;
         [SerializeField] private float maxGroundSlope = 0.72f;
 
         private readonly List<NPCWanderer> _spawned = new();
         private Transform _visualTemplate;
+        private GameObject _frozenNpcTemplate;
         private RuntimeAnimatorController _controller;
         private Transform _root;
         private float _nextCheck;
@@ -37,8 +38,22 @@ namespace CheatOnYourDayOnes.World
             Animator a = _visualTemplate.GetComponentInChildren<Animator>(true);
             _controller = a != null ? a.runtimeAnimatorController : Resources.Load<RuntimeAnimatorController>("Tripo_Locomotion_ExactGeneric");
 
+            _frozenNpcTemplate = Instantiate(_visualTemplate.gameObject);
+            _frozenNpcTemplate.name = "OriginalCharacter_NPCTemplate";
+            _frozenNpcTemplate.SetActive(false);
+            DontDestroyOnLoad(_frozenNpcTemplate);
+
             GameObject existing = GameObject.Find("Generated_NPCs");
             _root = existing != null ? existing.transform : new GameObject("Generated_NPCs").transform;
+
+            // Remove only auto-generated ambient NPCs from an older/runtime setup, never authored NPCs.
+            for (int i = _root.childCount - 1; i >= 0; i--)
+            {
+                Transform child = _root.GetChild(i);
+                if (child != null && child.name.StartsWith("AmbientNPC_"))
+                    Destroy(child.gameObject);
+            }
+
             SpawnUntilFull();
         }
 
@@ -51,12 +66,30 @@ namespace CheatOnYourDayOnes.World
             {
                 NPCWanderer npc = _spawned[i];
                 if (npc == null) { _spawned.RemoveAt(i); continue; }
-                Vector3 d = npc.transform.position - transform.position; d.y = 0f;
+                Vector3 d = npc.transform.position - transform.position;
+                d.y = 0f;
                 if (d.sqrMagnitude > despawnRadius * despawnRadius)
                 {
                     Destroy(npc.gameObject);
                     _spawned.RemoveAt(i);
                 }
+            }
+
+            while (_spawned.Count > targetCount)
+            {
+                int farthest = -1;
+                float farthestSqr = -1f;
+                for (int i = 0; i < _spawned.Count; i++)
+                {
+                    if (_spawned[i] == null) continue;
+                    Vector3 d = _spawned[i].transform.position - transform.position;
+                    d.y = 0f;
+                    float sqr = d.sqrMagnitude;
+                    if (sqr > farthestSqr) { farthestSqr = sqr; farthest = i; }
+                }
+                if (farthest < 0) break;
+                Destroy(_spawned[farthest].gameObject);
+                _spawned.RemoveAt(farthest);
             }
 
             SpawnUntilFull();
@@ -91,7 +124,7 @@ namespace CheatOnYourDayOnes.World
                 if (!found || hit.point.y > bestY) { bestY = hit.point.y; found = true; }
             }
 
-            point = new Vector3(xz.x, bestY + .05f, xz.z);
+            point = new Vector3(xz.x, bestY + .01f, xz.z);
             return found;
         }
 
@@ -109,7 +142,9 @@ namespace CheatOnYourDayOnes.World
             cc.stepOffset = .22f;
             cc.slopeLimit = 45f;
 
-            GameObject visual = Instantiate(_visualTemplate.gameObject, npc.transform);
+            GameObject source = _frozenNpcTemplate != null ? _frozenNpcTemplate : _visualTemplate.gameObject;
+            GameObject visual = Instantiate(source, npc.transform);
+            visual.SetActive(true);
             visual.name = "CharacterVisual";
             visual.transform.localPosition = Vector3.zero;
             visual.transform.localRotation = Quaternion.identity;
@@ -118,19 +153,26 @@ namespace CheatOnYourDayOnes.World
             foreach (NetworkBehaviour n in visual.GetComponentsInChildren<NetworkBehaviour>(true)) n.enabled = false;
             foreach (PlayerMeleeCombat combat in visual.GetComponentsInChildren<PlayerMeleeCombat>(true)) combat.enabled = false;
             foreach (CharacterAnimationDriver driver in visual.GetComponentsInChildren<CharacterAnimationDriver>(true)) driver.enabled = false;
+            foreach (SkinnedMeshRenderer skin in visual.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                skin.updateWhenOffscreen = false;
 
             Animator animator = visual.GetComponentInChildren<Animator>(true);
             if (animator != null)
             {
                 if (_controller != null) animator.runtimeAnimatorController = _controller;
                 animator.applyRootMotion = false;
-                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                animator.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
                 animator.enabled = true;
             }
 
             NPCWanderer wanderer = npc.AddComponent<NPCWanderer>();
-            wanderer.Configure(Random.Range(1.15f, 1.45f), Random.Range(7f, 14f));
+            wanderer.Configure(Random.Range(1.15f, 1.40f), Random.Range(5f, 10f));
             _spawned.Add(wanderer);
+        }
+
+        private void OnDestroy()
+        {
+            if (_frozenNpcTemplate != null) Destroy(_frozenNpcTemplate);
         }
     }
 }
