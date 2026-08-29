@@ -171,7 +171,7 @@ public class MeleeAnimationBridge : MonoBehaviour
             currentAttackTarget = FindBestHitTarget();
             ConfigureAttackMovement(runKick);
             if (!runKick && currentAttackTarget != null && movementController != null)
-                movementController.FaceCombatTarget(currentAttackTarget.transform.position - transform.position);
+                movementController.FaceCombatTarget(currentAttackTarget.StrikeTargetPosition - transform.position);
 
             bool stateExists = playerAnimator != null && playerAnimator.HasState(0, state);
             if (stateExists)
@@ -497,7 +497,7 @@ public class MeleeAnimationBridge : MonoBehaviour
             : FindBestHitTarget();
 
         if (best == null) return;
-        Vector3 hitDirection = best.transform.position - transform.position;
+        Vector3 hitDirection = best.StrikeTargetPosition - transform.position;
         hitDirection.y = 0f;
         best.HitByPlayerPunch(hitDirection.normalized, currentPunchIndex + 1, transform);
     }
@@ -516,7 +516,7 @@ public class MeleeAnimationBridge : MonoBehaviour
             NPCWanderer npc = hit.GetComponentInParent<NPCWanderer>();
             if (npc == null || !npc.CanReceivePlayerStrike) continue;
 
-            Vector3 toTarget = npc.transform.position - transform.position;
+            Vector3 toTarget = npc.StrikeTargetPosition - transform.position;
             toTarget.y = 0f;
             float sqrDistance = toTarget.sqrMagnitude;
             if (sqrDistance < .0001f || sqrDistance > hitRadius * hitRadius) continue;
@@ -538,7 +538,7 @@ public class MeleeAnimationBridge : MonoBehaviour
     private bool IsTargetInHitRange(NPCWanderer target)
     {
         if (target == null || !target.CanReceivePlayerStrike) return false;
-        Vector3 toTarget = target.transform.position - transform.position;
+        Vector3 toTarget = target.StrikeTargetPosition - transform.position;
         toTarget.y = 0f;
         return toTarget.sqrMagnitude <= hitRadius * hitRadius;
     }

@@ -334,6 +334,13 @@ namespace CheatOnYourDayOnes.Player
                 return;
             }
 
+            if (_carryMovementActive)
+            {
+                _moveInput = Keyboard.current.sKey.isPressed ? new Vector2(0f, -1f) : Vector2.zero;
+                _sprintInput = false;
+                return;
+            }
+
             float x = 0f;
             float y = 0f;
             if (Keyboard.current.aKey.isPressed) x -= 1f;
@@ -401,7 +408,9 @@ namespace CheatOnYourDayOnes.Player
             if (_stamina.Value <= 0.01f) canSprint = false;
 
             Quaternion cameraYaw = Quaternion.Euler(0f, _serverCameraYaw, 0f);
-            Vector3 desiredDirection = cameraYaw * new Vector3(input.x, 0f, input.y);
+            Vector3 desiredDirection = _serverCarryMovementActive
+                ? -transform.forward * Mathf.Clamp01(-input.y)
+                : cameraYaw * new Vector3(input.x, 0f, input.y);
             if (actionMovement && desiredDirection.sqrMagnitude <= 0.001f)
                 desiredDirection = transform.forward;
             if (groundedBeforeMove && desiredDirection.sqrMagnitude > 0.001f)
@@ -441,11 +450,27 @@ namespace CheatOnYourDayOnes.Player
 
             // Preserve the original control scheme: WASD is camera-relative while the character
             // itself follows the camera yaw. A/D therefore strafe instead of turning the player.
-            Quaternion wantedRotation = _serverCombatMovementLocked && _serverCombatFacingActive
-                ? Quaternion.LookRotation(_serverCombatFacingDirection)
-                : actionMovement && desiredDirection.sqrMagnitude > .001f
-                    ? Quaternion.LookRotation(desiredDirection)
-                    : cameraYaw;
+            Quaternion wantedRotation;
+            if (_serverCarryMovementActive)
+            {
+                wantedRotation = Quaternion.Euler(0f, _serverCameraYaw - 180f, 0f);
+            }
+            else if (_serverCombatMovementLocked)
+            {
+                // PullStart turns only the camera. Unless a combat action explicitly supplied a
+                // facing target, a locked player must retain the exact rotation they started with.
+                wantedRotation = _serverCombatFacingActive
+                    ? Quaternion.LookRotation(_serverCombatFacingDirection)
+                    : transform.rotation;
+            }
+            else if (actionMovement && desiredDirection.sqrMagnitude > .001f)
+            {
+                wantedRotation = Quaternion.LookRotation(desiredDirection);
+            }
+            else
+            {
+                wantedRotation = cameraYaw;
+            }
             transform.rotation = Quaternion.Slerp(
                 transform.rotation,
                 wantedRotation,

@@ -1,5 +1,6 @@
 using System.Collections;
 using CheatOnYourDayOnes.World;
+using CheatOnYourDayOnes.CameraSystem;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -24,6 +25,7 @@ namespace CheatOnYourDayOnes.Player
         private NetworkPlayerController _movement;
         private CharacterAnimationDriver _animationDriver;
         private Animator _animator;
+        private ThirdPersonCamera _camera;
         private NPCWanderer _carriedBody;
         private Coroutine _transitionRoutine;
         private bool _busy;
@@ -42,6 +44,7 @@ namespace CheatOnYourDayOnes.Player
         {
             if (_movement == null) _movement = GetComponent<NetworkPlayerController>();
             if (_animationDriver == null) _animationDriver = GetComponent<CharacterAnimationDriver>();
+            if (_camera == null) _camera = Object.FindFirstObjectByType<ThirdPersonCamera>(FindObjectsInactive.Include);
             Transform visual = transform.Find("CharacterVisual");
             Animator current = visual != null ? visual.GetComponentInChildren<Animator>(true) : GetComponentInChildren<Animator>(true);
             if (current != null) _animator = current;
@@ -104,7 +107,7 @@ namespace CheatOnYourDayOnes.Player
                 PlayState(PullHash);
                 if (_movement != null)
                 {
-                    _movement.SetCarryMovement(true, pullingSpeedMultiplier);
+                    _movement.SetCarryMovement(true, pullingSpeedMultiplier * .8f);
                     _movement.SetCombatMovementLocked(false);
                 }
             }
@@ -162,6 +165,7 @@ namespace CheatOnYourDayOnes.Player
                 _movement.SetCombatMovementLocked(true);
             }
             if (_animationDriver != null) _animationDriver.enabled = false;
+            if (_camera != null) _camera.EnterPullingMode(transform);
             if (_animator != null)
             {
                 _animator.enabled = true;
@@ -188,6 +192,7 @@ namespace CheatOnYourDayOnes.Player
                 _movement.SetCombatMovementLocked(false);
             }
             if (_animator != null) _animator.speed = 1f;
+            if (_camera != null) _camera.ExitPullingMode(transform);
             if (_animationDriver != null)
             {
                 _animationDriver.enabled = true;
@@ -218,7 +223,7 @@ namespace CheatOnYourDayOnes.Player
             foreach (NPCWanderer npc in NPCWanderer.ActiveNpcs)
             {
                 if (npc == null || !npc.IsDead || npc.IsCarried) continue;
-                Vector3 toBody = npc.transform.position - transform.position;
+                Vector3 toBody = npc.DownPosition - transform.position;
                 toBody.y = 0f;
                 float sqr = toBody.sqrMagnitude;
                 if (sqr >= bestSqr) continue;

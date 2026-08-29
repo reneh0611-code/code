@@ -87,7 +87,7 @@ namespace CheatOnYourDayOnes.Player
                 NPCWanderer npc = c.GetComponentInParent<NPCWanderer>();
                 if (npc == null || !npc.CanReceivePlayerStrike) continue;
 
-                Vector3 to = npc.transform.position - transform.position;
+                Vector3 to = npc.StrikeTargetPosition - transform.position;
                 to.y = 0f;
                 float dist = to.magnitude;
                 if (dist > range + radius) continue;
@@ -99,7 +99,7 @@ namespace CheatOnYourDayOnes.Player
 
             if (best != null)
             {
-                Vector3 direction = best.transform.position - transform.position;
+                Vector3 direction = best.StrikeTargetPosition - transform.position;
                 direction.y = 0f;
                 best.HitByPlayerPunch(direction.normalized, _punchVariant ? 2 : 1, transform);
             }

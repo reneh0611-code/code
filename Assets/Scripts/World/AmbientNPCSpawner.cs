@@ -66,6 +66,17 @@ namespace CheatOnYourDayOnes.World
             {
                 NPCWanderer npc = _spawned[i];
                 if (npc == null) { _spawned.RemoveAt(i); continue; }
+
+                // A corpse is now a persistent gameplay object. Remove it from the ambient
+                // population bookkeeping without destroying it, otherwise a body being dragged
+                // away from its original root position vanishes at the despawn radius.
+                if (npc.IsDead)
+                {
+                    _spawned.RemoveAt(i);
+                    continue;
+                }
+
+                if (npc.IsCarried) continue;
                 Vector3 d = npc.transform.position - transform.position;
                 d.y = 0f;
                 if (d.sqrMagnitude > despawnRadius * despawnRadius)

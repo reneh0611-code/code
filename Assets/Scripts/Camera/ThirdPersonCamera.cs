@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using CheatOnYourDayOnes.World;
 
 namespace CheatOnYourDayOnes.CameraSystem
 {
@@ -21,6 +22,13 @@ namespace CheatOnYourDayOnes.CameraSystem
         [SerializeField, Min(1f)] private float vehicleYawFollow = 10f;
         [SerializeField, Min(1f)] private float vehiclePositionFollow = 12f;
 
+        [Header("Body pulling camera")]
+        [SerializeField] private Vector3 pullingPivotOffset = new(0f, 1.34f, 0f);
+        [SerializeField, Min(1.5f)] private float pullingDistance = 2.75f;
+        [SerializeField] private float pullingPitch = 7f;
+        [SerializeField, Min(1f)] private float pullingYawFollow = 9f;
+        [SerializeField, Range(.25f, 2f)] private float pullingInvertedYawMultiplier = 1f;
+
         [Header("Shared")]
         [SerializeField, Min(1f)] private float followSmooth = 18f;
         [SerializeField, Min(1f)] private float rotationSmooth = 16f;
@@ -32,13 +40,16 @@ namespace CheatOnYourDayOnes.CameraSystem
         private readonly RaycastHit[] _collisionHits = new RaycastHit[10];
         private float _currentDistance;
         private float _yaw;
+        private float _pullingFacingYaw;
         private float _pitch = 8f;
         private bool _initialized;
         private bool _vehicleMode;
+        private bool _pullingMode;
         private Camera _camera;
 
-        public float CurrentYaw => _yaw;
+        public float CurrentYaw => _pullingMode ? _pullingFacingYaw + 180f : _yaw;
         public bool VehicleMode => _vehicleMode;
+        public bool PullingMode => _pullingMode;
 
         private void Awake()
         {
@@ -69,6 +80,7 @@ namespace CheatOnYourDayOnes.CameraSystem
         {
             target = vehicle;
             _vehicleMode = true;
+            _pullingMode = false;
             _yaw = vehicle != null ? vehicle.eulerAngles.y : _yaw;
             _pitch = vehiclePitch;
             _currentDistance = vehicleDistance;
@@ -79,6 +91,29 @@ namespace CheatOnYourDayOnes.CameraSystem
         {
             target = player;
             _vehicleMode = false;
+            _yaw = player != null ? player.eulerAngles.y : _yaw;
+            _pitch = 8f;
+            _currentDistance = distance;
+            _initialized = true;
+        }
+
+        public void EnterPullingMode(Transform player)
+        {
+            if (_vehicleMode) return;
+            target = player;
+            _pullingMode = true;
+            _pullingFacingYaw = player != null ? player.eulerAngles.y : _yaw - 180f;
+            _yaw = _pullingFacingYaw + 180f;
+            _pitch = pullingPitch;
+            _currentDistance = pullingDistance;
+            _initialized = true;
+        }
+
+        public void ExitPullingMode(Transform player)
+        {
+            _pullingMode = false;
+            if (_vehicleMode) return;
+            target = player;
             _yaw = player != null ? player.eulerAngles.y : _yaw;
             _pitch = 8f;
             _currentDistance = distance;
@@ -96,6 +131,24 @@ namespace CheatOnYourDayOnes.CameraSystem
             {
                 _yaw = Mathf.LerpAngle(_yaw, target.eulerAngles.y, 1f - Mathf.Exp(-vehicleYawFollow * Time.deltaTime));
                 _pitch = vehiclePitch;
+                return;
+            }
+
+            if (_pullingMode)
+            {
+                _pitch = pullingPitch;
+
+                // The camera remains in front, but horizontal mouse movement steers the player
+                // in the mirrored direction expected while walking backwards.
+                if (Mouse.current != null)
+                {
+                    Vector2 pullingDelta = Mouse.current.delta.ReadValue();
+                    _pullingFacingYaw -= pullingDelta.x * mouseSensitivity * pullingInvertedYawMultiplier;
+                }
+                _yaw = Mathf.LerpAngle(
+                    _yaw,
+                    _pullingFacingYaw + 180f,
+                    1f - Mathf.Exp(-pullingYawFollow * Time.deltaTime));
                 return;
             }
 
@@ -123,8 +176,8 @@ namespace CheatOnYourDayOnes.CameraSystem
 
             InitializeAngles();
 
-            Vector3 activePivotOffset = _vehicleMode ? vehiclePivotOffset : pivotOffset;
-            float activeDistance = _vehicleMode ? vehicleDistance : distance;
+            Vector3 activePivotOffset = _vehicleMode ? vehiclePivotOffset : _pullingMode ? pullingPivotOffset : pivotOffset;
+            float activeDistance = _vehicleMode ? vehicleDistance : _pullingMode ? pullingDistance : distance;
             float activeFollow = _vehicleMode ? vehiclePositionFollow : followSmooth;
 
             Quaternion yawRotation = Quaternion.Euler(0f, _yaw, 0f);
@@ -139,6 +192,8 @@ namespace CheatOnYourDayOnes.CameraSystem
             {
                 RaycastHit hit = _collisionHits[i];
                 if (hit.collider == null || hit.transform == target || hit.transform.IsChildOf(target)) continue;
+                NPCCorpseRagdoll corpse = hit.collider.GetComponentInParent<NPCCorpseRagdoll>();
+                if (corpse != null && corpse.IsDragged) continue;
                 if (hit.distance < nearestDistance) nearestDistance = hit.distance;
             }
             if (nearestDistance < float.MaxValue)
