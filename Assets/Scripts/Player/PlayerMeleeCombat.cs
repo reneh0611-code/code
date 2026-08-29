@@ -85,7 +85,7 @@ namespace CheatOnYourDayOnes.Player
             {
                 if (c == null || c.transform.IsChildOf(transform)) continue;
                 NPCWanderer npc = c.GetComponentInParent<NPCWanderer>();
-                if (npc == null || npc.IsDown) continue;
+                if (npc == null || !npc.CanReceivePlayerStrike) continue;
 
                 Vector3 to = npc.transform.position - transform.position;
                 to.y = 0f;

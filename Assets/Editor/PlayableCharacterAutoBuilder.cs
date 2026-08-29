@@ -23,6 +23,36 @@ namespace CheatOnYourDayOnes.EditorTools
         private const string Anim01Folder = ResourceFolder + "/Character01_Animations";
         private const string Anim02Folder = ResourceFolder + "/Character02_Animations";
 
+        private sealed class ActionClipDefinition
+        {
+            public readonly string stateName;
+            public readonly string assetPath;
+            public readonly Vector3 statePosition;
+            public readonly bool loop;
+
+            public ActionClipDefinition(string stateName, string assetPath, Vector3 statePosition, bool loop = false)
+            {
+                this.stateName = stateName;
+                this.assetPath = assetPath;
+                this.statePosition = statePosition;
+                this.loop = loop;
+            }
+        }
+
+        private static readonly ActionClipDefinition[] ActionClips =
+        {
+            new("SitDown", "Assets/Models/Animations/Sitdown.fbx", new Vector3(720f, 20f, 0f)),
+            new("SittingIdle", "Assets/Models/Animations/Sittingidle.fbx", new Vector3(720f, 90f, 0f), true),
+            new("SitToStand", "Assets/Models/Animations/Sittostand.fbx", new Vector3(720f, 160f, 0f)),
+            new("Roll", "Assets/Models/Animations/Roll.fbx", new Vector3(900f, 20f, 0f)),
+            new("RunKick", "Assets/Models/Animations/Runkick.fbx", new Vector3(900f, 90f, 0f)),
+            new("PoliceCall", "Assets/Models/Animations/policecall.fbx", new Vector3(900f, 160f, 0f), true),
+            new("Dying", "Assets/Models/Animations/Dying.fbx", new Vector3(1080f, 20f, 0f)),
+            new("PullStart", "Assets/Models/Animations/Pullstart.fbx", new Vector3(1080f, 90f, 0f)),
+            new("Pull", "Assets/Models/Animations/Pull.fbx", new Vector3(1080f, 160f, 0f), true),
+            new("PullStop", "Assets/Models/Animations/Pullstop.fbx", new Vector3(1080f, 230f, 0f))
+        };
+
         private static double nextTry;
         private static bool done;
         private static bool reimporting;
@@ -64,6 +94,9 @@ namespace CheatOnYourDayOnes.EditorTools
         {
             CleanupLeakedBuildInstances();
 
+            if (!EnsureActionStates(out bool actionStatesChanged)) return false;
+            if (actionStatesChanged) forceRebuild = true;
+
             // Script reloads are common while iterating. Once the generated character set is
             // complete, leave it alone unless the developer explicitly requests a rebuild.
             if (!forceRebuild && OutputsReady()) return true;
@@ -95,8 +128,67 @@ namespace CheatOnYourDayOnes.EditorTools
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             forceRebuild = false;
-            Debug.Log("[CYDOY PLAYABLE] READY: both playable characters + retargeted Idle/Walk/Run/Jump/Punch animations are built.");
+            Debug.Log("[CYDOY PLAYABLE] READY: both playable characters and all locomotion, combat, roll and sitting animations are built.");
             return true;
+        }
+
+        private static bool EnsureActionStates(out bool changed)
+        {
+            changed = false;
+            AnimatorController controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerSource);
+            if (controller == null || controller.layers.Length == 0) return false;
+
+            foreach (ActionClipDefinition definition in ActionClips)
+            {
+                if (!File.Exists(definition.assetPath))
+                {
+                    Debug.LogWarning($"[CYDOY PLAYABLE] Waiting for action animation: {definition.assetPath}");
+                    return false;
+                }
+                if (!NormalizeImporter(definition.assetPath)) return false;
+
+                AnimationClip clip = AssetDatabase.LoadAllAssetsAtPath(definition.assetPath)
+                    .OfType<AnimationClip>()
+                    .FirstOrDefault(candidate => !candidate.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase));
+                if (clip == null)
+                {
+                    Debug.LogWarning($"[CYDOY PLAYABLE] No animation take found in {definition.assetPath}.");
+                    return false;
+                }
+
+                AnimatorState state = FindState(controller.layers[0].stateMachine, definition.stateName);
+                if (state == null)
+                {
+                    state = controller.layers[0].stateMachine.AddState(definition.stateName, definition.statePosition);
+                    changed = true;
+                }
+                if (state.motion != clip)
+                {
+                    state.motion = clip;
+                    changed = true;
+                }
+                state.speed = 1f;
+                state.writeDefaultValues = true;
+            }
+
+            if (changed)
+            {
+                EditorUtility.SetDirty(controller);
+                AssetDatabase.SaveAssets();
+            }
+            return true;
+        }
+
+        private static AnimatorState FindState(AnimatorStateMachine stateMachine, string stateName)
+        {
+            foreach (ChildAnimatorState child in stateMachine.states)
+                if (child.state != null && child.state.name == stateName) return child.state;
+            foreach (ChildAnimatorStateMachine child in stateMachine.stateMachines)
+            {
+                AnimatorState found = FindState(child.stateMachine, stateName);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         private static string FindFbx(string folder)
@@ -303,6 +395,15 @@ namespace CheatOnYourDayOnes.EditorTools
 
             AnimationUtility.SetAnimationEvents(target, AnimationUtility.GetAnimationEvents(source));
             CopyClipSettings(source, target);
+            ActionClipDefinition actionDefinition = ActionClips.FirstOrDefault(definition =>
+                string.Equals(Path.GetFileNameWithoutExtension(definition.assetPath), sourceAssetName, StringComparison.OrdinalIgnoreCase));
+            if (actionDefinition != null)
+            {
+                AnimationClipSettings settings = AnimationUtility.GetAnimationClipSettings(target);
+                settings.loopTime = actionDefinition.loop;
+                settings.loopBlend = actionDefinition.loop;
+                AnimationUtility.SetAnimationClipSettings(target, settings);
+            }
             EditorUtility.SetDirty(target);
 
             if (mapped == 0)
@@ -375,10 +476,14 @@ namespace CheatOnYourDayOnes.EditorTools
 
         private static bool OutputsReady()
         {
+            AnimatorController controller01 = AssetDatabase.LoadAssetAtPath<AnimatorController>(Controller01);
+            AnimatorController controller02 = AssetDatabase.LoadAssetAtPath<AnimatorController>(Controller02);
             return AssetDatabase.LoadAssetAtPath<GameObject>(Out01) != null
                 && AssetDatabase.LoadAssetAtPath<GameObject>(Out02) != null
-                && AssetDatabase.LoadAssetAtPath<AnimatorController>(Controller01) != null
-                && AssetDatabase.LoadAssetAtPath<AnimatorController>(Controller02) != null
+                && controller01 != null
+                && controller02 != null
+                && ActionClips.All(definition => FindState(controller01.layers[0].stateMachine, definition.stateName) != null)
+                && ActionClips.All(definition => FindState(controller02.layers[0].stateMachine, definition.stateName) != null)
                 && AssetDatabase.FindAssets("t:AnimationClip", new[] { Anim01Folder }).Length > 0
                 && AssetDatabase.FindAssets("t:AnimationClip", new[] { Anim02Folder }).Length > 0;
         }

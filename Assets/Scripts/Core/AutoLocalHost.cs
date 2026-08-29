@@ -39,7 +39,8 @@ namespace CheatOnYourDayOnes.Core
             CharacterController controller = player.GetComponent<CharacterController>();
             for (int i = 0; i < 120; i++)
             {
-                if (TryFindSafeTerrainSpawn(player.transform.position, controller, terrainEdgeMargin, out Vector3 safePosition))
+                bool foundCenter = TryFindFlatTerrainCenterSpawn(controller, terrainEdgeMargin, out Vector3 safePosition);
+                if (foundCenter || TryFindSafeTerrainSpawn(player.transform.position, controller, terrainEdgeMargin, out safePosition))
                 {
                     NetworkPlayerController movement = player.GetComponent<NetworkPlayerController>();
                     if (movement != null)
@@ -54,6 +55,81 @@ namespace CheatOnYourDayOnes.Core
             }
 
             Debug.LogError("[CYDOY AUTO] No active terrain collider was available for safe player placement.");
+        }
+
+        public static bool TryFindFlatTerrainCenterSpawn(
+            CharacterController controller,
+            float edgeMargin,
+            out Vector3 safePosition)
+        {
+            safePosition = default;
+            Terrain bestTerrain = null;
+            Vector3 bestSample = default;
+            float bestScore = float.MaxValue;
+
+            foreach (Terrain terrain in Terrain.activeTerrains)
+            {
+                if (terrain == null || !terrain.isActiveAndEnabled || terrain.terrainData == null) continue;
+                TerrainCollider collider = terrain.GetComponent<TerrainCollider>();
+                if (collider == null || !collider.enabled) continue;
+
+                TerrainData data = terrain.terrainData;
+                Vector3 origin = terrain.transform.position;
+                Vector3 size = data.size;
+                float marginX = Mathf.Min(Mathf.Max(.5f, edgeMargin), Mathf.Max(.5f, size.x * .5f - .5f));
+                float marginZ = Mathf.Min(Mathf.Max(.5f, edgeMargin), Mathf.Max(.5f, size.z * .5f - .5f));
+                float probeRadius = Mathf.Clamp(Mathf.Min(size.x, size.z) * .01f, 2f, 6f);
+
+                // Search only the central quarter of the terrain. Flatness has priority; distance
+                // from the exact center is the tie-breaker, so the player never starts at an edge.
+                for (int ix = -4; ix <= 4; ix++)
+                for (int iz = -4; iz <= 4; iz++)
+                {
+                    float normalizedX = .5f + ix * .03f;
+                    float normalizedZ = .5f + iz * .03f;
+                    float x = Mathf.Clamp(origin.x + normalizedX * size.x, origin.x + marginX, origin.x + size.x - marginX);
+                    float z = Mathf.Clamp(origin.z + normalizedZ * size.z, origin.z + marginZ, origin.z + size.z - marginZ);
+                    normalizedX = Mathf.InverseLerp(origin.x, origin.x + size.x, x);
+                    normalizedZ = Mathf.InverseLerp(origin.z, origin.z + size.z, z);
+
+                    Vector3 sample = new(x, 0f, z);
+                    float centerHeight = terrain.SampleHeight(sample) + origin.y;
+                    float minHeight = centerHeight;
+                    float maxHeight = centerHeight;
+                    Vector3[] offsets =
+                    {
+                        new(probeRadius, 0f, 0f), new(-probeRadius, 0f, 0f),
+                        new(0f, 0f, probeRadius), new(0f, 0f, -probeRadius)
+                    };
+                    foreach (Vector3 offset in offsets)
+                    {
+                        float height = terrain.SampleHeight(sample + offset) + origin.y;
+                        minHeight = Mathf.Min(minHeight, height);
+                        maxHeight = Mathf.Max(maxHeight, height);
+                    }
+
+                    float heightVariation = maxHeight - minHeight;
+                    float slopePenalty = 1f - data.GetInterpolatedNormal(normalizedX, normalizedZ).y;
+                    float centerPenalty = (ix * ix + iz * iz) * .0025f;
+                    float score = heightVariation * 5f + slopePenalty * 20f + centerPenalty;
+                    if (score >= bestScore) continue;
+
+                    bestScore = score;
+                    bestTerrain = terrain;
+                    bestSample = sample;
+                }
+            }
+
+            if (bestTerrain == null) return false;
+            float groundY = bestTerrain.SampleHeight(bestSample) + bestTerrain.transform.position.y;
+            float bottomOffset = 0f;
+            if (controller != null)
+            {
+                float scaleY = Mathf.Abs(controller.transform.lossyScale.y);
+                bottomOffset = (controller.center.y - controller.height * .5f) * scaleY;
+            }
+            safePosition = new Vector3(bestSample.x, groundY - bottomOffset + .012f, bestSample.z);
+            return true;
         }
 
         public static bool TryFindSafeTerrainSpawn(

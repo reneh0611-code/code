@@ -93,6 +93,17 @@ namespace CheatOnYourDayOnes.Player
             Health.Value = Mathf.Clamp(Health.Value - amount, 0f, GameConstants.MaxHealth);
         }
 
+        public void RequestDamage(float amount)
+        {
+            amount = Mathf.Clamp(amount, 0f, GameConstants.MaxHealth);
+            if (amount <= 0f || !IsSpawned) return;
+            if (IsServer) DamageServer(amount);
+            else RequestDamageRpc(amount);
+        }
+
+        [Rpc(SendTo.Server)]
+        private void RequestDamageRpc(float amount) => DamageServer(Mathf.Clamp(amount, 0f, GameConstants.MaxHealth));
+
         private void OnAnyNeedChanged(float previous, float current) => NeedsChanged?.Invoke();
     }
 }

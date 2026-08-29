@@ -22,18 +22,20 @@ namespace CheatOnYourDayOnes.UI
         private static readonly Color Purple = new(.66f,.39f,.95f,1f);
 
         private Font _font;
-        private Sprite _roundSprite,_circleSprite;
+        private Sprite _roundSprite,_circleSprite,_ringSprite;
         private PlayerAgent _player;
         private PlayerInteractor _interactor;
         private VehicleInteractor _vehicleInteractor;
         private NetworkPlayerController _movement;
-        private Text _cash,_bank,_aura,_clock,_day,_interactionText,_healthValue,_hungerValue,_energyValue,_staminaValue,_speedText;
-        private Image _healthFill,_hungerFill,_energyFill,_staminaFill,_needle;
-        private GameObject _interactionRoot,_tachoRoot;
+        private CorpseCarryController _corpseCarry;
+        private global::MeleeAnimationBridge _melee;
+        private Text _cash,_bank,_aura,_clock,_day,_interactionKeyText,_interactionText,_healthValue,_hungerValue,_energyValue,_staminaValue,_speedText;
+        private Image _healthFill,_hungerFill,_energyFill,_staminaFill,_needle,_reticleRing,_reticleDot;
+        private GameObject _interactionRoot,_tachoRoot,_reticleRoot;
         private DriveableCar _occupiedCar;
         private float _nextHudRefresh;
 
-        private void Awake(){_font=Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");_roundSprite=MakeRoundedSprite(96,22);_circleSprite=MakeCircleSprite(128);BuildCanvas();}
+        private void Awake(){_font=Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");_roundSprite=MakeRoundedSprite(96,22);_circleSprite=MakeCircleSprite(128);_ringSprite=MakeRingSprite(128,11);BuildCanvas();}
 
         private void Update()
         {
@@ -46,24 +48,39 @@ namespace CheatOnYourDayOnes.UI
                 UpdateNeed(_healthValue,_healthFill,_player.Needs.Health.Value);UpdateNeed(_hungerValue,_hungerFill,_player.Needs.Hunger.Value);UpdateNeed(_energyValue,_energyFill,_player.Needs.Energy.Value);
                 if(_movement!=null){_staminaValue.text=Mathf.RoundToInt(_movement.Stamina)+"%";_staminaFill.fillAmount=_movement.Stamina01;}
                 DateTime now=DateTime.Now;_clock.text="☀  "+now.ToString("HH:mm");_day.text=GermanDay(now.DayOfWeek);
-                bool onFoot=_occupiedCar==null;string prompt=null;
-                if(onFoot&&_vehicleInteractor!=null&&_vehicleInteractor.enabled&&_vehicleInteractor.CanEnterVehicle)prompt="Fahren";else if(onFoot&&_interactor!=null&&_interactor.enabled&&!string.IsNullOrWhiteSpace(_interactor.CurrentPrompt))prompt=CleanPrompt(_interactor.CurrentPrompt);
-                _interactionRoot.SetActive(onFoot&&!string.IsNullOrWhiteSpace(prompt));if(_interactionRoot.activeSelf)_interactionText.text=prompt;
+                bool onFoot=_occupiedCar==null;string prompt=null;string interactionKey="E";
+                if(onFoot&&_corpseCarry!=null&&(_corpseCarry.HasCarriedBody||_corpseCarry.CanPickupBody)){prompt=_corpseCarry.HasCarriedBody?"Körper loslassen":"Körper ziehen";interactionKey="G";}else if(onFoot&&_vehicleInteractor!=null&&_vehicleInteractor.enabled&&_vehicleInteractor.CanEnterVehicle)prompt="Fahren";else if(onFoot&&_interactor!=null&&_interactor.enabled&&!string.IsNullOrWhiteSpace(_interactor.CurrentPrompt))prompt=CleanPrompt(_interactor.CurrentPrompt);
+                _interactionRoot.SetActive(onFoot&&!string.IsNullOrWhiteSpace(prompt));if(_interactionRoot.activeSelf){_interactionKeyText.text=interactionKey;_interactionText.text=prompt;}
                 _tachoRoot.SetActive(_occupiedCar!=null);
+                bool showReticle=onFoot&&_movement!=null;_reticleRoot.SetActive(showReticle);
+                if(showReticle){bool locked=_melee!=null&&_melee.HasStrikeTarget;Color c=locked?Green:new Color(White.r,White.g,White.b,.82f);_reticleRing.color=c;_reticleDot.color=locked?Green:White;}
             }
 
             if(_occupiedCar!=null){float kmh=_occupiedCar.SpeedKmh;string speed=Mathf.RoundToInt(kmh).ToString();if(_speedText.text!=speed)_speedText.text=speed;float angle=Mathf.Lerp(-130f,130f,Mathf.Clamp01(kmh/50f));_needle.rectTransform.localRotation=Quaternion.Euler(0,0,-angle);}
+            if(_reticleRoot.activeSelf){float pulse=_melee!=null&&_melee.IsAttacking?1.08f+.05f*Mathf.Sin(Time.unscaledTime*22f):1f;_reticleRoot.transform.localScale=Vector3.one*pulse;}
         }
 
         private static void UpdateNeed(Text value,Image fill,float raw){float v=Mathf.Clamp(raw,0,100);value.text=Mathf.RoundToInt(v)+"%";fill.fillAmount=v/100f;}
-        private void TryBind(){if(_player!=null||NetworkManager.Singleton==null||!NetworkManager.Singleton.IsListening)return;var local=NetworkManager.Singleton.LocalClient?.PlayerObject;if(local==null)return;_player=local.GetComponent<PlayerAgent>();_interactor=local.GetComponent<PlayerInteractor>();_vehicleInteractor=local.GetComponent<VehicleInteractor>();_movement=local.GetComponent<NetworkPlayerController>();}
+        private void TryBind(){if(_player!=null){if(_corpseCarry==null)_corpseCarry=_player.GetComponent<CorpseCarryController>();if(_melee==null)_melee=_player.GetComponent<global::MeleeAnimationBridge>();return;}if(NetworkManager.Singleton==null||!NetworkManager.Singleton.IsListening)return;var local=NetworkManager.Singleton.LocalClient?.PlayerObject;if(local==null)return;_player=local.GetComponent<PlayerAgent>();_interactor=local.GetComponent<PlayerInteractor>();_vehicleInteractor=local.GetComponent<VehicleInteractor>();_movement=local.GetComponent<NetworkPlayerController>();_corpseCarry=local.GetComponent<CorpseCarryController>();_melee=local.GetComponent<global::MeleeAnimationBridge>();}
 
         private void BuildCanvas()
         {
             GameObject canvasGo=new("PremiumHUD_Canvas",typeof(Canvas),typeof(CanvasScaler),typeof(GraphicRaycaster));canvasGo.transform.SetParent(transform,false);Canvas canvas=canvasGo.GetComponent<Canvas>();canvas.renderMode=RenderMode.ScreenSpaceOverlay;canvas.sortingOrder=200;
             CanvasScaler scaler=canvasGo.GetComponent<CanvasScaler>();scaler.uiScaleMode=CanvasScaler.ScaleMode.ScaleWithScreenSize;scaler.referenceResolution=new Vector2(1920,1080);scaler.screenMatchMode=CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;scaler.matchWidthOrHeight=.5f;
-            BuildWallet(canvasGo.transform);BuildMission(canvasGo.transform);BuildClock(canvasGo.transform);BuildNeeds(canvasGo.transform);BuildLocation(canvasGo.transform);BuildInteraction(canvasGo.transform);BuildTacho(canvasGo.transform);
+            BuildWallet(canvasGo.transform);BuildMission(canvasGo.transform);BuildClock(canvasGo.transform);BuildNeeds(canvasGo.transform);BuildLocation(canvasGo.transform);BuildInteraction(canvasGo.transform);BuildTacho(canvasGo.transform);BuildMeleeReticle(canvasGo.transform);
         }
+
+        private void BuildMeleeReticle(Transform root)
+        {
+            _reticleRoot=new GameObject("MeleeReticle",typeof(RectTransform));_reticleRoot.transform.SetParent(root,false);RectTransform rt=_reticleRoot.GetComponent<RectTransform>();SetRect(rt,Vector2.zero,new Vector2(54,54),new Vector2(.5f,.5f));
+            Image shadow=ImageEl(rt,"RingShadow",new Color(0,0,0,.58f),_ringSprite);SetRect(shadow.rectTransform,Vector2.zero,new Vector2(34,34),new Vector2(.5f,.5f));
+            _reticleRing=ImageEl(rt,"AimRing",new Color(White.r,White.g,White.b,.82f),_ringSprite);SetRect(_reticleRing.rectTransform,Vector2.zero,new Vector2(30,30),new Vector2(.5f,.5f));
+            BuildReticleTick(rt,"Left",new Vector2(-22,0),new Vector2(8,2));BuildReticleTick(rt,"Right",new Vector2(22,0),new Vector2(8,2));BuildReticleTick(rt,"Top",new Vector2(0,22),new Vector2(2,8));BuildReticleTick(rt,"Bottom",new Vector2(0,-22),new Vector2(2,8));
+            _reticleDot=ImageEl(rt,"CenterDot",White,_circleSprite);SetRect(_reticleDot.rectTransform,Vector2.zero,new Vector2(4,4),new Vector2(.5f,.5f));
+            _reticleRoot.SetActive(false);
+        }
+
+        private void BuildReticleTick(Transform root,string name,Vector2 pos,Vector2 size){Image tick=ImageEl(root,name,new Color(White.r,White.g,White.b,.72f),_roundSprite);tick.type=Image.Type.Sliced;SetRect(tick.rectTransform,pos,size,new Vector2(.5f,.5f));}
 
         private void BuildWallet(Transform root)
         {
@@ -94,7 +111,7 @@ namespace CheatOnYourDayOnes.UI
 
         private void BuildInteraction(Transform root)
         {
-            _interactionRoot=new GameObject("InteractionRoot",typeof(RectTransform));_interactionRoot.transform.SetParent(root,false);RectTransform rt=_interactionRoot.GetComponent<RectTransform>();rt.anchorMin=rt.anchorMax=new Vector2(.5f,0);rt.pivot=new Vector2(.5f,0);rt.anchoredPosition=new Vector2(0,32);rt.sizeDelta=new Vector2(290,60);RectTransform card=PanelBox(rt,"Card",Vector2.zero,new Vector2(290,60),Vector2.zero,new Color(.025f,.028f,.034f,.40f));RectTransform key=PanelBox(card,"Key",new Vector2(12,-11),new Vector2(38,38),new Vector2(0,1),new Color(.12f,.13f,.15f,.58f));TextEl(key,"E",15,White,FontStyle.Bold,TextAnchor.MiddleCenter);_interactionText=TextEl(card,"Fahren",15,White,FontStyle.Bold,TextAnchor.MiddleLeft,new Vector2(68,-12),new Vector2(190,36),new Vector2(0,1));_interactionRoot.SetActive(false);
+            _interactionRoot=new GameObject("InteractionRoot",typeof(RectTransform));_interactionRoot.transform.SetParent(root,false);RectTransform rt=_interactionRoot.GetComponent<RectTransform>();rt.anchorMin=rt.anchorMax=new Vector2(.5f,0);rt.pivot=new Vector2(.5f,0);rt.anchoredPosition=new Vector2(0,32);rt.sizeDelta=new Vector2(290,60);RectTransform card=PanelBox(rt,"Card",Vector2.zero,new Vector2(290,60),Vector2.zero,new Color(.025f,.028f,.034f,.40f));RectTransform key=PanelBox(card,"Key",new Vector2(12,-11),new Vector2(38,38),new Vector2(0,1),new Color(.12f,.13f,.15f,.58f));_interactionKeyText=TextEl(key,"E",15,White,FontStyle.Bold,TextAnchor.MiddleCenter);_interactionText=TextEl(card,"Fahren",15,White,FontStyle.Bold,TextAnchor.MiddleLeft,new Vector2(68,-12),new Vector2(190,36),new Vector2(0,1));_interactionRoot.SetActive(false);
         }
 
         private void BuildTacho(Transform root)
@@ -123,5 +140,6 @@ namespace CheatOnYourDayOnes.UI
 
         private static Sprite MakeRoundedSprite(int size,int radius){Texture2D t=new(size,size,TextureFormat.RGBA32,false){wrapMode=TextureWrapMode.Clamp,filterMode=FilterMode.Bilinear};Color32[] p=new Color32[size*size];float l=radius,r=size-1-radius,b=radius,top=size-1-radius;for(int y=0;y<size;y++)for(int x=0;x<size;x++){float cx=Mathf.Clamp(x,l,r),cy=Mathf.Clamp(y,b,top);float d=Vector2.Distance(new Vector2(x,y),new Vector2(cx,cy));byte alpha=(byte)(255*Mathf.Clamp01(radius+1-d));p[y*size+x]=new Color32(255,255,255,alpha);}t.SetPixels32(p);t.Apply(false,true);return Sprite.Create(t,new Rect(0,0,size,size),new Vector2(.5f,.5f),100,0,SpriteMeshType.FullRect,new Vector4(radius,radius,radius,radius));}
         private static Sprite MakeCircleSprite(int size){Texture2D t=new(size,size,TextureFormat.RGBA32,false){wrapMode=TextureWrapMode.Clamp,filterMode=FilterMode.Bilinear};Color32[] p=new Color32[size*size];Vector2 c=new((size-1)*.5f,(size-1)*.5f);float r=(size-2)*.5f;for(int y=0;y<size;y++)for(int x=0;x<size;x++){float d=Vector2.Distance(new Vector2(x,y),c);byte alpha=(byte)(255*Mathf.Clamp01(r+1-d));p[y*size+x]=new Color32(255,255,255,alpha);}t.SetPixels32(p);t.Apply(false,true);return Sprite.Create(t,new Rect(0,0,size,size),new Vector2(.5f,.5f),100);}
+        private static Sprite MakeRingSprite(int size,float thickness){Texture2D t=new(size,size,TextureFormat.RGBA32,false){wrapMode=TextureWrapMode.Clamp,filterMode=FilterMode.Bilinear};Color32[] p=new Color32[size*size];Vector2 c=new((size-1)*.5f,(size-1)*.5f);float outer=(size-3)*.5f,inner=outer-thickness;for(int y=0;y<size;y++)for(int x=0;x<size;x++){float d=Vector2.Distance(new Vector2(x,y),c);float a=Mathf.Min(Mathf.Clamp01(outer+1-d),Mathf.Clamp01(d-inner+1));p[y*size+x]=new Color32(255,255,255,(byte)(255*a));}t.SetPixels32(p);t.Apply(false,true);return Sprite.Create(t,new Rect(0,0,size,size),new Vector2(.5f,.5f),100);}
     }
 }

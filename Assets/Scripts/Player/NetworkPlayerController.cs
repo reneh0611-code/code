@@ -61,6 +61,16 @@ namespace CheatOnYourDayOnes.Player
         private bool _sprintExhausted;
         private bool _combatMovementLocked;
         private bool _serverCombatMovementLocked;
+        private bool _serverCombatFacingActive;
+        private Vector3 _serverCombatFacingDirection;
+        private bool _actionMovementActive;
+        private bool _serverActionMovementActive;
+        private bool _carryMovementActive;
+        private bool _serverCarryMovementActive;
+        private float _carrySpeedMultiplier = 1f;
+        private float _serverCarrySpeedMultiplier = 1f;
+        private float _actionMovementSpeed;
+        private float _serverActionMovementSpeed;
         private bool _grounded;
         private Vector3 _groundNormal = Vector3.up;
         private Vector3 _remotePlanarVelocity;
@@ -89,8 +99,10 @@ namespace CheatOnYourDayOnes.Player
         public float Stamina => _stamina.Value;
         public float MaxStamina => maxStamina;
         public float Stamina01 => maxStamina <= 0f ? 0f : Mathf.Clamp01(_stamina.Value / maxStamina);
-        public bool IsSprinting => !_combatMovementLocked && _sprintInput && _moveInput.sqrMagnitude > 0.01f && !_sprintExhausted && _stamina.Value > 0f;
+        public bool IsSprinting => !_combatMovementLocked && !_actionMovementActive && !_carryMovementActive && _sprintInput && _moveInput.sqrMagnitude > 0.01f && !_sprintExhausted && _stamina.Value > 0f;
         public bool IsCombatMovementLocked => _combatMovementLocked;
+        public bool IsActionMovementActive => _actionMovementActive;
+        public bool IsCarryMovementActive => _carryMovementActive;
         public bool IsGrounded => _grounded;
         public Vector3 PlanarVelocity
         {
@@ -183,10 +195,86 @@ namespace CheatOnYourDayOnes.Player
         private void ApplyServerCombatLock(bool locked)
         {
             _serverCombatMovementLocked = locked;
-            if (!locked) return;
+            if (!locked)
+            {
+                _serverCombatFacingActive = false;
+                return;
+            }
             _serverMoveInput = Vector2.zero;
             _serverSprintRequested = false;
             _serverPlanarVelocity = Vector3.zero;
+        }
+
+        public void FaceCombatTarget(Vector3 worldDirection)
+        {
+            if (!IsOwner) return;
+            worldDirection.y = 0f;
+            if (worldDirection.sqrMagnitude < .001f) return;
+            worldDirection.Normalize();
+
+            if (IsServer)
+                ApplyServerCombatFacing(worldDirection);
+            else
+                FaceCombatTargetRpc(worldDirection);
+        }
+
+        [Rpc(SendTo.Server)]
+        private void FaceCombatTargetRpc(Vector3 worldDirection) => ApplyServerCombatFacing(worldDirection);
+
+        private void ApplyServerCombatFacing(Vector3 worldDirection)
+        {
+            worldDirection.y = 0f;
+            if (worldDirection.sqrMagnitude < .001f) return;
+            _serverCombatFacingDirection = worldDirection.normalized;
+            _serverCombatFacingActive = true;
+        }
+
+        public void SetActionMovement(bool active, float speed = 0f)
+        {
+            if (!IsOwner) return;
+            _actionMovementActive = active;
+            _actionMovementSpeed = active ? Mathf.Max(.1f, speed) : 0f;
+            if (active) _sprintInput = false;
+
+            if (IsServer)
+                ApplyServerActionMovement(active, _actionMovementSpeed);
+            else
+                SetActionMovementRpc(active, _actionMovementSpeed);
+        }
+
+        [Rpc(SendTo.Server)]
+        private void SetActionMovementRpc(bool active, float speed) => ApplyServerActionMovement(active, speed);
+
+        private void ApplyServerActionMovement(bool active, float speed)
+        {
+            _serverActionMovementActive = active;
+            _serverActionMovementSpeed = active ? Mathf.Max(.1f, speed) : 0f;
+            if (active)
+            {
+                _serverSprintRequested = false;
+                _serverPlanarVelocity = Vector3.ClampMagnitude(_serverPlanarVelocity, _serverActionMovementSpeed);
+            }
+        }
+
+        public void SetCarryMovement(bool active, float speedMultiplier = .52f)
+        {
+            if (!IsOwner) return;
+            _carryMovementActive = active;
+            _carrySpeedMultiplier = active ? Mathf.Clamp(speedMultiplier, .2f, 1f) : 1f;
+            if (active) _sprintInput = false;
+
+            if (IsServer) ApplyServerCarryMovement(active, _carrySpeedMultiplier);
+            else SetCarryMovementRpc(active, _carrySpeedMultiplier);
+        }
+
+        [Rpc(SendTo.Server)]
+        private void SetCarryMovementRpc(bool active, float speedMultiplier) => ApplyServerCarryMovement(active, speedMultiplier);
+
+        private void ApplyServerCarryMovement(bool active, float speedMultiplier)
+        {
+            _serverCarryMovementActive = active;
+            _serverCarrySpeedMultiplier = active ? Mathf.Clamp(speedMultiplier, .2f, 1f) : 1f;
+            if (active) _serverSprintRequested = false;
         }
 
         private void OnApplicationFocus(bool hasFocus)
@@ -214,7 +302,7 @@ namespace CheatOnYourDayOnes.Player
 
                 SendInputIfNeeded();
 
-                if (!_combatMovementLocked && Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+                if (!_combatMovementLocked && !_actionMovementActive && Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
                 {
                     if (IsServer) _serverJumpQueued = true;
                     else RequestJumpRpc();
@@ -253,7 +341,7 @@ namespace CheatOnYourDayOnes.Player
             if (Keyboard.current.sKey.isPressed) y -= 1f;
             if (Keyboard.current.wKey.isPressed) y += 1f;
             _moveInput = Vector2.ClampMagnitude(new Vector2(x, y), 1f);
-            _sprintInput = Keyboard.current.leftShiftKey.isPressed;
+            _sprintInput = !_carryMovementActive && Keyboard.current.leftShiftKey.isPressed;
         }
 
         private float GetLookYaw()
@@ -292,7 +380,7 @@ namespace CheatOnYourDayOnes.Player
         {
             if (!IsServer || NetworkManager == null || !NetworkManager.IsListening) return;
             _serverMoveInput = _serverCombatMovementLocked ? Vector2.zero : Vector2.ClampMagnitude(input, 1f);
-            _serverSprintRequested = !_serverCombatMovementLocked && sprintRequested;
+            _serverSprintRequested = !_serverCombatMovementLocked && !_serverCarryMovementActive && sprintRequested;
             _serverCameraYaw = cameraYaw;
         }
 
@@ -303,26 +391,30 @@ namespace CheatOnYourDayOnes.Player
 
             Vector2 input = _serverCombatMovementLocked ? Vector2.zero : _serverMoveInput;
             bool moving = input.sqrMagnitude > 0.01f;
+            bool actionMovement = _serverActionMovementActive && !_serverCombatMovementLocked;
 
             if (_sprintExhausted && _stamina.Value >= sprintResumeThreshold)
                 _sprintExhausted = false;
 
-            bool canSprint = _serverSprintRequested && moving && !_sprintExhausted && _stamina.Value > 0.01f;
+            bool canSprint = !actionMovement && !_serverCarryMovementActive && _serverSprintRequested && moving && !_sprintExhausted && _stamina.Value > 0.01f;
             UpdateStamina(canSprint, deltaTime);
             if (_stamina.Value <= 0.01f) canSprint = false;
 
             Quaternion cameraYaw = Quaternion.Euler(0f, _serverCameraYaw, 0f);
             Vector3 desiredDirection = cameraYaw * new Vector3(input.x, 0f, input.y);
+            if (actionMovement && desiredDirection.sqrMagnitude <= 0.001f)
+                desiredDirection = transform.forward;
             if (groundedBeforeMove && desiredDirection.sqrMagnitude > 0.001f)
                 desiredDirection = Vector3.ProjectOnPlane(desiredDirection, _groundNormal).normalized;
 
-            float targetSpeed = canSprint ? sprintSpeed : walkSpeed;
+            float targetSpeed = actionMovement ? _serverActionMovementSpeed : canSprint ? sprintSpeed : walkSpeed;
+            if (_serverCarryMovementActive && !actionMovement) targetSpeed *= _serverCarrySpeedMultiplier;
             Vector3 desiredVelocity = desiredDirection * targetSpeed;
             float moveRate = desiredVelocity.sqrMagnitude > 0.001f ? acceleration : deceleration;
             if (!groundedBeforeMove) moveRate = Mathf.Min(moveRate, airAcceleration);
             _serverPlanarVelocity = Vector3.MoveTowards(_serverPlanarVelocity, desiredVelocity, moveRate * deltaTime);
 
-            if (_serverJumpQueued && groundedBeforeMove && !_serverCombatMovementLocked)
+            if (_serverJumpQueued && groundedBeforeMove && !_serverCombatMovementLocked && !actionMovement && !_serverCarryMovementActive)
             {
                 _verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
                 groundedBeforeMove = false;
@@ -349,9 +441,14 @@ namespace CheatOnYourDayOnes.Player
 
             // Preserve the original control scheme: WASD is camera-relative while the character
             // itself follows the camera yaw. A/D therefore strafe instead of turning the player.
+            Quaternion wantedRotation = _serverCombatMovementLocked && _serverCombatFacingActive
+                ? Quaternion.LookRotation(_serverCombatFacingDirection)
+                : actionMovement && desiredDirection.sqrMagnitude > .001f
+                    ? Quaternion.LookRotation(desiredDirection)
+                    : cameraYaw;
             transform.rotation = Quaternion.Slerp(
                 transform.rotation,
-                cameraYaw,
+                wantedRotation,
                 1f - Mathf.Exp(-rotationSpeed * deltaTime));
         }
 

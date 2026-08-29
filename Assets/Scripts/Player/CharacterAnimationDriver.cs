@@ -21,6 +21,10 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private float jumpBlend = 0.10f;
         [SerializeField] private float landBlend = 0.16f;
 
+        [Header("Jump completion")]
+        [SerializeField, Range(.8f, 1f)] private float jumpExitNormalizedTime = .98f;
+        [SerializeField, Min(.5f)] private float maximumJumpAnimationSeconds = 1.45f;
+
         [Header("Footstep pace")]
         [SerializeField, Min(0.1f)] private float walkReferenceSpeed = 3.0f;
         [SerializeField, Min(0.1f)] private float runReferenceSpeed = 6.8f;
@@ -36,7 +40,9 @@ namespace CheatOnYourDayOnes.Player
         private int _currentState = -1;
         private bool _ready;
         private bool _jumpStateExists;
+        private bool _jumpStateEntered;
         private float _smoothedSpeed;
+        private float _jumpAnimationStarted;
 
         private void Awake()
         {
@@ -106,6 +112,7 @@ namespace CheatOnYourDayOnes.Player
 
             _ready = true;
             _smoothedSpeed = 0f;
+            _jumpStateEntered = false;
             _currentState = IdleHash;
             animator.Play(IdleHash, 0, 0f);
             animator.Update(0f);
@@ -153,6 +160,8 @@ namespace CheatOnYourDayOnes.Player
             animator.speed = 1f;
             animator.CrossFadeInFixedTime(targetState, Mathf.Max(0f, blendDuration), 0, 0f);
             _currentState = targetState;
+            if (targetState == JumpHash)
+                BeginJumpTracking();
         }
 
         private void Update()
@@ -167,11 +176,16 @@ namespace CheatOnYourDayOnes.Player
                 return;
 
             bool grounded = _movement != null ? _movement.IsGrounded : characterController.isGrounded;
-            if (_jumpStateExists && !grounded)
+            if (_jumpStateExists && !grounded && _currentState != JumpHash)
             {
                 animator.speed = 1f;
-                if (_currentState != JumpHash)
-                    BlendToState(JumpHash, jumpBlend);
+                BeginJumpTracking();
+                BlendToState(JumpHash, jumpBlend);
+            }
+
+            if (_currentState == JumpHash && ShouldHoldJumpAnimation(grounded))
+            {
+                animator.speed = 1f;
                 return;
             }
 
@@ -186,6 +200,8 @@ namespace CheatOnYourDayOnes.Player
             {
                 float blend = _currentState == JumpHash ? landBlend : GetBlendDuration(_currentState, wantedState);
                 BlendToState(wantedState, blend);
+                if (wantedState != JumpHash)
+                    _jumpStateEntered = false;
             }
 
             UpdatePlaybackSpeed();
@@ -205,6 +221,40 @@ namespace CheatOnYourDayOnes.Player
             if (speed < idleEnterSpeed) return IdleHash;
             if (speed >= runEnterSpeed) return RunHash;
             return WalkHash;
+        }
+
+        private void BeginJumpTracking()
+        {
+            _jumpAnimationStarted = Time.time;
+            _jumpStateEntered = false;
+        }
+
+        private bool ShouldHoldJumpAnimation(bool grounded)
+        {
+            if (animator == null) return false;
+
+            AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(0);
+            if (state.fullPathHash == JumpHash)
+            {
+                _jumpStateEntered = true;
+                if (!grounded) return true;
+                if (state.normalizedTime < jumpExitNormalizedTime &&
+                    Time.time - _jumpAnimationStarted < maximumJumpAnimationSeconds)
+                    return true;
+                return false;
+            }
+
+            if (animator.IsInTransition(0))
+            {
+                AnimatorStateInfo next = animator.GetNextAnimatorStateInfo(0);
+                if (next.fullPathHash == JumpHash)
+                {
+                    _jumpStateEntered = true;
+                    return !grounded || next.normalizedTime < jumpExitNormalizedTime;
+                }
+            }
+
+            return !_jumpStateEntered && Time.time - _jumpAnimationStarted < maximumJumpAnimationSeconds;
         }
 
         private void UpdatePlaybackSpeed()
