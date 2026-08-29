@@ -63,6 +63,8 @@ namespace CheatOnYourDayOnes.Core
             GameObject player = local.gameObject;
             if (player.GetComponent<VehicleInteractor>() == null) player.AddComponent<VehicleInteractor>();
             if (player.GetComponent<AmbientNPCSpawner>() == null) player.AddComponent<AmbientNPCSpawner>();
+            if (player.GetComponent<PolicePatrolDirector>() == null) player.AddComponent<PolicePatrolDirector>();
+            if (player.GetComponent<PlayerPoliceStatus>() == null) player.AddComponent<PlayerPoliceStatus>();
             if (player.GetComponent<MeleeAnimationBridge>() == null) player.AddComponent<MeleeAnimationBridge>();
             if (player.GetComponent<CorpseCarryController>() == null) player.AddComponent<CorpseCarryController>();
 

@@ -6,7 +6,7 @@ using UnityEngine;
 namespace CheatOnYourDayOnes.World
 {
     [RequireComponent(typeof(CharacterController))]
-    public sealed class NPCWanderer : MonoBehaviour
+    public sealed class NPCWanderer : MonoBehaviour, IPlayerStrikeTarget
     {
         private static readonly HashSet<NPCWanderer> ActiveNpcSet = new();
         public static IEnumerable<NPCWanderer> ActiveNpcs => ActiveNpcSet;
@@ -1210,6 +1210,7 @@ namespace CheatOnYourDayOnes.World
             _meleeLandingPoseAnchor = GetMeleeMotionReferencePosition();
             _meleeFallTracking = false;
             StartMeleeState(DyingHash);
+            PlayerPoliceStatus.RecordHomicide(attacker, this);
 
             if (attacker != null && Time.time >= _nextWitnessIncidentAllowed)
             {

@@ -69,7 +69,7 @@ public class MeleeAnimationBridge : MonoBehaviour
     private bool stabilizeActionVisual;
     private bool recoverActionVisual;
     private float actionVisualRecoveryAfter;
-    private NPCWanderer currentAttackTarget;
+    private IPlayerStrikeTarget currentAttackTarget;
     private readonly Collider[] hitBuffer = new Collider[24];
 
     public bool IsRolling => actionState == PlayerActionState.Rolling;
@@ -492,7 +492,7 @@ public class MeleeAnimationBridge : MonoBehaviour
 
     private void TryHitNearestNpc()
     {
-        NPCWanderer best = IsTargetInHitRange(currentAttackTarget)
+        IPlayerStrikeTarget best = IsTargetInHitRange(currentAttackTarget)
             ? currentAttackTarget
             : FindBestHitTarget();
 
@@ -502,21 +502,22 @@ public class MeleeAnimationBridge : MonoBehaviour
         best.HitByPlayerPunch(hitDirection.normalized, currentPunchIndex + 1, transform);
     }
 
-    private NPCWanderer FindBestHitTarget()
+    private IPlayerStrikeTarget FindBestHitTarget()
     {
         Vector3 center = transform.position + Vector3.up * .9f;
         int count = Physics.OverlapSphereNonAlloc(center, hitRadius, hitBuffer, ~0, QueryTriggerInteraction.Collide);
-        NPCWanderer best = null;
+        IPlayerStrikeTarget best = null;
         float bestScore = float.MaxValue;
 
         for (int i = 0; i < count; i++)
         {
             Collider hit = hitBuffer[i];
             if (hit == null || hit.transform.IsChildOf(transform)) continue;
-            NPCWanderer npc = hit.GetComponentInParent<NPCWanderer>();
-            if (npc == null || !npc.CanReceivePlayerStrike) continue;
+            IPlayerStrikeTarget target = hit.GetComponentInParent<NPCWanderer>();
+            if (target == null) target = hit.GetComponentInParent<PoliceOfficerAI>();
+            if (!IsValidTarget(target) || !target.CanReceivePlayerStrike) continue;
 
-            Vector3 toTarget = npc.StrikeTargetPosition - transform.position;
+            Vector3 toTarget = target.StrikeTargetPosition - transform.position;
             toTarget.y = 0f;
             float sqrDistance = toTarget.sqrMagnitude;
             if (sqrDistance < .0001f || sqrDistance > hitRadius * hitRadius) continue;
@@ -530,17 +531,20 @@ public class MeleeAnimationBridge : MonoBehaviour
             float score = distance - facing * .55f;
             if (score >= bestScore) continue;
             bestScore = score;
-            best = npc;
+            best = target;
         }
         return best;
     }
 
-    private bool IsTargetInHitRange(NPCWanderer target)
+    private bool IsTargetInHitRange(IPlayerStrikeTarget target)
     {
-        if (target == null || !target.CanReceivePlayerStrike) return false;
+        if (!IsValidTarget(target) || !target.CanReceivePlayerStrike) return false;
         Vector3 toTarget = target.StrikeTargetPosition - transform.position;
         toTarget.y = 0f;
         return toTarget.sqrMagnitude <= hitRadius * hitRadius;
     }
+
+    private static bool IsValidTarget(IPlayerStrikeTarget target) =>
+        target is MonoBehaviour behaviour && behaviour != null;
 
 }

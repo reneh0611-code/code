@@ -78,23 +78,24 @@ namespace CheatOnYourDayOnes.Player
         {
             Vector3 center = transform.position + Vector3.up * 1.05f + transform.forward * range;
             Collider[] hits = Physics.OverlapSphere(center, radius, hitMask, QueryTriggerInteraction.Collide);
-            NPCWanderer best = null;
+            IPlayerStrikeTarget best = null;
             float bestScore = float.MaxValue;
 
             foreach (Collider c in hits)
             {
                 if (c == null || c.transform.IsChildOf(transform)) continue;
-                NPCWanderer npc = c.GetComponentInParent<NPCWanderer>();
-                if (npc == null || !npc.CanReceivePlayerStrike) continue;
+                IPlayerStrikeTarget target = c.GetComponentInParent<NPCWanderer>();
+                if (target == null) target = c.GetComponentInParent<PoliceOfficerAI>();
+                if (target is not MonoBehaviour behaviour || behaviour == null || !target.CanReceivePlayerStrike) continue;
 
-                Vector3 to = npc.StrikeTargetPosition - transform.position;
+                Vector3 to = target.StrikeTargetPosition - transform.position;
                 to.y = 0f;
                 float dist = to.magnitude;
                 if (dist > range + radius) continue;
                 float facing = Vector3.Dot(transform.forward, to.normalized);
                 if (facing < 0.18f) continue;
                 float score = dist - facing * 0.6f;
-                if (score < bestScore) { bestScore = score; best = npc; }
+                if (score < bestScore) { bestScore = score; best = target; }
             }
 
             if (best != null)

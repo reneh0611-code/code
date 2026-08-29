@@ -7,10 +7,10 @@ namespace CheatOnYourDayOnes.World
 {
     public sealed class AmbientNPCSpawner : MonoBehaviour
     {
-        [SerializeField] private int targetCount = 7;
-        [SerializeField] private float minSpawnRadius = 8f;
-        [SerializeField] private float maxSpawnRadius = 20f;
-        [SerializeField] private float despawnRadius = 30f;
+        [SerializeField] private int targetCount = 20;
+        [SerializeField] private float minSpawnRadius = 10f;
+        [SerializeField] private float maxSpawnRadius = 96f;
+        [SerializeField] private float despawnRadius = 108f;
         [SerializeField] private float respawnCheckInterval = 2.0f;
         [SerializeField] private float rayHeight = 80f;
         [SerializeField] private float maxGroundSlope = 0.72f;

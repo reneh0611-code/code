@@ -17,6 +17,7 @@ namespace CheatOnYourDayOnes.World
         public static void ReportAssault(NPCWanderer victim, Transform suspect)
         {
             if (victim == null || suspect == null) return;
+            CheatOnYourDayOnes.Player.PlayerPoliceStatus.RecordAssault(suspect, victim);
 
             float radiusSqr = WitnessRadius * WitnessRadius;
             List<NPCWanderer> witnesses = new();
