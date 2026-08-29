@@ -1,5 +1,6 @@
 using CheatOnYourDayOnes.Vehicles;
 using CheatOnYourDayOnes.World;
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -10,6 +11,7 @@ namespace CheatOnYourDayOnes.Player
     /// The correction is smoothed and paused in the air so locomotion and jumping stay stable.
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
+    [DefaultExecutionOrder(900)]
     public sealed class SelectedCharacterFootGrounder : MonoBehaviour
     {
         [SerializeField] private float rayStartHeight = 3f;
@@ -18,12 +20,15 @@ namespace CheatOnYourDayOnes.Player
         [SerializeField] private float toeToSoleDistance = .025f;
         [SerializeField] private float footToSoleDistance = .085f;
         [SerializeField] private float soleSink = .015f;
+        [SerializeField] private float actionBodySink = .012f;
         [SerializeField, Min(.05f)] private float maxCorrectionPerPass = .45f;
         [SerializeField, Min(1f)] private float correctionSharpness = 24f;
 
         private readonly RaycastHit[] _groundHits = new RaycastHit[16];
+        private readonly List<ActionContactBone> _actionContactBones = new(24);
         private CharacterController _controller;
         private NetworkPlayerController _movement;
+        private global::MeleeAnimationBridge _actions;
         private Transform _visualRoot;
         private Transform _animatedVisual;
         private Animator _animator;
@@ -32,9 +37,23 @@ namespace CheatOnYourDayOnes.Player
         private Transform _leftToe;
         private Transform _rightToe;
         private float _boneToSoleDistance;
+        private float _actionRadiusScale = 1f;
         private float _nextGroundCheck;
         private float _pendingCorrection;
         private bool _prepared;
+        private bool _wasActionGrounding;
+
+        private readonly struct ActionContactBone
+        {
+            public readonly Transform transform;
+            public readonly float radius;
+
+            public ActionContactBone(Transform transform, float radius)
+            {
+                this.transform = transform;
+                this.radius = radius;
+            }
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void InstallOnLocalPlayer() => RuntimeInstaller.EnsureExists();
@@ -43,6 +62,7 @@ namespace CheatOnYourDayOnes.Player
         {
             _controller = GetComponent<CharacterController>();
             _movement = GetComponent<NetworkPlayerController>();
+            _actions = GetComponent<global::MeleeAnimationBridge>();
         }
 
         private void LateUpdate()
@@ -69,7 +89,31 @@ namespace CheatOnYourDayOnes.Player
             if (!_prepared) PrepareCurrentVisual();
             if (!_prepared) return;
 
+            if (_actions == null) _actions = GetComponent<global::MeleeAnimationBridge>();
+            bool actionGrounding = _actions != null && _actions.IsActionGroundingActive;
+            if (actionGrounding != _wasActionGrounding)
+            {
+                _wasActionGrounding = actionGrounding;
+                _pendingCorrection = 0f;
+                _nextGroundCheck = 0f;
+            }
+
             bool grounded = _movement != null ? _movement.IsGrounded : _controller != null && _controller.isGrounded;
+            if (actionGrounding && grounded)
+            {
+                // Roll and RunKick are authored with large hip translations. Read the evaluated
+                // skeleton every rendered frame and place its lowest physical body surface directly
+                // on the world surface. Keeping this active through the locomotion cross-fade avoids
+                // the former end-of-animation height pop.
+                _pendingCorrection = 0f;
+                if (TryFindWorldGround(out float actionGroundY) && TryGetActionContactSurfaceY(out float bodySurfaceY))
+                {
+                    float actionCorrection = (actionGroundY - actionBodySink) - bodySurfaceY;
+                    _visualRoot.position += Vector3.up * Mathf.Clamp(actionCorrection, -1.25f, 1.25f);
+                }
+                return;
+            }
+
             if (!grounded)
             {
                 _pendingCorrection = 0f;
@@ -125,6 +169,7 @@ namespace CheatOnYourDayOnes.Player
             // ankle pivots therefore use separate anatomical offsets instead.
             bool hasToeReference = _leftToe != null || _rightToe != null;
             _boneToSoleDistance = hasToeReference ? toeToSoleDistance : footToSoleDistance;
+            PrepareActionContactBones();
 
             _prepared = true;
         }
@@ -155,6 +200,69 @@ namespace CheatOnYourDayOnes.Player
             }
 
             _pendingCorrection = Mathf.Clamp(correction, -maxCorrectionPerPass, maxCorrectionPerPass);
+        }
+
+        private void PrepareActionContactBones()
+        {
+            _actionContactBones.Clear();
+            float highest = float.NegativeInfinity;
+            float lowest = float.PositiveInfinity;
+
+            foreach (Transform candidate in _animatedVisual.GetComponentsInChildren<Transform>(true))
+            {
+                string name = Normalize(candidate.name);
+                float radius = GetActionContactRadius(name);
+                if (radius <= 0f) continue;
+                _actionContactBones.Add(new ActionContactBone(candidate, radius));
+                highest = Mathf.Max(highest, candidate.position.y);
+                lowest = Mathf.Min(lowest, candidate.position.y);
+            }
+
+            if (_actionContactBones.Count > 0 && highest > lowest)
+                _actionRadiusScale = Mathf.Clamp((highest - lowest) / 1.55f, .65f, 1.6f);
+            else
+                _actionRadiusScale = 1f;
+        }
+
+        private float GetActionContactRadius(string name)
+        {
+            if (EndsWithAny(name, "lefttoebase", "righttoebase", "lefttoe", "righttoe", "ltoe", "rtoe"))
+                return toeToSoleDistance;
+            if (EndsWithAny(name, "leftfoot", "rightfoot", "lfoot", "rfoot", "footl", "footr"))
+                return footToSoleDistance;
+            if (EndsWithAny(name, "head")) return .13f;
+            if (EndsWithAny(name, "hips", "spine", "spine1", "spine2", "chest", "upperchest")) return .14f;
+            if (EndsWithAny(name, "neck")) return .07f;
+            if (EndsWithAny(name, "leftshoulder", "rightshoulder", "lshoulder", "rshoulder")) return .09f;
+            if (EndsWithAny(name, "leftarm", "rightarm", "larm", "rarm")) return .075f;
+            if (EndsWithAny(name, "leftforearm", "rightforearm", "lforearm", "rforearm")) return .06f;
+            if (EndsWithAny(name, "lefthand", "righthand", "lhand", "rhand")) return .05f;
+            if (EndsWithAny(name, "leftupleg", "rightupleg", "lupleg", "rupleg", "leftthigh", "rightthigh")) return .10f;
+            if (EndsWithAny(name, "leftleg", "rightleg", "lleg", "rleg", "leftcalf", "rightcalf")) return .07f;
+            return 0f;
+        }
+
+        private bool TryGetActionContactSurfaceY(out float surfaceY)
+        {
+            surfaceY = float.PositiveInfinity;
+            bool found = false;
+            foreach (ActionContactBone contact in _actionContactBones)
+            {
+                if (contact.transform == null) continue;
+                float radius = contact.radius == toeToSoleDistance || contact.radius == footToSoleDistance
+                    ? contact.radius
+                    : contact.radius * _actionRadiusScale;
+                surfaceY = Mathf.Min(surfaceY, contact.transform.position.y - radius);
+                found = true;
+            }
+            return found;
+        }
+
+        private static bool EndsWithAny(string value, params string[] suffixes)
+        {
+            foreach (string suffix in suffixes)
+                if (value.EndsWith(suffix)) return true;
+            return false;
         }
 
         private bool TryGetFootReferenceY(out float footY)

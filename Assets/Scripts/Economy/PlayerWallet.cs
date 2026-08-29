@@ -96,6 +96,14 @@ namespace CheatOnYourDayOnes.Economy
             Cash.Value += amount;
         }
 
+        [Rpc(SendTo.Server)]
+        public void RequestPoliceFineRpc(long amount)
+        {
+            if (amount <= 0 || Cash.Value < amount) return;
+            Cash.Value -= amount;
+            Debug.Log($"[Wallet] Client {OwnerClientId} paid a police fine of ${amount}.");
+        }
+
         private void HandleCashChanged(long previous, long current) => WalletChanged?.Invoke(current, Bank.Value);
         private void HandleBankChanged(long previous, long current) => WalletChanged?.Invoke(Cash.Value, current);
     }

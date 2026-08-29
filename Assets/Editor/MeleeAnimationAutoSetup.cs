@@ -31,7 +31,9 @@ namespace CheatOnYourDayOnes.EditorTools
             ("Hit2", "Hit2.fbx"),
             ("HeavyHit", "HeavyHit.fbx"),
             ("Knockdown", "Knockdown.fbx"),
-            ("GetUp", "GetUp.fbx")
+            ("GetUp", "GetUp.fbx"),
+            ("Dying", "Dying.fbx"),
+            ("PoliceCall", "policecall.fbx")
         };
 
         private static double nextAttempt;

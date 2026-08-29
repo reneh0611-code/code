@@ -116,6 +116,39 @@ namespace CheatOnYourDayOnes.Inventory
             return remaining == 0;
         }
 
+        public bool ContainsPoliceContraband()
+        {
+            foreach (NetworkInventorySlot slot in Slots)
+                if (IsPoliceContraband(slot.ItemId.ToString())) return true;
+            return false;
+        }
+
+        public bool ConfiscatePoliceContrabandServer()
+        {
+            if (!IsServer) return false;
+            bool removed = false;
+            for (int i = Slots.Count - 1; i >= 0; i--)
+            {
+                if (!IsPoliceContraband(Slots[i].ItemId.ToString())) continue;
+                Slots.RemoveAt(i);
+                removed = true;
+            }
+            return removed;
+        }
+
+        [Rpc(SendTo.Server)]
+        public void RequestPoliceConfiscationRpc() => ConfiscatePoliceContrabandServer();
+
+        private static bool IsPoliceContraband(string itemId)
+        {
+            if (string.IsNullOrWhiteSpace(itemId)) return false;
+            string normalized = itemId.ToLowerInvariant();
+            return normalized.Contains("weapon") || normalized.Contains("gun") ||
+                   normalized.Contains("pistol") || normalized.Contains("rifle") ||
+                   normalized.Contains("shotgun") || normalized.Contains("taser") ||
+                   normalized.Contains("knife");
+        }
+
         private void HandleListChanged(NetworkListEvent<NetworkInventorySlot> changeEvent)
         {
             InventoryChanged?.Invoke();
