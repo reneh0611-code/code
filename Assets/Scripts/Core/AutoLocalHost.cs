@@ -10,6 +10,10 @@ namespace CheatOnYourDayOnes.Core
         [SerializeField] private bool autoStartHost = true;
         [SerializeField, Min(1f)] private float terrainEdgeMargin = 10f;
 
+        [Header("Preferred spawn")]
+        [SerializeField] private string preferredSpawnBuildingName = "CONVENIENCE STORE - READY";
+        [SerializeField, Min(.5f)] private float entranceSpawnDistance = 2.2f;
+
         private IEnumerator Start()
         {
             yield return null;
@@ -39,22 +43,120 @@ namespace CheatOnYourDayOnes.Core
             CharacterController controller = player.GetComponent<CharacterController>();
             for (int i = 0; i < 120; i++)
             {
-                bool foundCenter = TryFindFlatTerrainCenterSpawn(controller, terrainEdgeMargin, out Vector3 safePosition);
-                if (foundCenter || TryFindSafeTerrainSpawn(player.transform.position, controller, terrainEdgeMargin, out safePosition))
+                bool foundPreferredSpawn = TryFindPreferredBuildingSpawn(
+                    controller,
+                    out Vector3 safePosition,
+                    out Quaternion spawnRotation);
+                bool foundCenter = !foundPreferredSpawn &&
+                                   TryFindFlatTerrainCenterSpawn(controller, terrainEdgeMargin, out safePosition);
+                if (foundPreferredSpawn || foundCenter ||
+                    TryFindSafeTerrainSpawn(player.transform.position, controller, terrainEdgeMargin, out safePosition))
                 {
                     NetworkPlayerController movement = player.GetComponent<NetworkPlayerController>();
                     if (movement != null)
-                        movement.TeleportServerAuthoritative(safePosition);
+                        movement.TeleportServerAuthoritative(
+                            safePosition,
+                            foundPreferredSpawn ? spawnRotation : player.transform.rotation);
                     else
+                    {
                         TeleportTransform(player.transform, controller, safePosition);
+                        if (foundPreferredSpawn) player.transform.rotation = spawnRotation;
+                    }
 
-                    Debug.Log($"[CYDOY AUTO] Local player safely placed on terrain at {safePosition}.");
+                    string spawnDescription = foundPreferredSpawn
+                        ? $"in front of {preferredSpawnBuildingName}"
+                        : "on terrain";
+                    Debug.Log($"[CYDOY AUTO] Local player safely placed {spawnDescription} at {safePosition}.");
                     yield break;
                 }
                 yield return null;
             }
 
             Debug.LogError("[CYDOY AUTO] No active terrain collider was available for safe player placement.");
+        }
+
+        private bool TryFindPreferredBuildingSpawn(
+            CharacterController controller,
+            out Vector3 safePosition,
+            out Quaternion spawnRotation)
+        {
+            safePosition = default;
+            spawnRotation = Quaternion.identity;
+
+            // A manually placed marker always wins. This makes future fine tuning possible by
+            // moving an empty GameObject named PlayerSpawn without touching this script again.
+            GameObject marker = GameObject.Find("PlayerSpawn");
+            if (marker != null)
+            {
+                spawnRotation = Quaternion.Euler(0f, marker.transform.eulerAngles.y, 0f);
+                return TryFindSafeTerrainSpawn(marker.transform.position, controller, 1f, out safePosition);
+            }
+
+            if (string.IsNullOrWhiteSpace(preferredSpawnBuildingName)) return false;
+            GameObject building = GameObject.Find(preferredSpawnBuildingName);
+            if (building == null) return false;
+
+            Renderer[] renderers = building.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0) return false;
+
+            Bounds buildingBounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+                buildingBounds.Encapsulate(renderers[i].bounds);
+
+            Renderer entranceAnchor = FindEntranceAnchor(renderers);
+            Vector3 anchorPosition = entranceAnchor != null
+                ? entranceAnchor.bounds.center
+                : buildingBounds.center + building.transform.forward * buildingBounds.extents.z;
+            Vector3 outward = anchorPosition - buildingBounds.center;
+            outward.y = 0f;
+            if (outward.sqrMagnitude < .01f)
+            {
+                outward = building.transform.forward;
+                outward.y = 0f;
+            }
+            outward.Normalize();
+
+            // The welcome mat/front-door mesh gives us the real entrance side, even after the
+            // prefab has been rotated. Place the player just beyond that mesh instead of using a
+            // hard-coded world coordinate.
+            float anchorExtent = 0f;
+            if (entranceAnchor != null)
+            {
+                Vector3 extents = entranceAnchor.bounds.extents;
+                anchorExtent = Mathf.Abs(outward.x) * extents.x + Mathf.Abs(outward.z) * extents.z;
+            }
+
+            Vector3 desiredPosition = anchorPosition + outward * (anchorExtent + entranceSpawnDistance);
+            if (!TryFindSafeTerrainSpawn(desiredPosition, controller, 1f, out safePosition)) return false;
+
+            Vector3 lookDirection = anchorPosition - safePosition;
+            lookDirection.y = 0f;
+            spawnRotation = lookDirection.sqrMagnitude > .01f
+                ? Quaternion.LookRotation(lookDirection.normalized, Vector3.up)
+                : Quaternion.Euler(0f, building.transform.eulerAngles.y + 180f, 0f);
+            return true;
+        }
+
+        private static Renderer FindEntranceAnchor(Renderer[] renderers)
+        {
+            Renderer best = null;
+            int bestScore = int.MaxValue;
+            foreach (Renderer candidate in renderers)
+            {
+                if (candidate == null) continue;
+                string candidateName = candidate.gameObject.name.ToLowerInvariant();
+                int score = int.MaxValue;
+                if (candidateName == "welcome_matt") score = 0;
+                else if (candidateName.StartsWith("welcome_matt")) score = 10;
+                else if (candidateName == "welcome") score = 20;
+                else if (candidateName.Contains("sliding_door")) score = 30;
+                else if (candidateName.Contains("front_sign") || candidateName == "mart") score = 40;
+
+                if (score >= bestScore) continue;
+                best = candidate;
+                bestScore = score;
+            }
+            return best;
         }
 
         public static bool TryFindFlatTerrainCenterSpawn(

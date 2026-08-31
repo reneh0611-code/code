@@ -497,11 +497,16 @@ namespace CheatOnYourDayOnes.Player
 
         public void TeleportServerAuthoritative(Vector3 position)
         {
+            TeleportServerAuthoritative(position, transform.rotation);
+        }
+
+        public void TeleportServerAuthoritative(Vector3 position, Quaternion rotation)
+        {
             if (!IsServer || _controller == null) return;
 
             bool wasEnabled = _controller.enabled;
             if (wasEnabled) _controller.enabled = false;
-            transform.position = position;
+            transform.SetPositionAndRotation(position, rotation);
             if (wasEnabled) _controller.enabled = true;
             Physics.SyncTransforms();
 
@@ -512,8 +517,9 @@ namespace CheatOnYourDayOnes.Player
             _serverJumpQueued = false;
             _grounded = true;
             _groundNormal = Vector3.up;
+            _serverCameraYaw = rotation.eulerAngles.y;
             _serverPosition.Value = position;
-            _serverRotation.Value = transform.rotation;
+            _serverRotation.Value = rotation;
             _serverGrounded.Value = true;
         }
 
