@@ -17,6 +17,7 @@ namespace CheatOnYourDayOnes.Interaction
 
         private PlayerAgent _player;
         private NetworkObject _currentTarget;
+        private IInteractable _currentLocalTarget;
 
         private void Awake()
         {
@@ -30,14 +31,26 @@ namespace CheatOnYourDayOnes.Interaction
 
             ScanForInteraction();
 
-            if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame && _currentTarget != null)
+            if (Keyboard.current == null || !Keyboard.current.eKey.wasPressedThisFrame)
+                return;
+
+            if (_currentTarget != null)
+            {
                 RequestInteractRpc(_currentTarget.NetworkObjectId);
+            }
+            else if (_currentLocalTarget != null && _currentLocalTarget.CanInteract(_player))
+            {
+                // Static scene interactables (doors, switches, etc.) do not need a
+                // NetworkObject. They are authoritative in the local/host world.
+                _currentLocalTarget.InteractServer(_player);
+            }
         }
 
         private void ScanForInteraction()
         {
             CurrentPrompt = string.Empty;
             _currentTarget = null;
+            _currentLocalTarget = null;
 
             Ray ray = new(playerCamera.transform.position, playerCamera.transform.forward);
 
@@ -45,14 +58,18 @@ namespace CheatOnYourDayOnes.Interaction
                 return;
 
             NetworkObject networkObject = hit.collider.GetComponentInParent<NetworkObject>();
-            if (networkObject == null)
-                return;
+            IInteractable interactable = networkObject != null
+                ? FindInteractable(networkObject.gameObject)
+                : FindInteractableInParents(hit.collider.transform);
 
-            IInteractable interactable = FindInteractable(networkObject.gameObject);
             if (interactable == null || !interactable.CanInteract(_player))
                 return;
 
-            _currentTarget = networkObject;
+            if (networkObject != null)
+                _currentTarget = networkObject;
+            else
+                _currentLocalTarget = interactable;
+
             CurrentPrompt = $"[E] {interactable.GetInteractionText(_player)}";
         }
 
@@ -83,6 +100,21 @@ namespace CheatOnYourDayOnes.Interaction
             {
                 if (behaviour is IInteractable interactable)
                     return interactable;
+            }
+
+            return null;
+        }
+
+        private static IInteractable FindInteractableInParents(Transform start)
+        {
+            for (Transform current = start; current != null; current = current.parent)
+            {
+                MonoBehaviour[] behaviours = current.GetComponents<MonoBehaviour>();
+                foreach (MonoBehaviour behaviour in behaviours)
+                {
+                    if (behaviour is IInteractable interactable)
+                        return interactable;
+                }
             }
 
             return null;
