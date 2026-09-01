@@ -13,6 +13,9 @@ namespace CheatOnYourDayOnes.Core
         [Header("Preferred spawn")]
         [SerializeField] private string preferredSpawnBuildingName = "CONVENIENCE STORE - READY";
         [SerializeField, Min(.5f)] private float entranceSpawnDistance = 2.2f;
+        [SerializeField] private bool useParkingSpawnFallback = true;
+        [SerializeField] private Vector3 parkingSpawnPosition = new(258.51f, .06f, 676.44f);
+        [SerializeField, Range(0f, 360f)] private float parkingSpawnYaw = 130f;
 
         private IEnumerator Start()
         {
@@ -64,7 +67,7 @@ namespace CheatOnYourDayOnes.Core
                     }
 
                     string spawnDescription = foundPreferredSpawn
-                        ? $"in front of {preferredSpawnBuildingName}"
+                        ? "on the building parking lot"
                         : "on terrain";
                     Debug.Log($"[CYDOY AUTO] Local player safely placed {spawnDescription} at {safePosition}.");
                     yield break;
@@ -90,6 +93,14 @@ namespace CheatOnYourDayOnes.Core
             {
                 spawnRotation = Quaternion.Euler(0f, marker.transform.eulerAngles.y, 0f);
                 return TryFindSafeTerrainSpawn(marker.transform.position, controller, 1f, out safePosition);
+            }
+
+            // Keep the intended world start stable even if the marker is accidentally
+            // removed while the modular building is being edited.
+            if (useParkingSpawnFallback)
+            {
+                spawnRotation = Quaternion.Euler(0f, parkingSpawnYaw, 0f);
+                return TryFindSafeTerrainSpawn(parkingSpawnPosition, controller, 1f, out safePosition);
             }
 
             if (string.IsNullOrWhiteSpace(preferredSpawnBuildingName)) return false;
@@ -224,6 +235,7 @@ namespace CheatOnYourDayOnes.Core
 
             if (bestTerrain == null) return false;
             float groundY = bestTerrain.SampleHeight(bestSample) + bestTerrain.transform.position.y;
+            groundY = FindWalkableSurfaceHeight(bestSample, groundY, controller);
             float bottomOffset = 0f;
             if (controller != null)
             {
@@ -279,6 +291,37 @@ namespace CheatOnYourDayOnes.Core
             // noticeable because the selected mesh is aligned to the controller root.
             safePosition = new Vector3(bestSample.x, groundY - bottomOffset + 0.012f, bestSample.z);
             return true;
+        }
+
+        private static float FindWalkableSurfaceHeight(
+            Vector3 sample,
+            float terrainHeight,
+            CharacterController controller)
+        {
+            // Roads and parking modules sit a few centimetres above the terrain.
+            // Prefer their actual upper surface so the controller never starts
+            // inside the asphalt, while ignoring roofs and other high geometry.
+            Vector3 origin = new(sample.x, terrainHeight + 2f, sample.z);
+            RaycastHit[] hits = Physics.RaycastAll(
+                origin,
+                Vector3.down,
+                3f,
+                Physics.AllLayers,
+                QueryTriggerInteraction.Ignore);
+
+            float highestWalkableY = terrainHeight;
+            foreach (RaycastHit hit in hits)
+            {
+                if (hit.collider == null || hit.normal.y < .65f) continue;
+                if (controller != null &&
+                    (hit.collider == controller || hit.collider.transform.IsChildOf(controller.transform)))
+                    continue;
+                if (hit.point.y < terrainHeight - .2f || hit.point.y > terrainHeight + 1.25f) continue;
+
+                highestWalkableY = Mathf.Max(highestWalkableY, hit.point.y);
+            }
+
+            return highestWalkableY;
         }
 
         private static void TeleportTransform(Transform player, CharacterController controller, Vector3 position)
