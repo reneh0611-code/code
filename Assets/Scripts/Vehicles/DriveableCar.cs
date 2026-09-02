@@ -16,7 +16,8 @@ namespace CheatOnYourDayOnes.Vehicles
         [SerializeField] private Transform driverSeat,exitPoint,centerOfMass;
         [Header("Map-scale vehicle handling")]
         [SerializeField] private float topSpeed=16.5f,reverseTopSpeed=5.2f,forwardAcceleration=2.7f,reverseAcceleration=2.05f,engineBraking=.72f,brakeAcceleration=10.8f;
-        [SerializeField] private float highSpeedSteerFactor=.42f,lateralGripLowSpeed=9.2f,lateralGripHighSpeed=3.6f,throttleResponse=2.25f,steeringResponse=5.4f;
+        [SerializeField] private float highSpeedSteerFactor=.42f,lateralGripLowSpeed=9.2f,lateralGripHighSpeed=3.6f,throttleResponse=2.25f,steeringResponse=1.65f;
+        [SerializeField] private float steeringReturnMultiplier=2.25f,highSpeedSteeringBuildMultiplier=.78f;
         [SerializeField] private float maximumRoadWheelAngle=34f,wheelBase=2.35f,maximumLateralAcceleration=7.2f,steeringYawAcceleration=165f;
         [SerializeField] private float smallBumpStability=18f,smallBumpHeightLimit=.11f;
         [Header("Wheel suspension")]
@@ -58,6 +59,7 @@ namespace CheatOnYourDayOnes.Vehicles
         public string VehicleLabel=>_vehicleLabel;
         public float EngineRpm=>_engineRpm;
         public float EngineRpm01=>Mathf.InverseLerp(900f,7200f,_engineRpm);
+        public float TopSpeedKmh=>topSpeed*3.6f;
         public int CurrentGear=>_currentGear;
         public bool IsDrifting=>_isDrifting;
         public float BodyHealth=>bodyHealth;
@@ -78,23 +80,23 @@ namespace CheatOnYourDayOnes.Vehicles
             string n=name.ToLowerInvariant();
             if(n.Contains("car 04")||n.Contains("taycan")||n.Contains("porsche"))
             {
-                _vehicleLabel="Porsche Taycan";_vehicleMass=2200f;topSpeed=41.67f;reverseTopSpeed=8.5f;maximumMotorTorque=2200f;serviceBrakeTorque=3400f;directionChangeBrakeTorque=3000f;maximumRoadWheelAngle=35f;wheelBase=2.62f;maximumLateralAcceleration=11.5f;aerodynamicDownforce=3.2f;
-                wheelSuspensionDistance=.105f;wheelSpring=52000f;wheelDamper=7800f;suspensionTargetPosition=.72f;antiRollForce=9000f;highSpeedSteerFactor=.18f;steeringResponse=9.5f;sidewaysTyreStiffness=2.1f;tractionControlSlip=.62f;tractionTorqueFloor=.58f;crashResistance=.92f;
+                _vehicleLabel="Porsche Taycan";_vehicleMass=2200f;topSpeed=40.28f;reverseTopSpeed=8.5f;maximumMotorTorque=2200f;serviceBrakeTorque=3400f;directionChangeBrakeTorque=3000f;maximumRoadWheelAngle=35f;wheelBase=2.62f;maximumLateralAcceleration=12.4f;aerodynamicDownforce=3.2f;
+                wheelSuspensionDistance=.105f;wheelSpring=52000f;wheelDamper=7800f;suspensionTargetPosition=.72f;antiRollForce=9000f;highSpeedSteerFactor=.34f;steeringResponse=1.75f;sidewaysTyreStiffness=2.2f;tractionControlSlip=.62f;tractionTorqueFloor=.58f;crashResistance=.92f;
             }
             else if(n.Contains("car 02")||n.Contains("g-class")||n.Contains("g klasse")||n.Contains("g-klasse"))
             {
-                _vehicleLabel="G-Klasse";_vehicleMass=2450f;topSpeed=33.33f;reverseTopSpeed=6.5f;maximumMotorTorque=650f;serviceBrakeTorque=2900f;directionChangeBrakeTorque=2600f;maximumRoadWheelAngle=40f;wheelBase=2.48f;maximumLateralAcceleration=8f;aerodynamicDownforce=1.2f;
-                wheelSuspensionDistance=.20f;wheelSpring=36000f;wheelDamper=6200f;suspensionTargetPosition=.72f;antiRollForce=5200f;highSpeedSteerFactor=.22f;steeringResponse=8f;sidewaysTyreStiffness=1.85f;crashResistance=1.3f;
+                _vehicleLabel="G-Klasse";_vehicleMass=2450f;topSpeed=30.56f;reverseTopSpeed=6.5f;maximumMotorTorque=650f;serviceBrakeTorque=2900f;directionChangeBrakeTorque=2600f;maximumRoadWheelAngle=40f;wheelBase=2.48f;maximumLateralAcceleration=9.1f;aerodynamicDownforce=1.2f;
+                wheelSuspensionDistance=.20f;wheelSpring=36000f;wheelDamper=6200f;suspensionTargetPosition=.72f;antiRollForce=5200f;highSpeedSteerFactor=.38f;steeringResponse=1.55f;sidewaysTyreStiffness=1.95f;crashResistance=1.3f;
             }
-            else if(n.Contains("car 03")||n.Contains("skyline")||n.Contains("nissan"))
+            else if(n.Contains("car 01")||n.Contains("skyline")||n.Contains("nissan"))
             {
-                _vehicleLabel="Nissan Skyline";_vehicleMass=1560f;topSpeed=40.28f;reverseTopSpeed=8f;maximumMotorTorque=850f;serviceBrakeTorque=3000f;directionChangeBrakeTorque=2700f;maximumRoadWheelAngle=39f;wheelBase=2.42f;maximumLateralAcceleration=11f;aerodynamicDownforce=3f;
-                wheelSuspensionDistance=.115f;wheelSpring=49000f;wheelDamper=7200f;suspensionTargetPosition=.69f;antiRollForce=8500f;highSpeedSteerFactor=.2f;steeringResponse=9.2f;sidewaysTyreStiffness=2.05f;crashResistance=.88f;
+                _vehicleLabel="Nissan Skyline";_vehicleMass=1560f;topSpeed=41.67f;reverseTopSpeed=8f;maximumMotorTorque=850f;serviceBrakeTorque=3000f;directionChangeBrakeTorque=2700f;maximumRoadWheelAngle=39f;wheelBase=2.42f;maximumLateralAcceleration=12.1f;aerodynamicDownforce=3f;
+                wheelSuspensionDistance=.115f;wheelSpring=49000f;wheelDamper=7200f;suspensionTargetPosition=.69f;antiRollForce=8500f;highSpeedSteerFactor=.36f;steeringResponse=1.85f;sidewaysTyreStiffness=2.18f;crashResistance=.88f;
             }
-            else if(n.Contains("car 01")||n.Contains("cybertruck")||n.Contains("cyber truck"))
+            else if(n.Contains("car 03")||n.Contains("cybertruck")||n.Contains("cyber truck"))
             {
-                _vehicleLabel="Cybertruck";_vehicleMass=3000f;topSpeed=36.11f;reverseTopSpeed=7f;maximumMotorTorque=1050f;serviceBrakeTorque=3200f;directionChangeBrakeTorque=2850f;maximumRoadWheelAngle=34f;wheelBase=2.72f;maximumLateralAcceleration=8.5f;aerodynamicDownforce=1.7f;
-                wheelSuspensionDistance=.18f;wheelSpring=38000f;wheelDamper=6500f;suspensionTargetPosition=.57f;antiRollForce=6500f;highSpeedSteerFactor=.2f;steeringResponse=7.8f;sidewaysTyreStiffness=1.9f;crashResistance=1.5f;
+                _vehicleLabel="Cybertruck";_vehicleMass=3000f;topSpeed=34.72f;reverseTopSpeed=7f;maximumMotorTorque=1050f;serviceBrakeTorque=3200f;directionChangeBrakeTorque=2850f;maximumRoadWheelAngle=34f;wheelBase=2.72f;maximumLateralAcceleration=9.5f;aerodynamicDownforce=1.7f;
+                wheelSuspensionDistance=.18f;wheelSpring=38000f;wheelDamper=6500f;suspensionTargetPosition=.57f;antiRollForce=6500f;highSpeedSteerFactor=.34f;steeringResponse=1.45f;sidewaysTyreStiffness=2f;crashResistance=1.5f;
             }
         }
         private void MakeWheelMaterialsDoubleSided()
@@ -145,7 +147,16 @@ namespace CheatOnYourDayOnes.Vehicles
             _modelScale=Mathf.Clamp(length/4.5f,.5f,3);
         }
         private static bool LooksLikeWheelName(string n)=>n.Contains("wheel")||n.Contains("tire")||n.Contains("tyre")||n.Contains("reifen")||n.Contains("felge")||n.Contains("rim")||n.Contains("roue")||n.Contains("rad_");
-        private void Update(){if(!_occupied||Keyboard.current==null)return;_rawThrottle=(Keyboard.current.wKey.isPressed?1f:0f)-(Keyboard.current.sKey.isPressed?1f:0f);_rawSteer=(Keyboard.current.dKey.isPressed?1f:0f)-(Keyboard.current.aKey.isPressed?1f:0f);_brake=Keyboard.current.spaceKey.isPressed;_throttle=Mathf.MoveTowards(_throttle,_rawThrottle,throttleResponse*Time.deltaTime);_steer=Mathf.MoveTowards(_steer,_rawSteer,steeringResponse*Time.deltaTime);if(_ignoreExitUntilEReleased){if(!Keyboard.current.eKey.isPressed)_ignoreExitUntilEReleased=false;}else if(Keyboard.current.eKey.wasPressedThisFrame)Exit();}
+        private void Update(){if(!_occupied||Keyboard.current==null)return;_rawThrottle=(Keyboard.current.wKey.isPressed?1f:0f)-(Keyboard.current.sKey.isPressed?1f:0f);_rawSteer=(Keyboard.current.dKey.isPressed?1f:0f)-(Keyboard.current.aKey.isPressed?1f:0f);_brake=Keyboard.current.spaceKey.isPressed;_throttle=Mathf.MoveTowards(_throttle,_rawThrottle,throttleResponse*Time.deltaTime);UpdateProgressiveSteering(Time.deltaTime);if(_ignoreExitUntilEReleased){if(!Keyboard.current.eKey.isPressed)_ignoreExitUntilEReleased=false;}else if(Keyboard.current.eKey.wasPressedThisFrame)Exit();}
+        private void UpdateProgressiveSteering(float dt)
+        {
+            if(Mathf.Abs(_rawSteer)<.01f){_steer=Mathf.MoveTowards(_steer,0f,steeringResponse*steeringReturnMultiplier*dt);return;}
+            bool reversingSteering=Mathf.Abs(_steer)>.01f&&Mathf.Sign(_steer)!=Mathf.Sign(_rawSteer);
+            float speed01=Mathf.Clamp01(SpeedKmh/Mathf.Max(1f,TopSpeedKmh));
+            float buildRate=steeringResponse*Mathf.Lerp(1f,highSpeedSteeringBuildMultiplier,speed01);
+            if(reversingSteering)buildRate*=steeringReturnMultiplier;
+            _steer=Mathf.MoveTowards(_steer,_rawSteer,buildRate*dt);
+        }
         private void FixedUpdate()
         {
             float dt=Time.fixedDeltaTime;
@@ -229,7 +240,8 @@ namespace CheatOnYourDayOnes.Vehicles
             if(Mathf.Abs(forwardSpeed)>3f)
             {
                 float safeAngle=Mathf.Atan(maximumLateralAcceleration*wheelBase/Mathf.Max(1f,forwardSpeed*forwardSpeed))*Mathf.Rad2Deg*2.45f;
-                requestedWheelAngle=Mathf.Min(requestedWheelAngle,Mathf.Max(3.2f,safeAngle));
+                float minimumUsefulAngle=maximumRoadWheelAngle*highSpeedSteerFactor;
+                requestedWheelAngle=Mathf.Min(requestedWheelAngle,Mathf.Max(minimumUsefulAngle,safeAngle));
             }
             float roadWheelAngle=_steer*requestedWheelAngle;
             _visualSteeringInput=maximumRoadWheelAngle>.01f?roadWheelAngle/maximumRoadWheelAngle:0f;
@@ -282,11 +294,22 @@ namespace CheatOnYourDayOnes.Vehicles
                 JointSpring damagedSpring=wheel.collider.suspensionSpring;damagedSpring.spring=wheelSpring*Mathf.Lerp(.58f,1f,wheelHealth01);damagedSpring.damper=wheelDamper*Mathf.Lerp(.68f,1f,wheelHealth01);wheel.collider.suspensionSpring=damagedSpring;
             }
             _rb.AddForce(-transform.up*(aerodynamicDownforce*Mathf.Abs(forwardSpeed)*Mathf.Abs(forwardSpeed)),ForceMode.Force);
+            LimitLongitudinalSpeed(effectiveTopSpeed);
             ApplyAntiRoll(true);ApplyAntiRoll(false);
             if(!_occupied)return;
             DetectNPCHits();DetectNPCOverrun();
             _debugTimer+=dt;
             if(_debugTimer>=1f&&Mathf.Abs(_rawThrottle)>.1f){_debugTimer=0;Debug.Log($"[CYDOY] CAR speed={SpeedKmh:F1}km/h throttle={_throttle:F2} wheelAngle={roadWheelAngle:F1}",this);}
+        }
+
+        private void LimitLongitudinalSpeed(float effectiveTopSpeed)
+        {
+            if(_rb==null||effectiveTopSpeed<=0f)return;
+            Vector3 localVelocity=transform.InverseTransformDirection(_rb.linearVelocity);
+            float allowedForward=effectiveTopSpeed*1.015f;
+            if(localVelocity.z>allowedForward)localVelocity.z=allowedForward;
+            else if(localVelocity.z<-reverseTopSpeed*1.015f)localVelocity.z=-reverseTopSpeed*1.015f;
+            _rb.linearVelocity=transform.TransformDirection(localVelocity);
         }
 
         private void UpdateDrivetrainTelemetry(float forwardSpeed,float dt)
@@ -473,13 +496,13 @@ namespace CheatOnYourDayOnes.Vehicles
             GameObject smoke=new("Engine Damage Smoke");smoke.transform.SetParent(transform,false);
             Vector3 smokePosition=_chassisCollider!=null?_chassisCollider.center+new Vector3(0f,_chassisCollider.size.y*.48f,_chassisCollider.size.z*.3f):new Vector3(0f,.8f,1f);smoke.transform.localPosition=smokePosition;
             _damageSmoke=smoke.AddComponent<ParticleSystem>();
-            ParticleSystem.MainModule smokeMain=_damageSmoke.main;smokeMain.playOnAwake=false;smokeMain.loop=true;smokeMain.startLifetime=new ParticleSystem.MinMaxCurve(1.35f,2.7f);smokeMain.startSpeed=new ParticleSystem.MinMaxCurve(.16f,.48f);smokeMain.startSize=new ParticleSystem.MinMaxCurve(.26f,.62f);smokeMain.startRotation=new ParticleSystem.MinMaxCurve(0f,Mathf.PI*2f);smokeMain.startColor=new ParticleSystem.MinMaxGradient(new Color(.16f,.16f,.16f,.5f),new Color(.48f,.48f,.48f,.24f));smokeMain.simulationSpace=ParticleSystemSimulationSpace.World;smokeMain.maxParticles=90;
+            ParticleSystem.MainModule smokeMain=_damageSmoke.main;smokeMain.playOnAwake=false;smokeMain.loop=true;smokeMain.startLifetime=new ParticleSystem.MinMaxCurve(2.1f,3.8f);smokeMain.startSpeed=new ParticleSystem.MinMaxCurve(.06f,.18f);smokeMain.startSize=new ParticleSystem.MinMaxCurve(.18f,.38f);smokeMain.startRotation=new ParticleSystem.MinMaxCurve(0f,Mathf.PI*2f);smokeMain.startColor=new ParticleSystem.MinMaxGradient(new Color(.18f,.18f,.18f,.38f),new Color(.46f,.46f,.46f,.19f));smokeMain.simulationSpace=ParticleSystemSimulationSpace.World;smokeMain.maxParticles=70;
             ParticleSystem.EmissionModule smokeEmission=_damageSmoke.emission;smokeEmission.rateOverTime=0f;_damageSmoke.Stop(true,ParticleSystemStopBehavior.StopEmittingAndClear);
             ParticleSystem.ShapeModule smokeShape=_damageSmoke.shape;smokeShape.shapeType=ParticleSystemShapeType.Cone;smokeShape.angle=10f;smokeShape.radius=.08f*_modelScale;
-            ParticleSystem.SizeOverLifetimeModule smokeSize=_damageSmoke.sizeOverLifetime;smokeSize.enabled=true;smokeSize.size=new ParticleSystem.MinMaxCurve(1f,new AnimationCurve(new Keyframe(0f,.48f),new Keyframe(.3f,.9f),new Keyframe(1f,1.55f)));
+            ParticleSystem.SizeOverLifetimeModule smokeSize=_damageSmoke.sizeOverLifetime;smokeSize.enabled=true;smokeSize.size=new ParticleSystem.MinMaxCurve(1f,new AnimationCurve(new Keyframe(0f,.35f),new Keyframe(.24f,.78f),new Keyframe(1f,1.65f)));
             ParticleSystem.ColorOverLifetimeModule smokeColor=_damageSmoke.colorOverLifetime;smokeColor.enabled=true;Gradient smokeGradient=new();smokeGradient.SetKeys(new[]{new GradientColorKey(Color.white,0f),new GradientColorKey(new Color(.72f,.72f,.72f),1f)},new[]{new GradientAlphaKey(0f,0f),new GradientAlphaKey(.68f,.16f),new GradientAlphaKey(.38f,.64f),new GradientAlphaKey(0f,1f)});smokeColor.color=smokeGradient;
-            ParticleSystem.NoiseModule smokeNoise=_damageSmoke.noise;smokeNoise.enabled=true;smokeNoise.strength=new ParticleSystem.MinMaxCurve(.045f,.13f);smokeNoise.frequency=.28f;smokeNoise.scrollSpeed=.18f;smokeNoise.quality=ParticleSystemNoiseQuality.High;
-            ParticleSystem.VelocityOverLifetimeModule smokeVelocity=_damageSmoke.velocityOverLifetime;smokeVelocity.enabled=true;smokeVelocity.space=ParticleSystemSimulationSpace.World;smokeVelocity.y=new ParticleSystem.MinMaxCurve(.08f,.24f);
+            ParticleSystem.NoiseModule smokeNoise=_damageSmoke.noise;smokeNoise.enabled=true;smokeNoise.strength=new ParticleSystem.MinMaxCurve(.035f,.105f);smokeNoise.frequency=.22f;smokeNoise.scrollSpeed=.14f;smokeNoise.quality=ParticleSystemNoiseQuality.High;
+            ParticleSystem.VelocityOverLifetimeModule smokeVelocity=_damageSmoke.velocityOverLifetime;smokeVelocity.enabled=true;smokeVelocity.space=ParticleSystemSimulationSpace.World;smokeVelocity.x=new ParticleSystem.MinMaxCurve(0f);smokeVelocity.y=new ParticleSystem.MinMaxCurve(.18f);smokeVelocity.z=new ParticleSystem.MinMaxCurve(0f);
             ParticleSystemRenderer smokeRenderer=smoke.GetComponent<ParticleSystemRenderer>();smokeRenderer.renderMode=ParticleSystemRenderMode.Billboard;smokeRenderer.sharedMaterial=CreateParticleMaterial("CYDOY Engine Smoke",true);if(smokeRenderer.sharedMaterial==null)smokeRenderer.enabled=false;
         }
 
@@ -489,11 +512,15 @@ namespace CheatOnYourDayOnes.Vehicles
             if(shader==null)shader=Shader.Find("Particles/Standard Unlit");
             if(shader==null)return null;
             Material material=new(shader){name=materialName,renderQueue=3000};
-            material.SetOverrideTag("RenderType","Transparent");material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.SetOverrideTag("RenderType","Transparent");material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");material.EnableKeyword("_ALPHABLEND_ON");material.DisableKeyword("_ALPHATEST_ON");material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
             if(material.HasProperty("_Surface"))material.SetFloat("_Surface",1f);
+            if(material.HasProperty("_Blend"))material.SetFloat("_Blend",0f);
+            if(material.HasProperty("_AlphaClip"))material.SetFloat("_AlphaClip",0f);
             if(material.HasProperty("_ZWrite"))material.SetFloat("_ZWrite",0f);
             if(material.HasProperty("_SrcBlend"))material.SetFloat("_SrcBlend",(float)UnityEngine.Rendering.BlendMode.SrcAlpha);
             if(material.HasProperty("_DstBlend"))material.SetFloat("_DstBlend",(float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if(material.HasProperty("_SrcBlendAlpha"))material.SetFloat("_SrcBlendAlpha",(float)UnityEngine.Rendering.BlendMode.One);
+            if(material.HasProperty("_DstBlendAlpha"))material.SetFloat("_DstBlendAlpha",(float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
             if(material.HasProperty("_BaseColor"))material.SetColor("_BaseColor",Color.white);
             Texture2D texture=smoke?Resources.Load<Texture2D>("VFX/CleanEngineSmoke"):CreateSoftParticleTexture(24,false);
             if(texture==null)texture=CreateSoftParticleTexture(smoke?64:24,smoke);

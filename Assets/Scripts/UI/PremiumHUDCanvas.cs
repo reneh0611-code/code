@@ -30,8 +30,8 @@ namespace CheatOnYourDayOnes.UI
         private CorpseCarryController _corpseCarry;
         private global::MeleeAnimationBridge _melee;
         private Text _cash,_bank,_aura,_clock,_day,_interactionKeyText,_interactionText,_healthValue,_hungerValue,_energyValue,_staminaValue,_speedText,_rpmText,_gearText,_driftText,_vehicleConditionText;
-        private Image _healthFill,_hungerFill,_energyFill,_staminaFill,_needle,_reticleRing,_reticleDot,_rpmFill,_vehicleConditionFill;
-        private GameObject _interactionRoot,_tachoRoot,_reticleRoot;
+        private Image _healthFill,_hungerFill,_energyFill,_staminaFill,_needle,_rpmNeedle,_reticleRing,_reticleDot,_vehicleConditionFill;
+        private GameObject _interactionRoot,_tachoRoot,_vehicleHealthRoot,_reticleRoot;
         private DriveableCar _occupiedCar;
         private float _nextHudRefresh;
 
@@ -51,12 +51,20 @@ namespace CheatOnYourDayOnes.UI
                 bool onFoot=_occupiedCar==null;string prompt=null;string interactionKey="E";
                 if(onFoot&&_corpseCarry!=null&&(_corpseCarry.HasCarriedBody||_corpseCarry.CanPickupBody)){prompt=_corpseCarry.HasCarriedBody?"Körper loslassen":"Körper ziehen";interactionKey="G";}else if(onFoot&&_vehicleInteractor!=null&&_vehicleInteractor.enabled&&_vehicleInteractor.CanEnterVehicle)prompt="Fahren";else if(onFoot&&_interactor!=null&&_interactor.enabled&&!string.IsNullOrWhiteSpace(_interactor.CurrentPrompt))prompt=CleanPrompt(_interactor.CurrentPrompt);
                 _interactionRoot.SetActive(onFoot&&!string.IsNullOrWhiteSpace(prompt));if(_interactionRoot.activeSelf){_interactionKeyText.text=interactionKey;_interactionText.text=prompt;}
-                _tachoRoot.SetActive(_occupiedCar!=null);
+                _tachoRoot.SetActive(_occupiedCar!=null);_vehicleHealthRoot.SetActive(_occupiedCar!=null);
                 bool showReticle=onFoot&&_movement!=null;_reticleRoot.SetActive(showReticle);
                 if(showReticle){bool locked=_melee!=null&&_melee.HasStrikeTarget;Color c=locked?Green:new Color(White.r,White.g,White.b,.82f);_reticleRing.color=c;_reticleDot.color=locked?Green:White;}
             }
 
-            if(_occupiedCar!=null){float kmh=_occupiedCar.SpeedKmh;string speed=Mathf.RoundToInt(kmh).ToString();if(_speedText.text!=speed)_speedText.text=speed;float angle=Mathf.Lerp(-130f,130f,Mathf.Clamp01(kmh/160f));_needle.rectTransform.localRotation=Quaternion.Euler(0,0,-angle);_rpmText.text=$"RPM  {Mathf.RoundToInt(_occupiedCar.EngineRpm/100f)*100}";_rpmFill.fillAmount=_occupiedCar.EngineRpm01;_gearText.text=_occupiedCar.CurrentGear<0?"R":"D"+_occupiedCar.CurrentGear;_driftText.gameObject.SetActive(_occupiedCar.IsDrifting);float condition=_occupiedCar.VehicleCondition01;_vehicleConditionFill.fillAmount=condition;Color conditionColor=condition>.6f?Green:condition>.3f?Orange:Red;_vehicleConditionFill.color=conditionColor;_vehicleConditionText.color=conditionColor;_vehicleConditionText.text=_occupiedCar.IsVehicleDisabled?"MOTOR DEFEKT":$"FAHRZEUG  {Mathf.RoundToInt(condition*100f)}%";}
+            if(_occupiedCar!=null)
+            {
+                float kmh=_occupiedCar.SpeedKmh;string speed=Mathf.RoundToInt(kmh).ToString();if(_speedText.text!=speed)_speedText.text=speed;
+                float speedAngle=Mathf.Lerp(-130f,130f,Mathf.Clamp01(kmh/160f));_needle.rectTransform.localRotation=Quaternion.Euler(0,0,-speedAngle);
+                float rpm=_occupiedCar.EngineRpm;_rpmText.text=(rpm/1000f).ToString("0.0");float rpmAngle=Mathf.Lerp(-130f,130f,Mathf.Clamp01(rpm/8000f));_rpmNeedle.rectTransform.localRotation=Quaternion.Euler(0,0,-rpmAngle);
+                _gearText.text=_occupiedCar.CurrentGear<0?"R":"D"+_occupiedCar.CurrentGear;_driftText.gameObject.SetActive(_occupiedCar.IsDrifting);
+                float condition=_occupiedCar.VehicleCondition01;_vehicleConditionFill.fillAmount=condition;Color conditionColor=condition>.6f?Green:condition>.3f?Orange:Red;_vehicleConditionFill.color=conditionColor;_vehicleConditionText.color=conditionColor;
+                _vehicleConditionText.text=_occupiedCar.IsVehicleDisabled?"TOTALSCHADEN":$"{_occupiedCar.VehicleLabel.ToUpperInvariant()}   {Mathf.RoundToInt(condition*100f)}%";
+            }
             if(_reticleRoot.activeSelf){float pulse=_melee!=null&&_melee.IsAttacking?1.08f+.05f*Mathf.Sin(Time.unscaledTime*22f):1f;_reticleRoot.transform.localScale=Vector3.one*pulse;}
         }
 
@@ -116,23 +124,32 @@ namespace CheatOnYourDayOnes.UI
 
         private void BuildTacho(Transform root)
         {
-            _tachoRoot=new GameObject("Tacho",typeof(RectTransform));_tachoRoot.transform.SetParent(root,false);RectTransform tr=_tachoRoot.GetComponent<RectTransform>();tr.anchorMin=tr.anchorMax=new Vector2(1,0);tr.pivot=new Vector2(1,0);tr.anchoredPosition=new Vector2(-36,30);tr.sizeDelta=new Vector2(250,250);
+            _tachoRoot=new GameObject("VehicleGauges",typeof(RectTransform));_tachoRoot.transform.SetParent(root,false);RectTransform tr=_tachoRoot.GetComponent<RectTransform>();tr.anchorMin=tr.anchorMax=new Vector2(1,0);tr.pivot=new Vector2(1,0);tr.anchoredPosition=new Vector2(-28,24);tr.sizeDelta=new Vector2(510,260);
+            RectTransform speedGauge=GaugeRoot(tr,"Speedometer",new Vector2(-128,130),232);RectTransform speedDial=BuildGaugeFace(speedGauge,"KM/H",103f,80,8,i=>(i/8*20).ToString(),.82f);
+            _needle=GaugeNeedle(speedDial,78f,White);_gearText=TextEl(speedDial,"D1",18,White,FontStyle.Bold,TextAnchor.MiddleCenter);_gearText.rectTransform.sizeDelta=new Vector2(54,24);_gearText.rectTransform.anchoredPosition=new Vector2(0,28);
+            _speedText=TextEl(speedDial,"0",42,White,FontStyle.Bold,TextAnchor.MiddleCenter);_speedText.rectTransform.sizeDelta=new Vector2(120,52);_speedText.rectTransform.anchoredPosition=new Vector2(0,-42);
+            _driftText=TextEl(speedDial,"DRIFT",12,Red,FontStyle.Bold,TextAnchor.MiddleCenter);_driftText.rectTransform.sizeDelta=new Vector2(82,18);_driftText.rectTransform.anchoredPosition=new Vector2(0,54);_driftText.gameObject.SetActive(false);
 
-            // Everything inside the gauge shares ONE exact center now.
-            Image face=ImageEl(tr,"Face",new Color(.012f,.014f,.018f,.48f),_circleSprite);SetRect(face.rectTransform,Vector2.zero,new Vector2(238,238),new Vector2(.5f,.5f));
-            RectTransform dial=Empty(tr,"Dial",Vector2.zero,Vector2.zero,new Vector2(.5f,.5f));
+            RectTransform rpmGauge=GaugeRoot(tr,"Tachometer",new Vector2(-372,130),204);RectTransform rpmDial=BuildGaugeFace(rpmGauge,"x1000 RPM",88f,40,5,i=>(i/5).ToString(),.76f);
+            _rpmNeedle=GaugeNeedle(rpmDial,65f,Red);_rpmText=TextEl(rpmDial,"0.9",31,White,FontStyle.Bold,TextAnchor.MiddleCenter);_rpmText.rectTransform.sizeDelta=new Vector2(90,42);_rpmText.rectTransform.anchoredPosition=new Vector2(0,-34);
 
-            float radius=103f;
-            for(int i=0;i<=80;i++){float t=i/80f,a=Mathf.Lerp(-130f,130f,t);bool major=i%10==0;Color col=t>.82f?new Color(.96f,.22f,.16f,1f):(major?White:new Color(1,1,1,.34f));float len=major?15f:7f;RectTransform tick=ImageEl(dial,"Tick",col,null).rectTransform;tick.sizeDelta=new Vector2(major?2.2f:1f,len);tick.pivot=new Vector2(.5f,.5f);float rad=a*Mathf.Deg2Rad;tick.anchoredPosition=new Vector2(Mathf.Sin(rad)*(radius-len*.5f),Mathf.Cos(rad)*(radius-len*.5f));tick.localRotation=Quaternion.Euler(0,0,-a);if(major){Text label=TextEl(dial,Mathf.RoundToInt(160*t).ToString(),9,White,FontStyle.Bold,TextAnchor.MiddleCenter);label.rectTransform.sizeDelta=new Vector2(32,18);label.rectTransform.anchoredPosition=new Vector2(Mathf.Sin(rad)*72,Mathf.Cos(rad)*72);}}
-            _needle=ImageEl(dial,"Needle",White,null);_needle.rectTransform.sizeDelta=new Vector2(3,76);_needle.rectTransform.pivot=new Vector2(.5f,0);_needle.rectTransform.anchoredPosition=Vector2.zero;Image hub=ImageEl(dial,"Hub",White,_circleSprite);hub.rectTransform.sizeDelta=new Vector2(12,12);hub.rectTransform.anchoredPosition=Vector2.zero;
-            _gearText=TextEl(dial,"D1",17,White,FontStyle.Bold,TextAnchor.MiddleCenter);_gearText.rectTransform.sizeDelta=new Vector2(50,24);_gearText.rectTransform.anchoredPosition=new Vector2(0,25);
-            _speedText=TextEl(dial,"0",40,White,FontStyle.Bold,TextAnchor.MiddleCenter);_speedText.rectTransform.sizeDelta=new Vector2(120,50);_speedText.rectTransform.anchoredPosition=new Vector2(0,-42);Text unit=TextEl(dial,"KM/H",10,Muted,FontStyle.Bold,TextAnchor.MiddleCenter);unit.rectTransform.sizeDelta=new Vector2(90,18);unit.rectTransform.anchoredPosition=new Vector2(0,-72);
-            _rpmText=TextEl(dial,"RPM  900",9,Muted,FontStyle.Bold,TextAnchor.MiddleCenter);_rpmText.rectTransform.sizeDelta=new Vector2(100,18);_rpmText.rectTransform.anchoredPosition=new Vector2(0,-91);
-            _rpmFill=Bar(tr,new Vector2(42,-225),new Vector2(166,6),Red,0f,out _);
-            _vehicleConditionText=TextEl(tr,"FAHRZEUG  100%",9,Green,FontStyle.Bold,TextAnchor.MiddleCenter,new Vector2(0,109),new Vector2(120,18),new Vector2(.5f,.5f));
-            _vehicleConditionFill=Bar(tr,new Vector2(42,-18),new Vector2(166,5),Green,1f,out _);
-            _driftText=TextEl(dial,"DRIFT",11,Red,FontStyle.Bold,TextAnchor.MiddleCenter);_driftText.rectTransform.sizeDelta=new Vector2(80,18);_driftText.rectTransform.anchoredPosition=new Vector2(0,52);_driftText.gameObject.SetActive(false);_tachoRoot.SetActive(false);
+            _vehicleHealthRoot=new GameObject("VehicleCondition",typeof(RectTransform));_vehicleHealthRoot.transform.SetParent(root,false);RectTransform healthRt=_vehicleHealthRoot.GetComponent<RectTransform>();healthRt.anchorMin=healthRt.anchorMax=new Vector2(.5f,0);healthRt.pivot=new Vector2(.5f,0);healthRt.anchoredPosition=new Vector2(0,24);healthRt.sizeDelta=new Vector2(520,82);
+            RectTransform healthCard=PanelBox(healthRt,"ConditionCard",Vector2.zero,new Vector2(520,82),new Vector2(.5f,.5f),new Color(.015f,.018f,.023f,.68f));
+            _vehicleConditionText=TextEl(healthCard,"FAHRZEUG   100%",18,Green,FontStyle.Bold,TextAnchor.MiddleCenter,new Vector2(0,20),new Vector2(450,30),new Vector2(.5f,.5f));
+            _vehicleConditionFill=Bar(healthCard,new Vector2(30,-51),new Vector2(460,13),Green,1f,out _);
+            _tachoRoot.SetActive(false);_vehicleHealthRoot.SetActive(false);
         }
+
+        private RectTransform GaugeRoot(Transform parent,string name,Vector2 center,float size){RectTransform rt=Empty(parent,name,center,new Vector2(size,size),new Vector2(1,0));rt.pivot=new Vector2(.5f,.5f);return rt;}
+        private RectTransform BuildGaugeFace(RectTransform gauge,string unit,float radius,int ticks,int majorEvery,Func<int,string> label,float redStart)
+        {
+            Image face=ImageEl(gauge,"Face",new Color(.012f,.014f,.018f,.72f),_circleSprite);SetRect(face.rectTransform,Vector2.zero,gauge.sizeDelta,new Vector2(.5f,.5f));
+            Image rim=ImageEl(gauge,"Rim",new Color(.85f,.88f,.92f,.32f),_ringSprite);SetRect(rim.rectTransform,Vector2.zero,gauge.sizeDelta-new Vector2(7,7),new Vector2(.5f,.5f));
+            RectTransform dial=Empty(gauge,"Dial",Vector2.zero,Vector2.zero,new Vector2(.5f,.5f));
+            for(int i=0;i<=ticks;i++){float t=i/(float)ticks,a=Mathf.Lerp(-130f,130f,t);bool major=i%majorEvery==0;Color col=t>redStart?Red:(major?White:new Color(1,1,1,.34f));float len=major?14f:6f;RectTransform tick=ImageEl(dial,"Tick",col,null).rectTransform;tick.sizeDelta=new Vector2(major?2.2f:1f,len);tick.pivot=new Vector2(.5f,.5f);float rad=a*Mathf.Deg2Rad;tick.anchoredPosition=new Vector2(Mathf.Sin(rad)*(radius-len*.5f),Mathf.Cos(rad)*(radius-len*.5f));tick.localRotation=Quaternion.Euler(0,0,-a);if(major){Text number=TextEl(dial,label(i),10,White,FontStyle.Bold,TextAnchor.MiddleCenter);number.rectTransform.sizeDelta=new Vector2(32,18);number.rectTransform.anchoredPosition=new Vector2(Mathf.Sin(rad)*(radius-31f),Mathf.Cos(rad)*(radius-31f));}}
+            Text unitText=TextEl(dial,unit,10,Muted,FontStyle.Bold,TextAnchor.MiddleCenter);unitText.rectTransform.sizeDelta=new Vector2(100,18);unitText.rectTransform.anchoredPosition=new Vector2(0,-radius+28f);return dial;
+        }
+        private Image GaugeNeedle(RectTransform dial,float length,Color color){Image needle=ImageEl(dial,"Needle",color,null);needle.rectTransform.sizeDelta=new Vector2(3,length);needle.rectTransform.pivot=new Vector2(.5f,0);needle.rectTransform.anchoredPosition=Vector2.zero;Image hub=ImageEl(dial,"Hub",color,_circleSprite);hub.rectTransform.sizeDelta=new Vector2(13,13);hub.rectTransform.anchoredPosition=Vector2.zero;return needle;}
 
         private RectTransform PanelBox(Transform parent,string name,Vector2 pos,Vector2 size,Vector2 anchor,Color color){Image img=ImageEl(parent,name,color,_roundSprite);img.type=Image.Type.Sliced;SetRect(img.rectTransform,pos,size,anchor);Shadow shadow=img.gameObject.AddComponent<Shadow>();shadow.effectColor=new Color(0,0,0,.10f);shadow.effectDistance=new Vector2(0,-2);return img.rectTransform;}
         private Image Bar(Transform parent,Vector2 pos,Vector2 size,Color color,float amount,out Image track){track=ImageEl(parent,"Track",new Color(0,0,0,.64f),_roundSprite);track.type=Image.Type.Sliced;SetRect(track.rectTransform,pos,size,new Vector2(0,1));Image fill=ImageEl(track.transform,"Fill",color,_roundSprite);fill.type=Image.Type.Filled;fill.fillMethod=Image.FillMethod.Horizontal;fill.fillAmount=amount;Stretch(fill.rectTransform);return fill;}
