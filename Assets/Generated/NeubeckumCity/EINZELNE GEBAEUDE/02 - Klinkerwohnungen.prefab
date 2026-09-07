@@ -1,0 +1,205 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &7746335930007786838
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6605726903680577218}
+  - component: {fileID: 2804563884954001744}
+  - component: {fileID: 4146584272101372064}
+  m_Layer: 0
+  m_Name: 02 - Klinkerwohnungen
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6605726903680577218
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7746335930007786838}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1336726489488002557}
+  - {fileID: 6066641663368115010}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &2804563884954001744
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7746335930007786838}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 13, y: 9.3, z: 11}
+  m_Center: {x: 0, y: 4.65, z: 0}
+--- !u!114 &4146584272101372064
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7746335930007786838}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9cddafc3043974e778fd33e99f2de8d8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.World.CityBuilding
+  buildingId: 731ae4f9daf94fca9385fd30ece5ffb1
+  displayName: Klinkerwohnungen
+  district: 1
+  buildingType: 17
+  supportsEmployment: 0
+  playerCanEnterLater: 0
+--- !u!1 &9024692453482148484
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6066641663368115010}
+  m_Layer: 0
+  m_Name: FASSADEN UND GARTEN
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6066641663368115010
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9024692453482148484}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6605726903680577218}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &1515383027041364502
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 6605726903680577218}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.9447674
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.9447674
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.9447674
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.50545025
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -7635826562936255635, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 9e8e0ee49e837443a8aee323797fc6c9, type: 2}
+    - target: {fileID: -7635826562936255635, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: 'm_Materials.Array.data[1]'
+      value: 
+      objectReference: {fileID: 2100000, guid: d51d322a14ce54a2ab87abecdad0fae7, type: 2}
+    - target: {fileID: -7635826562936255635, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: 'm_Materials.Array.data[2]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 1d4708181c63a4ac1b16e3cad7da2d03, type: 2}
+    - target: {fileID: -7635826562936255635, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: 'm_Materials.Array.data[3]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 4f2256f1cce354cc5bbabc0a7e3ec44a, type: 2}
+    - target: {fileID: -7635826562936255635, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: 'm_Materials.Array.data[4]'
+      value: 
+      objectReference: {fileID: 2100000, guid: ea1dea02c08e44a7083e0522863a0573, type: 2}
+    - target: {fileID: -7635826562936255635, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: 'm_Materials.Array.data[5]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 911714e06e1ab4558bded1505151eff1, type: 2}
+    - target: {fileID: 919132149155446097, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+      propertyPath: m_Name
+      value: 02_BrickApartments
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+--- !u!4 &1336726489488002557 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: d0c8778cd2524429a8facf1e82efb0a6, type: 3}
+  m_PrefabInstance: {fileID: 1515383027041364502}
+  m_PrefabAsset: {fileID: 0}

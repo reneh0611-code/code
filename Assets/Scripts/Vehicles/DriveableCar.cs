@@ -28,7 +28,9 @@ namespace CheatOnYourDayOnes.Vehicles
         [SerializeField] private float sidewaysTyreStiffness=1.8f,tractionControlSlip=.5f,tractionTorqueFloor=.5f;
         [Header("Crash damage")]
         [SerializeField] private float minimumDamageImpactKmh=9f,crashResistance=1f;
+        [SerializeField] private float rolloverThresholdKmh=115f,rolloverSteerThreshold=.62f,rolloverStrength=6f,impactTripStrength=.42f;
         [SerializeField] private float bodyHealth=100f,engineHealth=100f;
+        [SerializeField] private float frontBodyHealth=100f,rearBodyHealth=100f,leftBodyHealth=100f,rightBodyHealth=100f;
         [Header("Road seam filter")]
         [SerializeField] private float curbReferenceHeight=.17f;
         [SerializeField,Range(.1f,.9f)] private float suspensionActivationPercent=.42f;
@@ -51,11 +53,23 @@ namespace CheatOnYourDayOnes.Vehicles
             public bool front,left;
             public float spinDegrees,health=100f;
         }
-        private sealed class BodyMaterialState{public Material material;public Color originalColor;public int colorProperty;}
+        private sealed class BodyMaterialState{public Renderer renderer;public Material material;public Color originalColor;public int colorProperty;public float localDamage;}
         private readonly List<Renderer> _wheelRenderers=new();private readonly List<SphereCollider> _wheelSupportColliders=new();private readonly List<WheelPhysics> _physicsWheels=new();private readonly HashSet<NPCWanderer> _npcHitThisContact=new();private readonly HashSet<NPCWanderer> _npcOverrunContact=new();private readonly HashSet<NPCWanderer> _npcContactScratch=new();private readonly HashSet<NPCWanderer> _npcOverrunScratch=new();
-        private readonly List<BodyMaterialState> _bodyMaterialStates=new();
-        private bool _occupied,_ignoreExitUntilEReleased,_brake,_smoothRoadContact,_isDrifting,_vehicleDisabled;private float _rawThrottle,_rawSteer,_throttle,_steer,_driveSpeed,_debugTimer,_modelScale=1f,_yawRate,_visualSteeringInput,_wheelContactLocalY,_vehicleMass=1280f,_engineRpm=900f,_rearGripMultiplier=1f,_lastCrashTime=-10f,_collisionRecoveryUntil;private int _currentGear=1,_collisionEscapeDirection;private string _vehicleLabel="Auto";private Collider _lastCrashCollider;private ParticleSystem _crashParticles,_damageSmoke;
-        public bool IsOccupied=>_occupied;public Vector3 DriveVelocity=>_rb!=null?_rb.linearVelocity:transform.forward*_driveSpeed;public float SpeedKmh=>Mathf.Abs(SignedWheelSpeed)*3.6f;
+        private VehicleBodyDamage _bodyDamage;
+        private float _centerHeight=.58f,_rearDriveShare=.55f;
+        private float _steeringSafetyMargin=1.55f,_driftBlend;
+        private bool _handbrake;
+        public int DamageRevision=>_bodyDamage!=null?_bodyDamage.Revision:0;
+        public bool TryGetWheelPosition(bool front,bool left,out Vector3 local)
+        {
+            foreach(WheelPhysics wheel in _physicsWheels)if(wheel.front==front&&wheel.left==left&&wheel.collider!=null){local=transform.InverseTransformPoint(wheel.collider.transform.position);return true;}
+            local=Vector3.zero;return false;
+        }
+        private float _bodyContactUntil;
+        private Vector3 _bodyContactNormal=Vector3.up;
+        private readonly List<BodyMaterialState> _bodyMaterialStates=new();private readonly List<GameObject> _impactScars=new();private Material _impactScarMaterial;
+        private bool _occupied,_ignoreExitUntilEReleased,_brake,_smoothRoadContact,_isDrifting,_vehicleDisabled,_rolloverActive;private float _rawThrottle,_rawSteer,_throttle,_steer,_driveSpeed,_debugTimer,_modelScale=1f,_yawRate,_visualSteeringInput,_wheelContactLocalY,_vehicleMass=1280f,_engineRpm=900f,_rearGripMultiplier=1f,_lastCrashTime=-10f,_collisionRecoveryUntil,_centerOfMassYOffset=-.42f,_rolloverRisk,_rolloverBuild,_rolloverEnergy,_rolloverDirection,_rolloverImpactCooldown,_postRolloverRestTime,_rolloverElapsed;private int _currentGear=1,_rolloverGroundHits;private Vector3 _rolloverAxis;private string _vehicleLabel="Auto";private Collider _lastCrashCollider;private ParticleSystem _crashParticles,_damageSmoke;
+        public bool IsOccupied=>_occupied;public Vector3 DriveVelocity=>_rb!=null?_rb.linearVelocity:transform.forward*_driveSpeed;public float SpeedKmh=>_rb!=null?_rb.linearVelocity.magnitude*3.6f:0f;
         public string VehicleLabel=>_vehicleLabel;
         public float EngineRpm=>_engineRpm;
         public float EngineRpm01=>Mathf.InverseLerp(900f,7200f,_engineRpm);
@@ -64,39 +78,49 @@ namespace CheatOnYourDayOnes.Vehicles
         public bool IsDrifting=>_isDrifting;
         public float BodyHealth=>bodyHealth;
         public float EngineHealth=>engineHealth;
-        public float VehicleCondition01=>Mathf.Clamp01(Mathf.Min(bodyHealth,engineHealth)/100f);
+        public float FrontBodyHealth=>frontBodyHealth;
+        public float RearBodyHealth=>rearBodyHealth;
+        public float LeftBodyHealth=>leftBodyHealth;
+        public float RightBodyHealth=>rightBodyHealth;
+        public float FrontLeftWheelHealth=>GetWheelHealth(true,true);
+        public float FrontRightWheelHealth=>GetWheelHealth(true,false);
+        public float RearLeftWheelHealth=>GetWheelHealth(false,true);
+        public float RearRightWheelHealth=>GetWheelHealth(false,false);
+        public float AverageWheelHealth=>(FrontLeftWheelHealth+FrontRightWheelHealth+RearLeftWheelHealth+RearRightWheelHealth)*.25f;
+        public float VehicleCondition01=>Mathf.Clamp01((bodyHealth*.42f+engineHealth*.23f+AverageWheelHealth*.15f+(frontBodyHealth+rearBodyHealth+leftBodyHealth+rightBodyHealth)*.05f)/100f);
         public bool IsVehicleDisabled=>_vehicleDisabled;
         public float SignedDriveSpeed=>_driveSpeed;
         public float SteeringInput=>_steer;
         public float VisualSteeringInput=>_visualSteeringInput;
         public float SignedWheelSpeed=>_rb!=null?Vector3.Dot(_rb.linearVelocity,transform.forward):_driveSpeed;
+        private float GetWheelHealth(bool front,bool left){foreach(WheelPhysics wheel in _physicsWheels)if(wheel.front==front&&wheel.left==left)return wheel.health;return 100f;}
         public bool IsThreateningPoint(Vector3 worldPoint,float minimumKmh=30f){if(!_occupied||SpeedKmh<minimumKmh||Mathf.Abs(_driveSpeed)<.01f)return false;Vector3 toPoint=worldPoint-transform.position;toPoint.y=0;if(toPoint.sqrMagnitude<.001f)return true;toPoint.Normalize();Vector3 travelDirection=_driveSpeed>=0?transform.forward:-transform.forward;return Vector3.Dot(travelDirection,toPoint)>.35f;}
-        private void Awake(){_rb=GetComponent<Rigidbody>();ApplyVehicleProfile();DetectWheelsAndScale();MakeWheelMaterialsDoubleSided();CacheBodyMaterials();ConfigureRigidbody();RebuildVehicleColliders();CreateCrashEffects();}
+        private void Awake(){_rb=GetComponent<Rigidbody>();ApplyVehicleProfile();DetectWheelsAndScale();MakeWheelMaterialsDoubleSided();CacheBodyMaterials();ConfigureRigidbody();RebuildVehicleColliders();_bodyDamage=GetComponent<VehicleBodyDamage>();if(_bodyDamage==null)_bodyDamage=gameObject.AddComponent<VehicleBodyDamage>();_bodyDamage.Initialize(_wheelRenderers);CreateCrashEffects();}
         private void OnEnable(){ActiveCarSet.Add(this);}
         private void OnDisable(){ActiveCarSet.Remove(this);}
-        private void ConfigureRigidbody(){_rb.mass=_vehicleMass;_rb.useGravity=true;_rb.isKinematic=false;_rb.constraints=RigidbodyConstraints.None;_rb.linearDamping=.018f;_rb.angularDamping=2.4f;_rb.interpolation=RigidbodyInterpolation.Interpolate;_rb.collisionDetectionMode=CollisionDetectionMode.ContinuousDynamic;_rb.maxAngularVelocity=3.5f;_rb.maxDepenetrationVelocity=1.8f;_rb.solverIterations=14;_rb.solverVelocityIterations=10;_rb.centerOfMass=centerOfMass!=null?transform.InverseTransformPoint(centerOfMass.position):new Vector3(0,-.42f*_modelScale,.05f*_modelScale);}
+        private void ConfigureRigidbody(){_rb.mass=_vehicleMass;_rb.useGravity=true;_rb.isKinematic=false;_rb.constraints=RigidbodyConstraints.None;_rb.linearDamping=.018f;_rb.angularDamping=.55f;_rb.interpolation=RigidbodyInterpolation.Interpolate;_rb.collisionDetectionMode=CollisionDetectionMode.ContinuousDynamic;_rb.maxAngularVelocity=5.5f;_rb.maxDepenetrationVelocity=1.8f;_rb.solverIterations=14;_rb.solverVelocityIterations=10;if(_chassisCollider!=null&&!float.IsInfinity(_wheelContactLocalY))_rb.centerOfMass=new Vector3(_chassisCollider.center.x,_wheelContactLocalY+_centerHeight,_chassisCollider.center.z+.04f);}
         private void ApplyVehicleProfile()
         {
             string n=name.ToLowerInvariant();
             if(n.Contains("car 04")||n.Contains("taycan")||n.Contains("porsche"))
             {
-                _vehicleLabel="Porsche Taycan";_vehicleMass=2200f;topSpeed=40.28f;reverseTopSpeed=8.5f;maximumMotorTorque=2200f;serviceBrakeTorque=3400f;directionChangeBrakeTorque=3000f;maximumRoadWheelAngle=35f;wheelBase=2.62f;maximumLateralAcceleration=12.4f;aerodynamicDownforce=3.2f;
-                wheelSuspensionDistance=.105f;wheelSpring=52000f;wheelDamper=7800f;suspensionTargetPosition=.72f;antiRollForce=9000f;highSpeedSteerFactor=.34f;steeringResponse=1.75f;sidewaysTyreStiffness=2.2f;tractionControlSlip=.62f;tractionTorqueFloor=.58f;crashResistance=.92f;
+                _centerHeight=.48f;_rearDriveShare=.56f;_vehicleLabel="Porsche Taycan";_vehicleMass=2200f;topSpeed=40.28f;reverseTopSpeed=8.5f;maximumMotorTorque=2200f;serviceBrakeTorque=3400f;directionChangeBrakeTorque=3000f;maximumRoadWheelAngle=35f;wheelBase=2.62f;maximumLateralAcceleration=12.4f;aerodynamicDownforce=3.2f;
+                wheelSuspensionDistance=.105f;wheelSpring=52000f;wheelDamper=7800f;suspensionTargetPosition=.72f;antiRollForce=9000f;highSpeedSteerFactor=.34f;steeringResponse=1.75f;sidewaysTyreStiffness=2.2f;tractionControlSlip=.62f;tractionTorqueFloor=.58f;minimumDamageImpactKmh=7f;crashResistance=.78f;rolloverThresholdKmh=132f;rolloverStrength=7f;impactTripStrength=.34f;_centerOfMassYOffset=-.58f;
             }
             else if(n.Contains("car 02")||n.Contains("g-class")||n.Contains("g klasse")||n.Contains("g-klasse"))
             {
-                _vehicleLabel="G-Klasse";_vehicleMass=2450f;topSpeed=30.56f;reverseTopSpeed=6.5f;maximumMotorTorque=650f;serviceBrakeTorque=2900f;directionChangeBrakeTorque=2600f;maximumRoadWheelAngle=40f;wheelBase=2.48f;maximumLateralAcceleration=9.1f;aerodynamicDownforce=1.2f;
-                wheelSuspensionDistance=.20f;wheelSpring=36000f;wheelDamper=6200f;suspensionTargetPosition=.72f;antiRollForce=5200f;highSpeedSteerFactor=.38f;steeringResponse=1.55f;sidewaysTyreStiffness=1.95f;crashResistance=1.3f;
+                _centerHeight=.64f;_rearDriveShare=.5f;_steeringSafetyMargin=1.3f;_vehicleLabel="G-Klasse";_vehicleMass=2450f;topSpeed=30.56f;reverseTopSpeed=6.5f;maximumMotorTorque=850f;serviceBrakeTorque=2900f;directionChangeBrakeTorque=2600f;maximumRoadWheelAngle=40f;wheelBase=2.48f;maximumLateralAcceleration=8.2f;aerodynamicDownforce=1.2f;
+                wheelSuspensionDistance=.20f;wheelSpring=36000f;wheelDamper=7200f;suspensionTargetPosition=.72f;antiRollForce=6200f;highSpeedSteerFactor=.38f;steeringResponse=1.55f;sidewaysTyreStiffness=1.8f;minimumDamageImpactKmh=12f;crashResistance=1.65f;rolloverThresholdKmh=78f;rolloverStrength=10f;impactTripStrength=.72f;_centerOfMassYOffset=-.30f;
             }
             else if(n.Contains("car 01")||n.Contains("skyline")||n.Contains("nissan"))
             {
-                _vehicleLabel="Nissan Skyline";_vehicleMass=1560f;topSpeed=41.67f;reverseTopSpeed=8f;maximumMotorTorque=850f;serviceBrakeTorque=3000f;directionChangeBrakeTorque=2700f;maximumRoadWheelAngle=39f;wheelBase=2.42f;maximumLateralAcceleration=12.1f;aerodynamicDownforce=3f;
-                wheelSuspensionDistance=.115f;wheelSpring=49000f;wheelDamper=7200f;suspensionTargetPosition=.69f;antiRollForce=8500f;highSpeedSteerFactor=.36f;steeringResponse=1.85f;sidewaysTyreStiffness=2.18f;crashResistance=.88f;
+                _centerHeight=.54f;_rearDriveShare=.68f;_vehicleLabel="Nissan Skyline";_vehicleMass=1560f;topSpeed=41.67f;reverseTopSpeed=8f;maximumMotorTorque=850f;serviceBrakeTorque=3000f;directionChangeBrakeTorque=2700f;maximumRoadWheelAngle=39f;wheelBase=2.42f;maximumLateralAcceleration=12.1f;aerodynamicDownforce=3f;
+                wheelSuspensionDistance=.115f;wheelSpring=49000f;wheelDamper=7200f;suspensionTargetPosition=.69f;antiRollForce=8500f;highSpeedSteerFactor=.36f;steeringResponse=1.85f;sidewaysTyreStiffness=2.18f;minimumDamageImpactKmh=7.5f;crashResistance=.72f;rolloverThresholdKmh=124f;rolloverStrength=8f;impactTripStrength=.45f;_centerOfMassYOffset=-.54f;
             }
             else if(n.Contains("car 03")||n.Contains("cybertruck")||n.Contains("cyber truck"))
             {
-                _vehicleLabel="Cybertruck";_vehicleMass=3000f;topSpeed=34.72f;reverseTopSpeed=7f;maximumMotorTorque=1050f;serviceBrakeTorque=3200f;directionChangeBrakeTorque=2850f;maximumRoadWheelAngle=34f;wheelBase=2.72f;maximumLateralAcceleration=9.5f;aerodynamicDownforce=1.7f;
-                wheelSuspensionDistance=.18f;wheelSpring=38000f;wheelDamper=6500f;suspensionTargetPosition=.57f;antiRollForce=6500f;highSpeedSteerFactor=.34f;steeringResponse=1.45f;sidewaysTyreStiffness=2f;crashResistance=1.5f;
+                _centerHeight=.68f;_rearDriveShare=.52f;_vehicleLabel="Cybertruck";_vehicleMass=3000f;topSpeed=34.72f;reverseTopSpeed=7f;maximumMotorTorque=1050f;serviceBrakeTorque=3200f;directionChangeBrakeTorque=2850f;maximumRoadWheelAngle=34f;wheelBase=2.72f;maximumLateralAcceleration=9.5f;aerodynamicDownforce=1.7f;
+                wheelSuspensionDistance=.18f;wheelSpring=38000f;wheelDamper=6500f;suspensionTargetPosition=.57f;antiRollForce=6500f;highSpeedSteerFactor=.34f;steeringResponse=1.45f;sidewaysTyreStiffness=2f;minimumDamageImpactKmh=14f;crashResistance=1.9f;rolloverThresholdKmh=102f;rolloverStrength=7.2f;impactTripStrength=.48f;_centerOfMassYOffset=-.48f;
             }
         }
         private void MakeWheelMaterialsDoubleSided()
@@ -126,7 +150,7 @@ namespace CheatOnYourDayOnes.Vehicles
                 foreach(Material material in materials)
                 {
                     if(material==null)continue;int property=material.HasProperty("_BaseColor")?Shader.PropertyToID("_BaseColor"):material.HasProperty("_Color")?Shader.PropertyToID("_Color"):-1;
-                    if(property<0)continue;_bodyMaterialStates.Add(new BodyMaterialState{material=material,originalColor=material.GetColor(property),colorProperty=property});
+                    if(property<0)continue;_bodyMaterialStates.Add(new BodyMaterialState{renderer=renderer,material=material,originalColor=material.GetColor(property),colorProperty=property});
                 }
                 renderer.materials=materials;
             }
@@ -147,7 +171,7 @@ namespace CheatOnYourDayOnes.Vehicles
             _modelScale=Mathf.Clamp(length/4.5f,.5f,3);
         }
         private static bool LooksLikeWheelName(string n)=>n.Contains("wheel")||n.Contains("tire")||n.Contains("tyre")||n.Contains("reifen")||n.Contains("felge")||n.Contains("rim")||n.Contains("roue")||n.Contains("rad_");
-        private void Update(){if(!_occupied||Keyboard.current==null)return;_rawThrottle=(Keyboard.current.wKey.isPressed?1f:0f)-(Keyboard.current.sKey.isPressed?1f:0f);_rawSteer=(Keyboard.current.dKey.isPressed?1f:0f)-(Keyboard.current.aKey.isPressed?1f:0f);_brake=Keyboard.current.spaceKey.isPressed;_throttle=Mathf.MoveTowards(_throttle,_rawThrottle,throttleResponse*Time.deltaTime);UpdateProgressiveSteering(Time.deltaTime);if(_ignoreExitUntilEReleased){if(!Keyboard.current.eKey.isPressed)_ignoreExitUntilEReleased=false;}else if(Keyboard.current.eKey.wasPressedThisFrame)Exit();}
+        private void Update(){if(!_occupied||Keyboard.current==null)return;_rawThrottle=(Keyboard.current.wKey.isPressed?1f:0f)-(Keyboard.current.sKey.isPressed?1f:0f);_rawSteer=(Keyboard.current.dKey.isPressed?1f:0f)-(Keyboard.current.aKey.isPressed?1f:0f);_brake=Keyboard.current.spaceKey.isPressed;_handbrake=Keyboard.current.leftShiftKey.isPressed;_throttle=Mathf.MoveTowards(_throttle,_rawThrottle,throttleResponse*Time.deltaTime);UpdateProgressiveSteering(Time.deltaTime);if(_ignoreExitUntilEReleased){if(!Keyboard.current.eKey.isPressed)_ignoreExitUntilEReleased=false;}else if(Keyboard.current.eKey.wasPressedThisFrame)Exit();}
         private void UpdateProgressiveSteering(float dt)
         {
             if(Mathf.Abs(_rawSteer)<.01f){_steer=Mathf.MoveTowards(_steer,0f,steeringResponse*steeringReturnMultiplier*dt);return;}
@@ -159,6 +183,7 @@ namespace CheatOnYourDayOnes.Vehicles
         }
         private void FixedUpdate()
         {
+            _vehicleDisabled=engineHealth<=.01f;
             float dt=Time.fixedDeltaTime;
             if(_physicsWheels.Count>=4){FixedUpdateWheelPhysics(dt);return;}
             StabilizeAcrossSmallBumps();
@@ -182,12 +207,6 @@ namespace CheatOnYourDayOnes.Vehicles
             // instead of waiting for an invisible full-speed motor value to count down.
             if(_throttle<-.1f&&_driveSpeed>0f&&local.z<.5f)_driveSpeed=Mathf.Max(0f,local.z);
             else if(_throttle>.1f&&_driveSpeed<0f&&local.z>-.5f)_driveSpeed=Mathf.Min(0f,local.z);
-            int intendedDirection=_throttle>.05f?1:_throttle<-.05f?-1:local.z>.25f?1:local.z<-.25f?-1:0;
-            if(intendedDirection!=0&&TallObstacleAtBumper(intendedDirection))
-            {
-                _driveSpeed=0f;
-                local.z=Mathf.MoveTowards(local.z,0f,brakeAcceleration*2f*dt);
-            }
             float speed=Mathf.Abs(local.z),speed01=Mathf.Clamp01(speed/topSpeed);
             float grip=Mathf.Lerp(lateralGripLowSpeed,lateralGripHighSpeed,speed01);
             local.x=Mathf.MoveTowards(local.x,0f,grip*dt);
@@ -234,32 +253,50 @@ namespace CheatOnYourDayOnes.Vehicles
             _driveSpeed=forwardSpeed;
             UpdateDrivetrainTelemetry(forwardSpeed,dt);
             float engine01=Mathf.Clamp01(engineHealth/100f);
-            float effectiveTopSpeed=topSpeed*Mathf.Lerp(.42f,1f,engine01);
+            // Damage remains readable in the HUD, but a non-destroyed drivetrain
+            // always retains enough force to move the car. Only zero engine health
+            // is a hard mechanical shutdown.
+            float enginePerformance=_vehicleDisabled?0f:Mathf.Lerp(.72f,1f,engine01);
+            float effectiveTopSpeed=topSpeed*enginePerformance;
             float speed01=Mathf.Clamp01(Mathf.Abs(forwardSpeed)/Mathf.Max(.1f,effectiveTopSpeed));
             float requestedWheelAngle=maximumRoadWheelAngle*Mathf.Lerp(1f,highSpeedSteerFactor,speed01);
             if(Mathf.Abs(forwardSpeed)>3f)
             {
-                float safeAngle=Mathf.Atan(maximumLateralAcceleration*wheelBase/Mathf.Max(1f,forwardSpeed*forwardSpeed))*Mathf.Rad2Deg*2.45f;
-                float minimumUsefulAngle=maximumRoadWheelAngle*highSpeedSteerFactor;
+                float safeAngle=Mathf.Atan(maximumLateralAcceleration*wheelBase/Mathf.Max(1f,forwardSpeed*forwardSpeed))*Mathf.Rad2Deg*_steeringSafetyMargin;
+                float minimumUsefulAngle=1.5f;
                 requestedWheelAngle=Mathf.Min(requestedWheelAngle,Mathf.Max(minimumUsefulAngle,safeAngle));
             }
+            float lateralSpeed=Vector3.Dot(_rb.linearVelocity,transform.right);
+            float slipAngle=Mathf.Atan2(lateralSpeed,Mathf.Max(1f,Mathf.Abs(forwardSpeed)))*Mathf.Rad2Deg;
+            int groundedWheels=0;
+            foreach(WheelPhysics wheel in _physicsWheels)
+                if(wheel.collider!=null&&wheel.collider.isGrounded)groundedWheels++;
+            bool driftContact=groundedWheels>=3&&forwardSpeed>5f&&Vector3.Dot(transform.up,Vector3.up)>.85f;
+            // Preserve countersteering authority while sliding: high-speed turn
+            // limiting must not prevent the driver from catching the rear axle.
+            if(driftContact&&Mathf.Abs(slipAngle)>5f&&_steer*lateralSpeed>0f)
+                requestedWheelAngle=Mathf.Max(requestedWheelAngle,Mathf.Min(maximumRoadWheelAngle,Mathf.Abs(slipAngle)+6f));
             float roadWheelAngle=_steer*requestedWheelAngle;
             _visualSteeringInput=maximumRoadWheelAngle>.01f?roadWheelAngle/maximumRoadWheelAngle:0f;
             bool changingDirection=(_throttle>.08f&&forwardSpeed<-.35f)||(_throttle<-.08f&&forwardSpeed>.35f);
-            int throttleDirection=_throttle>.05f?1:_throttle<-.05f?-1:0;
-            bool collisionEscape=Time.time<_collisionRecoveryUntil&&throttleDirection!=0&&throttleDirection==_collisionEscapeDirection;
-            if(collisionEscape&&forwardSpeed*_collisionEscapeDirection>2.5f){_collisionRecoveryUntil=0f;collisionEscape=false;}
-            bool blocked=!collisionEscape&&((_throttle>.05f&&TallObstacleAtBumper(1))||(_throttle<-.05f&&TallObstacleAtBumper(-1)));
-            bool handbrakeDrift=_occupied&&_brake&&Mathf.Abs(forwardSpeed)>7f&&Mathf.Abs(_steer)>.12f;
-            bool powerDrift=_occupied&&!_brake&&_throttle>.72f&&Mathf.Abs(forwardSpeed)>10f&&Mathf.Abs(_steer)>.32f&&_engineRpm>4550f;
-            float targetRearGrip=handbrakeDrift ? .42f : powerDrift ? .68f : 1f;
-            _rearGripMultiplier=Mathf.MoveTowards(_rearGripMultiplier,targetRearGrip,(targetRearGrip<1f?3.8f:2.6f)*dt);
-            _isDrifting=_rearGripMultiplier<.88f;
+            bool handbrakeDrift=_occupied&&_handbrake;
+            // Slip, rather than the simulated gear/RPM cycle, sustains a drift.
+            bool powerDrift=_occupied&&driftContact&&!_brake&&_throttle>.55f&&
+                ((_driftBlend>.15f&&Mathf.Abs(slipAngle)>7f)||
+                 (_rearDriveShare>.6f&&_throttle>.85f&&Mathf.Abs(_steer)>.5f&&forwardSpeed>9f));
+            float driftTarget=_occupied&&driftContact&&(handbrakeDrift||powerDrift)?1f:0f;
+            _driftBlend=Mathf.MoveTowards(_driftBlend,driftTarget,(driftTarget>_driftBlend?2.4f:1.1f)*dt);
+            float driftGrip=Mathf.Lerp(.82f,.68f,Mathf.InverseLerp(.5f,.68f,_rearDriveShare));
+            float targetRearGrip=Mathf.Lerp(1f,handbrakeDrift?.52f:driftGrip,_driftBlend);
+            // Beyond a large slip angle restore grip gradually instead of
+            // encouraging an endless spin. No velocity or yaw is injected.
+            targetRearGrip=Mathf.Lerp(targetRearGrip,1f,Mathf.InverseLerp(40f,75f,Mathf.Abs(slipAngle)));
+            _rearGripMultiplier=Mathf.MoveTowards(_rearGripMultiplier,targetRearGrip,1.5f*dt);
+            _isDrifting=driftContact&&Mathf.Abs(slipAngle)>8f;
             float torque=0f,brake=0f;
             if(!_occupied)brake=parkBrakeTorque;
             else if(_brake)brake=serviceBrakeTorque;
             else if(changingDirection)brake=directionChangeBrakeTorque;
-            else if(blocked)brake=serviceBrakeTorque;
             else
             {
                 bool belowLimit=!_vehicleDisabled&&(_throttle>=0f?forwardSpeed<effectiveTopSpeed:forwardSpeed>-reverseTopSpeed);
@@ -268,33 +305,43 @@ namespace CheatOnYourDayOnes.Vehicles
                     float directionLimit=_throttle>=0f?topSpeed:reverseTopSpeed;
                     float driveSpeed01=Mathf.Clamp01(Mathf.Abs(forwardSpeed)/Mathf.Max(.1f,directionLimit));
                     float taper=Mathf.Lerp(1f,.24f,Mathf.SmoothStep(0f,1f,Mathf.InverseLerp(.55f,1f,driveSpeed01)));
-                    torque=_throttle*maximumMotorTorque*taper*Mathf.Lerp(.25f,1f,engine01);
-                    if(collisionEscape)torque*=1.65f;
+                    torque=_throttle*maximumMotorTorque*taper*enginePerformance;
                 }
                 // Let the tyres coast naturally when W/S is released. Only Space,
                 // a direction change or a real obstacle applies braking torque.
                 if(Mathf.Abs(_throttle)<.04f)brake=0f;
             }
+            if(Vector3.Dot(transform.up,Vector3.up)<.45f)torque=0f;
             foreach(WheelPhysics wheel in _physicsWheels)
             {
                 if(wheel.collider==null)continue;
                 wheel.collider.steerAngle=wheel.front?roadWheelAngle:0f;
-                float wheelTorque=torque;
+                float wheelTorque=torque*(wheel.front?(1f-_rearDriveShare)*2f:_rearDriveShare*2f);
                 if(wheel.collider.GetGroundHit(out WheelHit tractionHit))
                 {
                     float slip=Mathf.Abs(tractionHit.forwardSlip);
                     if(slip>tractionControlSlip)wheelTorque*=Mathf.Lerp(1f,tractionTorqueFloor,Mathf.InverseLerp(tractionControlSlip,1.35f,slip));
                 }
                 float wheelHealth01=Mathf.Clamp01(wheel.health/100f);
-                wheel.collider.motorTorque=wheelTorque*Mathf.Lerp(.35f,1f,wheelHealth01);
-                wheel.collider.brakeTorque=(collisionEscape?0f:handbrakeDrift?(wheel.front?serviceBrakeTorque*.12f:serviceBrakeTorque*1.15f):brake)+(collisionEscape?0f:(1f-wheelHealth01)*75f);
+                wheel.collider.motorTorque=handbrakeDrift&&!wheel.front?0f:wheelTorque*Mathf.Lerp(.78f,1f,wheelHealth01);
+                float wheelBrake=brake*(wheel.front?1.2f:.8f);
+                if(Mathf.Abs(forwardSpeed)>4f&&wheel.collider.GetGroundHit(out WheelHit brakeHit)&&Mathf.Abs(brakeHit.forwardSlip)>.5f)wheelBrake*=.4f;
+                if(handbrakeDrift&&!wheel.front)wheelBrake=Mathf.Max(wheelBrake,serviceBrakeTorque*1.1f);
+                wheel.collider.brakeTorque=wheelBrake;
+                WheelFrictionCurve forward=wheel.collider.forwardFriction;
+                forward.stiffness=1.35f;
+                wheel.collider.forwardFriction=forward;
                 WheelFrictionCurve side=wheel.collider.sidewaysFriction;
                 side.stiffness=sidewaysTyreStiffness*(wheel.front?1f:_rearGripMultiplier)*Mathf.Lerp(.48f,1f,wheelHealth01);
                 wheel.collider.sidewaysFriction=side;
-                JointSpring damagedSpring=wheel.collider.suspensionSpring;damagedSpring.spring=wheelSpring*Mathf.Lerp(.58f,1f,wheelHealth01);damagedSpring.damper=wheelDamper*Mathf.Lerp(.68f,1f,wheelHealth01);wheel.collider.suspensionSpring=damagedSpring;
+                JointSpring damagedSpring=wheel.collider.suspensionSpring;damagedSpring.spring=wheelSpring*Mathf.Lerp(.82f,1f,wheelHealth01);damagedSpring.damper=wheelDamper*Mathf.Lerp(.86f,1f,wheelHealth01);wheel.collider.suspensionSpring=damagedSpring;
             }
-            _rb.AddForce(-transform.up*(aerodynamicDownforce*Mathf.Abs(forwardSpeed)*Mathf.Abs(forwardSpeed)),ForceMode.Force);
-            LimitLongitudinalSpeed(effectiveTopSpeed);
+            if(_occupied&&Mathf.Abs(_throttle)>.05f&&!_vehicleDisabled)_rb.WakeUp();
+            if(!_rolloverActive&&Vector3.Dot(transform.up,Vector3.up)>.85f)_rb.AddForce(-transform.up*(aerodynamicDownforce*Mathf.Abs(forwardSpeed)*Mathf.Abs(forwardSpeed)),ForceMode.Force);
+            // Torque tapers at the speed limit; retain collision and downhill momentum.
+            ApplyBodyGroundDrag(dt);
+            ApplyHighSpeedRollover(forwardSpeed,roadWheelAngle);
+            ApplyPostRolloverRighting(dt);
             ApplyAntiRoll(true);ApplyAntiRoll(false);
             if(!_occupied)return;
             DetectNPCHits();DetectNPCOverrun();
@@ -334,6 +381,7 @@ namespace CheatOnYourDayOnes.Vehicles
 
         private void ApplyAntiRoll(bool frontAxle)
         {
+            if(Vector3.Dot(transform.up,Vector3.up)<.55f)return;
             WheelPhysics left=null,right=null;
             foreach(WheelPhysics wheel in _physicsWheels){if(wheel.front!=frontAxle)continue;if(wheel.left)left=wheel;else right=wheel;}
             if(left==null||right==null||left.collider==null||right.collider==null)return;
@@ -341,13 +389,64 @@ namespace CheatOnYourDayOnes.Vehicles
             bool leftGrounded=left.collider.GetGroundHit(out WheelHit leftHit),rightGrounded=right.collider.GetGroundHit(out WheelHit rightHit);
             if(leftGrounded)leftTravel=(-left.collider.transform.InverseTransformPoint(leftHit.point).y-left.collider.radius)/Mathf.Max(.01f,left.collider.suspensionDistance);
             if(rightGrounded)rightTravel=(-right.collider.transform.InverseTransformPoint(rightHit.point).y-right.collider.radius)/Mathf.Max(.01f,right.collider.suspensionDistance);
-            float force=(leftTravel-rightTravel)*antiRollForce;
+            // Bound anti-roll force by axle weight so it cannot pin an unloaded tyre.
+            float stabilizerFactor=1f;
+            float force=(Mathf.Clamp01(leftTravel)-Mathf.Clamp01(rightTravel))*antiRollForce*stabilizerFactor;
+            force=Mathf.Clamp(force,-_rb.mass*Physics.gravity.magnitude*.22f,_rb.mass*Physics.gravity.magnitude*.22f);
             if(leftGrounded)_rb.AddForceAtPosition(left.collider.transform.up*-force,left.collider.transform.position);
             if(rightGrounded)_rb.AddForceAtPosition(right.collider.transform.up*force,right.collider.transform.position);
         }
 
+        private void ApplyHighSpeedRollover(float forwardSpeed,float roadWheelAngle)
+        {
+            // Observe the physical roll. Steering does not inject extra launch,
+            // lift or rotation energy into a car that has already lost traction.
+            float upright=Vector3.Dot(transform.up,Vector3.up);
+            if(!_rolloverActive&&upright<.65f&&_rb.linearVelocity.sqrMagnitude>9f)
+            {
+                _rolloverActive=true;
+                _rolloverElapsed=0f;
+                _rolloverGroundHits=0;
+                _rolloverDirection=Mathf.Sign(Vector3.Dot(_rb.angularVelocity,transform.forward));
+            }
+            _rolloverImpactCooldown=Mathf.Max(0f,_rolloverImpactCooldown-Time.fixedDeltaTime);
+            if(!_rolloverActive)return;
+            _rolloverElapsed+=Time.fixedDeltaTime;
+            if(_rolloverElapsed>.6f&&
+               (upright>.9f||(_rb.angularVelocity.sqrMagnitude<.16f&&_rb.linearVelocity.sqrMagnitude<1f)))
+            {
+                _rolloverActive=false;
+                _postRolloverRestTime=0f;
+            }
+        }
+
+        private void ApplyBodyGroundDrag(float dt)
+        {
+            if(Time.fixedTime>_bodyContactUntil)return;
+            // Contact friction opposes sliding only. Airborne momentum and the
+            // normal component of the collision response are preserved.
+            Vector3 slide=Vector3.ProjectOnPlane(_rb.linearVelocity,_bodyContactNormal);
+            float speed=slide.magnitude;
+            if(speed<.01f)return;
+            float deceleration=Mathf.Min(speed/Mathf.Max(.001f,dt),Physics.gravity.magnitude*.38f);
+            _rb.AddForce(-slide/speed*deceleration,ForceMode.Acceleration);
+        }
+
+        private void ApplyPostRolloverRighting(float dt)
+        {
+            if(_rolloverActive||!_occupied||Time.fixedTime>_bodyContactUntil)return;
+            float upright=Vector3.Dot(transform.up,Vector3.up);
+            if(upright>.88f||_rb.linearVelocity.sqrMagnitude>1f||_rb.angularVelocity.sqrMagnitude>.25f){_postRolloverRestTime=0f;return;}
+            _postRolloverRestTime+=dt;
+            if(_postRolloverRestTime<2.5f||Mathf.Abs(_rawSteer)<.5f)return;
+            Vector3 axis=Vector3.Cross(transform.up,Vector3.up);
+            if(axis.sqrMagnitude<.01f)axis=transform.forward*Mathf.Sign(_rolloverDirection==0f?1f:_rolloverDirection);
+            _rb.AddTorque(axis.normalized*4.2f,ForceMode.Acceleration);
+        }
+
         private void LateUpdate()
         {
+            if(_occupied&&_driver!=null){Transform seat=driverSeat!=null?driverSeat:transform;_driver.SetPositionAndRotation(seat.position,seat.rotation);}
             foreach(WheelPhysics wheel in _physicsWheels)
             {
                 if(wheel.collider==null||wheel.steeringPivot==null||wheel.spinPivot==null)continue;
@@ -430,16 +529,17 @@ namespace CheatOnYourDayOnes.Vehicles
             if(collision.collider.GetComponentInParent<NPCWanderer>()!=null)return;
             if(collision.collider==_lastCrashCollider&&Time.time-_lastCrashTime<.22f)return;
             Vector3 relativeVelocity=collision.relativeVelocity;
-            float closingSpeed=0f;Vector3 impactPoint=collision.GetContact(0).point,separationNormal=Vector3.zero;int validContacts=0;
+            float closingSpeed=0f;Vector3 impactPoint=Vector3.zero,separationNormal=Vector3.zero;int validContacts=0;
             foreach(ContactPoint contact in collision.contacts)
             {
                 Vector3 localPoint=transform.InverseTransformPoint(contact.point);
-                if(Mathf.Abs(contact.normal.y)>.58f||localPoint.y<=_wheelContactLocalY+.09f*_modelScale)continue;
+                if(contact.thisCollider!=_chassisCollider)continue;
+                if(Vector3.Dot(transform.up,Vector3.up)>.75f&&(contact.normal.y>.58f||localPoint.y<=_wheelContactLocalY+.09f*_modelScale))continue;
                 closingSpeed=Mathf.Max(closingSpeed,Mathf.Abs(Vector3.Dot(relativeVelocity,contact.normal)));
                 impactPoint+=contact.point;separationNormal+=contact.normal;validContacts++;
             }
             if(validContacts==0)return;
-            impactPoint/=validContacts+1;
+            impactPoint/=validContacts;
             float impactKmh=closingSpeed*3.6f;
             if(impactKmh<minimumDamageImpactKmh)return;
             _lastCrashCollider=collision.collider;_lastCrashTime=Time.time;
@@ -450,15 +550,25 @@ namespace CheatOnYourDayOnes.Vehicles
             float longitudinal=(localImpact.z-center.z)/Mathf.Max(.1f,size.z*.5f);
             float lateral=Mathf.Abs(localImpact.x-center.x)/Mathf.Max(.1f,size.x*.5f);
             bool front=longitudinal>.28f,rear=longitudinal<-.28f,side=lateral>.62f;
-            _collisionEscapeDirection=front?-1:rear?1:(Vector3.Dot(relativeVelocity,transform.forward)>=0f?-1:1);
-            _collisionRecoveryUntil=Time.time+30f;
             DriveableCar otherCar=collision.collider.GetComponentInParent<DriveableCar>();
-            if(otherCar!=null&&otherCar!=this&&separationNormal.sqrMagnitude>.001f)_rb.AddForce(separationNormal.normalized*.38f,ForceMode.VelocityChange);
             float zoneMultiplier=side ? 1.16f : rear ? .78f : 1f;
             float damage=Mathf.Clamp(Mathf.Pow(Mathf.Max(0f,impactKmh-minimumDamageImpactKmh),1.1f)*.55f*zoneMultiplier/Mathf.Max(.35f,crashResistance),0f,100f);
             bodyHealth=Mathf.Max(0f,bodyHealth-damage);
-            float engineDamage=damage*(front ? .68f : side ? .28f : .16f);
+            float engineDamage=damage*(front ? .48f : side ? .14f : .06f);
             engineHealth=Mathf.Max(0f,engineHealth-engineDamage);
+            float panelDamage=damage*((front||rear) ? .92f : .72f);
+            if(front)frontBodyHealth=Mathf.Max(0f,frontBodyHealth-panelDamage);
+            if(rear)rearBodyHealth=Mathf.Max(0f,rearBodyHealth-panelDamage);
+            if(side)
+            {
+                if(localImpact.x<center.x)leftBodyHealth=Mathf.Max(0f,leftBodyHealth-panelDamage);
+                else rightBodyHealth=Mathf.Max(0f,rightBodyHealth-panelDamage);
+            }
+            if(!front&&!rear&&!side)
+            {
+                leftBodyHealth=Mathf.Max(0f,leftBodyHealth-damage*.32f);
+                rightBodyHealth=Mathf.Max(0f,rightBodyHealth-damage*.32f);
+            }
 
             if(damage>7f&&_physicsWheels.Count>0)
             {
@@ -472,7 +582,7 @@ namespace CheatOnYourDayOnes.Vehicles
                 if(nearest!=null)nearest.health=Mathf.Max(0f,nearest.health-damage*(side ? .92f : .48f));
             }
 
-            _vehicleDisabled=bodyHealth<=.01f||engineHealth<=.01f;
+            _vehicleDisabled=engineHealth<=.01f;
             if(_vehicleDisabled){_throttle=0f;_rawThrottle=0f;}
             if(_occupied&&impactKmh>34f&&_driver!=null)
             {
@@ -480,6 +590,8 @@ namespace CheatOnYourDayOnes.Vehicles
                 if(player!=null&&player.Needs!=null)player.Needs.RequestDamage(Mathf.Clamp((impactKmh-30f)*.22f,0f,32f));
             }
             UpdateDamageEffects(impactPoint,damage);
+            ApplyLocalizedBodyDamage(impactPoint,damage);
+            CreateImpactScar(impactPoint,separationNormal.sqrMagnitude>.001f?separationNormal.normalized:(transform.position-impactPoint).normalized,damage);
             UpdateVisibleBodyDamage();
             string zone=front?"front":rear?"rear":side?"side":"corner";
             Debug.Log($"[CYDOY] CRASH {impactKmh:F0} km/h | {zone} | damage {damage:F0} | body {bodyHealth:F0}% | engine {engineHealth:F0}%",this);
@@ -541,27 +653,41 @@ namespace CheatOnYourDayOnes.Vehicles
         {
             if(_crashParticles!=null&&damage>1f){_crashParticles.transform.position=impactPoint;ParticleSystem.EmissionModule emission=_crashParticles.emission;emission.enabled=true;_crashParticles.Emit(Mathf.Clamp(Mathf.RoundToInt(damage*.45f),4,36));emission.enabled=false;}
             if(_damageSmoke==null)return;
-            float severity=Mathf.Max(1f-engineHealth/100f,1f-bodyHealth/100f);
+            float severity=1f-engineHealth/100f;
             ParticleSystem.EmissionModule smokeEmission=_damageSmoke.emission;smokeEmission.rateOverTime=severity>.45f?Mathf.Lerp(2.2f,9f,Mathf.InverseLerp(.45f,1f,severity)):0f;
             if(severity>.45f&&!_damageSmoke.isPlaying)_damageSmoke.Play();else if(severity<=.45f&&_damageSmoke.isPlaying)_damageSmoke.Stop();
         }
 
-        private void UpdateVisibleBodyDamage()
+        private void UpdateVisibleBodyDamage() { }
+        private void ApplyLocalizedBodyDamage(Vector3 impactPoint,float damage) { }
+        private void CreateImpactScar(Vector3 point,Vector3 inward,float damage)
         {
-            float damage01=1f-Mathf.Clamp01(bodyHealth/100f);
-            float darken=Mathf.SmoothStep(0f,.48f,damage01);
-            foreach(BodyMaterialState state in _bodyMaterialStates)
+            if(_bodyDamage!=null)_bodyDamage.ApplyImpact(point,inward,damage);
+        }
+
+        private void OnCollisionEnter(Collision collision){RecordBodyContact(collision);ProcessCrashDamage(collision);SuppressRoadTriangleImpulse(collision);}
+        private void OnCollisionStay(Collision collision){RecordBodyContact(collision);SuppressRoadTriangleImpulse(collision);}
+
+
+        private void RecordBodyContact(Collision collision)
+        {
+            if(collision==null||Vector3.Dot(transform.up,Vector3.up)>.82f)return;
+            for(int i=0;i<collision.contactCount;i++)
             {
-                if(state.material==null)continue;
-                float gray=state.originalColor.grayscale;Color desaturated=Color.Lerp(state.originalColor,new Color(gray,gray,gray,state.originalColor.a),damage01*.42f);Color damaged=Color.Lerp(desaturated,new Color(.09f,.085f,.08f,state.originalColor.a),darken);damaged.a=state.originalColor.a;state.material.SetColor(state.colorProperty,damaged);
+                ContactPoint contact=collision.GetContact(i);
+                if(contact.thisCollider!=_chassisCollider||contact.normal.y<.3f)continue;
+                _bodyContactNormal=contact.normal.normalized;
+                _bodyContactUntil=Time.fixedTime+Time.fixedDeltaTime*1.5f;
+                return;
             }
         }
 
-        private void OnCollisionEnter(Collision collision){ProcessCrashDamage(collision);SuppressRoadTriangleImpulse(collision);HandleSolidObstacleCollision(collision);}
-        private void OnCollisionStay(Collision collision){SuppressRoadTriangleImpulse(collision);HandleSolidObstacleCollision(collision);}
         private void SuppressRoadTriangleImpulse(Collision collision)
         {
-            if(!_smoothRoadContact||collision==null||_rb==null||_rb.linearVelocity.y<=0f)return;
+            // During a rollover these are genuine body-to-ground impulses. The old
+            // seam filter reduced roll velocity by 80% on every hit and trapped the
+            // vehicle on its side.
+            if(_rolloverActive||!_smoothRoadContact||collision==null||_rb==null||_rb.linearVelocity.y<=0f)return;
             float seamLimit=Mathf.Max(.025f,Mathf.Min(smallBumpHeightLimit,curbReferenceHeight*suspensionActivationPercent)*_modelScale);
             bool lowRoadContact=false;
             foreach(ContactPoint contact in collision.contacts)
@@ -573,69 +699,7 @@ namespace CheatOnYourDayOnes.Vehicles
             Vector3 velocity=_rb.linearVelocity;velocity.y=0f;_rb.linearVelocity=velocity;
             Vector3 angular=_rb.angularVelocity;angular.x*=.2f;angular.z*=.2f;_rb.angularVelocity=angular;
         }
-        private void HandleSolidObstacleCollision(Collision collision)
-        {
-            if(!_occupied||collision==null||collision.collider==null)return;
-            if(collision.transform==transform||collision.transform.IsChildOf(transform))return;
-            if(collision.collider.GetComponentInParent<NPCWanderer>()!=null)return;
-            DriveableCar otherCar=collision.collider.GetComponentInParent<DriveableCar>();
-            if(otherCar!=null&&otherCar!=this)return;
-            Rigidbody otherRb=collision.rigidbody;
-            if(otherRb!=null&&!otherRb.isKinematic)return;
 
-            bool shouldStop=false;
-            string hitSide="side";
-            foreach(ContactPoint contact in collision.contacts)
-            {
-                if(Mathf.Abs(contact.normal.y)>=.55f)continue;
-                Vector3 localPoint=transform.InverseTransformPoint(contact.point);
-                Vector3 center=_chassisCollider!=null?_chassisCollider.center:Vector3.zero;
-                Vector3 size=_chassisCollider!=null?_chassisCollider.size:Vector3.one;
-                float chassisBottom=center.y-size.y*.5f;
-                // Small vertical seams in modular parking/road meshes are ground contacts,
-                // not walls. Let the Rigidbody react without engaging the emergency stop.
-                if(localPoint.y<=chassisBottom+size.y*.32f)continue;
-                float dz=localPoint.z-center.z;
-                float dx=localPoint.x-center.x;
-
-                // Prefer front/rear classification when the contact is longitudinal.
-                if(Mathf.Abs(dz)>=Mathf.Abs(dx)*.55f&&Mathf.Abs(dz)>=size.z*.34f)
-                {
-                    if(dz>=0f)
-                    {
-                        hitSide="front";
-                        // Front obstacle only blocks forward motion. Reverse is always allowed.
-                        if(_driveSpeed>.01f||_rawThrottle>.05f)shouldStop=true;
-                    }
-                    else
-                    {
-                        hitSide="rear";
-                        // Rear obstacle only blocks reverse motion. Forward is always allowed.
-                        if(_driveSpeed<-.01f||_rawThrottle<-.05f)shouldStop=true;
-                    }
-                }
-                else
-                {
-                    // A true side hit only stops us if our current velocity is moving into that surface.
-                    Vector3 horizontalVelocity=_rb.linearVelocity;horizontalVelocity.y=0f;
-                    Vector3 horizontalNormal=contact.normal;horizontalNormal.y=0f;
-                    if(horizontalNormal.sqrMagnitude>.001f&&horizontalVelocity.sqrMagnitude>.001f)
-                    {
-                        horizontalNormal.Normalize();
-                        if(Vector3.Dot(horizontalVelocity,horizontalNormal)<-.05f)shouldStop=true;
-                    }
-                }
-                if(shouldStop)break;
-            }
-            if(!shouldStop)return;
-
-            float beforeKmh=SpeedKmh;
-            _driveSpeed=0f;
-            _yawRate=0f;
-            Vector3 velocity=_rb.linearVelocity;velocity.x=0f;velocity.z=0f;_rb.linearVelocity=velocity;
-            Vector3 angular=_rb.angularVelocity;angular.y=0f;_rb.angularVelocity=angular;
-            Debug.Log($"[CYDOY] CAR SOLID IMPACT -> 0 km/h | side={hitSide} | object={collision.collider.name} | before={beforeKmh:F1}km/h",this);
-        }
 
         private void DetectNPCHits(){if(_chassisCollider==null||Mathf.Abs(_driveSpeed)<.15f)return;HashSet<NPCWanderer> current=_npcContactScratch;current.Clear();float halfWidth=_chassisCollider.size.x*.5f+bumperSideMargin;float frontZ=_chassisCollider.center.z+_chassisCollider.size.z*.5f;float rearZ=_chassisCollider.center.z-_chassisCollider.size.z*.5f;bool forward=_driveSpeed>=0;foreach(NPCWanderer npc in NPCWanderer.ActiveNpcs){if(npc==null||npc.IsDown)continue;Vector3 local=transform.InverseTransformPoint(npc.transform.position);float lateral=Mathf.Abs(local.x-_chassisCollider.center.x);if(lateral>halfWidth)continue;float longitudinal=forward?local.z-frontZ:rearZ-local.z;if(longitudinal<-.30f||longitudinal>bumperReach)continue;current.Add(npc);if(_npcHitThisContact.Contains(npc))continue;float kmh=SpeedKmh;if(npc.HitByVehicle(DriveVelocity,transform.position)){ApplyNPCImpactSpeedResponse(kmh);_npcHitThisContact.Add(npc);Debug.Log($"[CYDOY] BUMPER HIT: {npc.name} gap={longitudinal:F2}m side={lateral:F2}m speed={kmh:F1}km/h",this);}}_npcHitThisContact.RemoveWhere(n=>n==null||!current.Contains(n));}
         private void DetectNPCOverrun(){if(_chassisCollider==null||Mathf.Abs(_driveSpeed)<1f)return;HashSet<NPCWanderer> current=_npcOverrunScratch;current.Clear();float halfWidth=_chassisCollider.size.x*.5f*.92f,halfLength=_chassisCollider.size.z*.5f*1.05f;foreach(NPCWanderer npc in NPCWanderer.ActiveNpcs){if(npc==null||!npc.IsDown)continue;Vector3 local=transform.InverseTransformPoint(npc.DownPosition);bool underneath=Mathf.Abs(local.x-_chassisCollider.center.x)<=halfWidth&&Mathf.Abs(local.z-_chassisCollider.center.z)<=halfLength&&Mathf.Abs(local.y-_chassisCollider.center.y)<2f*_modelScale;if(!underneath)continue;current.Add(npc);if(_npcOverrunContact.Contains(npc))continue;float side=Mathf.Sign(local.x-_chassisCollider.center.x);if(Mathf.Abs(side)<.01f)side=Random.value>.5f?1f:-1f;Vector3 angular=_rb.angularVelocity;angular+=transform.forward*(side*overrunRollKick);angular.x=Mathf.Clamp(angular.x,-.5f,.5f);angular.z=Mathf.Clamp(angular.z,-.5f,.5f);_rb.angularVelocity=angular;Vector3 velocity=_rb.linearVelocity;velocity.y=Mathf.Min(velocity.y+overrunVerticalKick,.08f);_rb.linearVelocity=velocity;_npcOverrunContact.Add(npc);Debug.Log($"[CYDOY] NPC OVERRUN: {npc.name} side={(side<0?"left":"right")}",this);}_npcOverrunContact.RemoveWhere(n=>n==null||!current.Contains(n));}
@@ -647,8 +711,8 @@ namespace CheatOnYourDayOnes.Vehicles
             if(_chassisCollider!=null&&_chassisCollider.enabled)return Vector3.Distance(p,_chassisCollider.ClosestPoint(p));
             return Vector3.Distance(p,transform.position);
         }
-        public bool TryEnter(Transform player){if(_occupied||player==null||DistanceFrom(player.position)>interactionDistance)return false;_driver=player;_driverController=player.GetComponent<CharacterController>();_networkController=player.GetComponent<CheatOnYourDayOnes.Player.NetworkPlayerController>();_interactor=player.GetComponent<VehicleInteractor>();if(_networkController!=null)_networkController.enabled=false;if(_interactor!=null)_interactor.enabled=false;_driverRenderers=player.GetComponentsInChildren<Renderer>(true);_driverRendererStates=new bool[_driverRenderers.Length];for(int i=0;i<_driverRenderers.Length;i++){_driverRendererStates[i]=_driverRenderers[i].enabled;_driverRenderers[i].enabled=false;}_driverColliders=player.GetComponentsInChildren<Collider>(true);_driverColliderStates=new bool[_driverColliders.Length];for(int i=0;i<_driverColliders.Length;i++){_driverColliderStates[i]=_driverColliders[i].enabled;_driverColliders[i].enabled=false;}if(_driverController!=null)_driverController.enabled=false;Transform seat=driverSeat!=null?driverSeat:transform;player.SetParent(seat,false);player.localPosition=Vector3.zero;player.localRotation=Quaternion.identity;_camera=Object.FindFirstObjectByType<ThirdPersonCamera>(FindObjectsInactive.Include);if(_camera!=null)_camera.EnterVehicleMode(transform);ConfigureRigidbody();if(_physicsWheels.Count<4){DetectWheelsAndScale();RebuildVehicleColliders();}_driveSpeed=_throttle=_steer=_yawRate=0;_rb.linearVelocity=Vector3.zero;_rb.angularVelocity=Vector3.zero;_rb.WakeUp();_occupied=true;_ignoreExitUntilEReleased=true;_npcHitThisContact.Clear();_npcOverrunContact.Clear();Debug.Log("[CYDOY] VEHICLE READY - four-wheel suspension",this);return true;}
-        public void Exit(){if(!_occupied||_driver==null)return;Transform p=_driver;p.SetParent(null,true);p.position=exitPoint!=null?exitPoint.position:transform.position-transform.right*1.8f+Vector3.up*.25f;p.rotation=Quaternion.Euler(0,transform.eulerAngles.y,0);if(_camera!=null)_camera.ExitVehicleMode(p);if(_driverRenderers!=null)for(int i=0;i<_driverRenderers.Length;i++)if(_driverRenderers[i]!=null)_driverRenderers[i].enabled=_driverRendererStates[i];if(_driverColliders!=null)for(int i=0;i<_driverColliders.Length;i++)if(_driverColliders[i]!=null)_driverColliders[i].enabled=_driverColliderStates[i];if(_driverController!=null)_driverController.enabled=true;if(_networkController!=null)_networkController.enabled=true;if(_interactor!=null)_interactor.enabled=true;_driver=null;_occupied=false;_rawThrottle=_rawSteer=_throttle=_steer=_driveSpeed=_yawRate=_visualSteeringInput=0;_brake=false;_npcHitThisContact.Clear();_npcOverrunContact.Clear();}
+        public bool TryEnter(Transform player){if(_occupied||player==null||DistanceFrom(player.position)>interactionDistance)return false;_driver=player;_driverController=player.GetComponent<CharacterController>();_networkController=player.GetComponent<CheatOnYourDayOnes.Player.NetworkPlayerController>();_interactor=player.GetComponent<VehicleInteractor>();if(_networkController!=null)_networkController.enabled=false;if(_interactor!=null)_interactor.enabled=false;_driverRenderers=player.GetComponentsInChildren<Renderer>(true);_driverRendererStates=new bool[_driverRenderers.Length];for(int i=0;i<_driverRenderers.Length;i++){_driverRendererStates[i]=_driverRenderers[i].enabled;_driverRenderers[i].enabled=false;}_driverColliders=player.GetComponentsInChildren<Collider>(true);_driverColliderStates=new bool[_driverColliders.Length];for(int i=0;i<_driverColliders.Length;i++){_driverColliderStates[i]=_driverColliders[i].enabled;_driverColliders[i].enabled=false;}if(_driverController!=null)_driverController.enabled=false;Transform seat=driverSeat!=null?driverSeat:transform;player.SetPositionAndRotation(seat.position,seat.rotation);_camera=Object.FindFirstObjectByType<ThirdPersonCamera>(FindObjectsInactive.Include);if(_camera!=null)_camera.EnterVehicleMode(transform);ConfigureRigidbody();if(_physicsWheels.Count<4){DetectWheelsAndScale();RebuildVehicleColliders();}_driveSpeed=_throttle=_steer=_yawRate=0;_rb.linearVelocity=Vector3.zero;_rb.angularVelocity=Vector3.zero;_rb.WakeUp();_occupied=true;_ignoreExitUntilEReleased=true;_npcHitThisContact.Clear();_npcOverrunContact.Clear();Debug.Log("[CYDOY] VEHICLE READY - four-wheel suspension",this);return true;}
+        public void Exit(){if(!_occupied||_driver==null)return;Transform p=_driver;p.position=exitPoint!=null?exitPoint.position:transform.position-transform.right*1.8f+Vector3.up*.25f;p.rotation=Quaternion.Euler(0,transform.eulerAngles.y,0);if(_camera!=null)_camera.ExitVehicleMode(p);if(_driverRenderers!=null)for(int i=0;i<_driverRenderers.Length;i++)if(_driverRenderers[i]!=null)_driverRenderers[i].enabled=_driverRendererStates[i];if(_driverColliders!=null)for(int i=0;i<_driverColliders.Length;i++)if(_driverColliders[i]!=null)_driverColliders[i].enabled=_driverColliderStates[i];if(_driverController!=null)_driverController.enabled=true;if(_networkController!=null)_networkController.enabled=true;if(_interactor!=null)_interactor.enabled=true;_driver=null;_occupied=false;_rolloverActive=false;_rawThrottle=_rawSteer=_throttle=_steer=_driveSpeed=_yawRate=_visualSteeringInput=_rolloverRisk=_rolloverBuild=_rolloverEnergy=_postRolloverRestTime=0;_brake=false;_npcHitThisContact.Clear();_npcOverrunContact.Clear();}
         private void RebuildVehicleColliders()
         {
             foreach(WheelPhysics old in _physicsWheels)if(old.collider!=null)Destroy(old.collider.gameObject);
@@ -708,7 +772,7 @@ namespace CheatOnYourDayOnes.Vehicles
                 Transform steering=spin!=null&&spin.parent!=null&&spin.parent.name.ToLowerInvariant().Contains("steeringpivot")?spin.parent:FindNamedAncestorOrChild(pair.Key,"steeringpivot");
                 if(spin==null)spin=pair.Key;if(steering==null)steering=spin.parent!=null?spin.parent:spin;
                 string wheelName=(steering.name+" "+spin.name).ToLowerInvariant();
-                _physicsWheels.Add(new WheelPhysics{collider=wheelCollider,steeringPivot=steering,spinPivot=spin,steeringBaseRotation=steering.localRotation,spinBaseRotation=spin.localRotation,front=wheelName.Contains("front"),left=wheelName.Contains("left")});
+                _physicsWheels.Add(new WheelPhysics{collider=wheelCollider,steeringPivot=steering,spinPivot=spin,steeringBaseRotation=steering.localRotation,spinBaseRotation=spin.localRotation,front=transform.InverseTransformPoint(wb.center).z>bodyBounds.center.z,left=transform.InverseTransformPoint(wb.center).x<bodyBounds.center.x});
             }
             VehicleWheelVisuals oldVisuals=GetComponent<VehicleWheelVisuals>();if(oldVisuals!=null)oldVisuals.enabled=false;
             if(!float.IsInfinity(_wheelContactLocalY)&&_chassisCollider!=null)
@@ -728,6 +792,7 @@ namespace CheatOnYourDayOnes.Vehicles
                     _chassisCollider.center=center;
                 }
             }
+            ConfigureRigidbody();
         }
         private static Transform FindNamedAncestorOrChild(Transform start,string token)
         {

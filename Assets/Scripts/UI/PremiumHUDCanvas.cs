@@ -29,9 +29,10 @@ namespace CheatOnYourDayOnes.UI
         private NetworkPlayerController _movement;
         private CorpseCarryController _corpseCarry;
         private global::MeleeAnimationBridge _melee;
-        private Text _cash,_bank,_aura,_clock,_day,_interactionKeyText,_interactionText,_healthValue,_hungerValue,_energyValue,_staminaValue,_speedText,_rpmText,_gearText,_driftText,_vehicleConditionText;
-        private Image _healthFill,_hungerFill,_energyFill,_staminaFill,_needle,_rpmNeedle,_reticleRing,_reticleDot,_vehicleConditionFill;
-        private GameObject _interactionRoot,_tachoRoot,_vehicleHealthRoot,_reticleRoot;
+        private Text _cash,_bank,_aura,_clock,_day,_interactionKeyText,_interactionText,_healthValue,_hungerValue,_energyValue,_staminaValue,_speedText,_rpmText,_gearText,_driftText;
+        private Image _healthFill,_hungerFill,_energyFill,_staminaFill,_needle,_rpmNeedle,_reticleRing,_reticleDot;
+        private GameObject _interactionRoot,_tachoRoot,_reticleRoot;
+        private VehicleDamagePreviewWidget _vehicleDamagePreview;
         private DriveableCar _occupiedCar;
         private float _nextHudRefresh;
 
@@ -44,6 +45,7 @@ namespace CheatOnYourDayOnes.UI
             {
                 _nextHudRefresh=Time.unscaledTime+.1f;
                 _occupiedCar=FindOccupiedCar();
+                _vehicleDamagePreview.SetVehicle(_occupiedCar);
                 _cash.text="$ "+_player.Wallet.Cash.Value.ToString("N0");_bank.text="$ "+_player.Wallet.Bank.Value.ToString("N0");_aura.text=_player.Aura.Aura.Value.ToString("+0;-0;0");
                 UpdateNeed(_healthValue,_healthFill,_player.Needs.Health.Value);UpdateNeed(_hungerValue,_hungerFill,_player.Needs.Hunger.Value);UpdateNeed(_energyValue,_energyFill,_player.Needs.Energy.Value);
                 if(_movement!=null){_staminaValue.text=Mathf.RoundToInt(_movement.Stamina)+"%";_staminaFill.fillAmount=_movement.Stamina01;}
@@ -51,7 +53,7 @@ namespace CheatOnYourDayOnes.UI
                 bool onFoot=_occupiedCar==null;string prompt=null;string interactionKey="E";
                 if(onFoot&&_corpseCarry!=null&&(_corpseCarry.HasCarriedBody||_corpseCarry.CanPickupBody)){prompt=_corpseCarry.HasCarriedBody?"Körper loslassen":"Körper ziehen";interactionKey="G";}else if(onFoot&&_vehicleInteractor!=null&&_vehicleInteractor.enabled&&_vehicleInteractor.CanEnterVehicle)prompt="Fahren";else if(onFoot&&_interactor!=null&&_interactor.enabled&&!string.IsNullOrWhiteSpace(_interactor.CurrentPrompt))prompt=CleanPrompt(_interactor.CurrentPrompt);
                 _interactionRoot.SetActive(onFoot&&!string.IsNullOrWhiteSpace(prompt));if(_interactionRoot.activeSelf){_interactionKeyText.text=interactionKey;_interactionText.text=prompt;}
-                _tachoRoot.SetActive(_occupiedCar!=null);_vehicleHealthRoot.SetActive(_occupiedCar!=null);
+                _tachoRoot.SetActive(_occupiedCar!=null);_vehicleDamagePreview.gameObject.SetActive(_occupiedCar!=null);
                 bool showReticle=onFoot&&_movement!=null;_reticleRoot.SetActive(showReticle);
                 if(showReticle){bool locked=_melee!=null&&_melee.HasStrikeTarget;Color c=locked?Green:new Color(White.r,White.g,White.b,.82f);_reticleRing.color=c;_reticleDot.color=locked?Green:White;}
             }
@@ -62,8 +64,6 @@ namespace CheatOnYourDayOnes.UI
                 float speedAngle=Mathf.Lerp(-130f,130f,Mathf.Clamp01(kmh/160f));_needle.rectTransform.localRotation=Quaternion.Euler(0,0,-speedAngle);
                 float rpm=_occupiedCar.EngineRpm;_rpmText.text=(rpm/1000f).ToString("0.0");float rpmAngle=Mathf.Lerp(-130f,130f,Mathf.Clamp01(rpm/8000f));_rpmNeedle.rectTransform.localRotation=Quaternion.Euler(0,0,-rpmAngle);
                 _gearText.text=_occupiedCar.CurrentGear<0?"R":"D"+_occupiedCar.CurrentGear;_driftText.gameObject.SetActive(_occupiedCar.IsDrifting);
-                float condition=_occupiedCar.VehicleCondition01;_vehicleConditionFill.fillAmount=condition;Color conditionColor=condition>.6f?Green:condition>.3f?Orange:Red;_vehicleConditionFill.color=conditionColor;_vehicleConditionText.color=conditionColor;
-                _vehicleConditionText.text=_occupiedCar.IsVehicleDisabled?"TOTALSCHADEN":$"{_occupiedCar.VehicleLabel.ToUpperInvariant()}   {Mathf.RoundToInt(condition*100f)}%";
             }
             if(_reticleRoot.activeSelf){float pulse=_melee!=null&&_melee.IsAttacking?1.08f+.05f*Mathf.Sin(Time.unscaledTime*22f):1f;_reticleRoot.transform.localScale=Vector3.one*pulse;}
         }
@@ -133,11 +133,8 @@ namespace CheatOnYourDayOnes.UI
             RectTransform rpmGauge=GaugeRoot(tr,"Tachometer",new Vector2(-372,130),204);RectTransform rpmDial=BuildGaugeFace(rpmGauge,"x1000 RPM",88f,40,5,i=>(i/5).ToString(),.76f);
             _rpmNeedle=GaugeNeedle(rpmDial,65f,Red);_rpmText=TextEl(rpmDial,"0.9",31,White,FontStyle.Bold,TextAnchor.MiddleCenter);_rpmText.rectTransform.sizeDelta=new Vector2(90,42);_rpmText.rectTransform.anchoredPosition=new Vector2(0,-34);
 
-            _vehicleHealthRoot=new GameObject("VehicleCondition",typeof(RectTransform));_vehicleHealthRoot.transform.SetParent(root,false);RectTransform healthRt=_vehicleHealthRoot.GetComponent<RectTransform>();healthRt.anchorMin=healthRt.anchorMax=new Vector2(.5f,0);healthRt.pivot=new Vector2(.5f,0);healthRt.anchoredPosition=new Vector2(0,24);healthRt.sizeDelta=new Vector2(520,82);
-            RectTransform healthCard=PanelBox(healthRt,"ConditionCard",Vector2.zero,new Vector2(520,82),new Vector2(.5f,.5f),new Color(.015f,.018f,.023f,.68f));
-            _vehicleConditionText=TextEl(healthCard,"FAHRZEUG   100%",18,Green,FontStyle.Bold,TextAnchor.MiddleCenter,new Vector2(0,20),new Vector2(450,30),new Vector2(.5f,.5f));
-            _vehicleConditionFill=Bar(healthCard,new Vector2(30,-51),new Vector2(460,13),Green,1f,out _);
-            _tachoRoot.SetActive(false);_vehicleHealthRoot.SetActive(false);
+            GameObject preview=new("VehicleDamageTopView",typeof(RectTransform),typeof(RawImage),typeof(VehicleDamagePreviewWidget));preview.transform.SetParent(root,false);RectTransform previewRt=preview.GetComponent<RectTransform>();previewRt.anchorMin=previewRt.anchorMax=new Vector2(1,0);previewRt.pivot=new Vector2(.5f,.5f);previewRt.anchoredPosition=new Vector2(-650,146);previewRt.sizeDelta=new Vector2(224,272);_vehicleDamagePreview=preview.GetComponent<VehicleDamagePreviewWidget>();
+            _tachoRoot.SetActive(false);preview.SetActive(false);
         }
 
         private RectTransform GaugeRoot(Transform parent,string name,Vector2 center,float size){RectTransform rt=Empty(parent,name,center,new Vector2(size,size),new Vector2(1,0));rt.pivot=new Vector2(.5f,.5f);return rt;}
