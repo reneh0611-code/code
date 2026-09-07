@@ -58,6 +58,11 @@ MeshRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 2
   m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -79,9 +84,11 @@ MeshRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!1 &3941905813175756431
 GameObject:
@@ -141,6 +148,11 @@ MeshRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 2
   m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -162,9 +174,11 @@ MeshRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!1 &4431629511752406189
 GameObject:
@@ -224,6 +238,11 @@ MeshRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 2
   m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -245,9 +264,11 @@ MeshRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!1 &6739804228592001243
 GameObject:
@@ -259,6 +280,7 @@ GameObject:
   m_Component:
   - component: {fileID: 6251920492078742113}
   - component: {fileID: 1196083080072793360}
+  - component: {fileID: 4149342539037942837}
   m_Layer: 0
   m_Name: PT_Grass_02
   m_TagString: Untagged
@@ -291,7 +313,7 @@ LODGroup:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6739804228592001243}
-  serializedVersion: 2
+  serializedVersion: 3
   m_LocalReferencePoint: {x: -0.11682665, y: 0.33101153, z: -0.1027852}
   m_Size: 1.2406445
   m_FadeMode: 0
@@ -305,9 +327,94 @@ LODGroup:
   - screenRelativeHeight: 0.025197431
     fadeTransitionWidth: 0
     renderers:
-    - renderer: {fileID: 1309944978084627218}
+    - renderer: {fileID: 5828874672928699267}
   - screenRelativeHeight: 0.01
     fadeTransitionWidth: 0
     renderers:
     - renderer: {fileID: 5828874672928699267}
   m_Enabled: 1
+  m_GlobalIlluminationLOD: 0
+--- !u!114 &4149342539037942837
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6739804228592001243}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 414927151, guid: f56d46228aee4734f9114056c53bb57e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: EasyRoads3Dv3.dll::EasyRoads3Dv3.ERCrossingMainRoad
+  baseScript: {fileID: 0}
+  roadType1: 0
+  roadTypeInt1: 0
+  roadType2: 0
+  roadTypeInt2: 0
+  roadType3: 0
+  roadTypeInt3: 0
+  indent1: 0
+  indent2: 0
+  roadWidth1: 8
+  roadWidth2: 6
+  roadWidth3: 5
+  tCrossing: 1
+  leftOuter1: []
+  rightOuter1: []
+  leftOuterUV1: []
+  rightOuterUV1: []
+  leftOuter2: []
+  rightOuter2: []
+  leftOuterUV2: []
+  rightOuterUV2: []
+  leftOuter3: []
+  rightOuter3: []
+  leftOuterUV3: []
+  rightOuterUV3: []
+  sourceMaterial: {fileID: 0}
+  sourceMaterial1: {fileID: 0}
+  targetMaterial: {fileID: 0}
+  bottom2: 0
+  bottom2Inner: 0
+  bottom3: 0
+  bottom3Inner: 0
+  top2: 0
+  top2Inner: 0
+  top3: 0
+  top3Inner: 0
+  left2: 0
+  left3: 0
+  right2: 0
+  right3: 0
+  vec2Count: 0
+  vec3Count: 0
+  uvStart1: 0
+  uvEnd1: 0
+  uvStart2: 0
+  uvEnd2: 0
+  rightTopL: {x: 0, y: 0}
+  rightTopR: {x: 0, y: 0}
+  rightBottomL: {x: 0, y: 0}
+  rightBottomR: {x: 0, y: 0}
+  leftTopL: {x: 0, y: 0}
+  leftTopR: {x: 0, y: 0}
+  leftBottomL: {x: 0, y: 0}
+  leftBottomR: {x: 0, y: 0}
+  rightLeftUV: 0
+  rightRightUV: 0
+  leftLeftUV: 0
+  leftRightUV: 0
+  bottomuvInner2: 0
+  topuvInner2: 0
+  innerHeight2: 0
+  outerHeight2: 0
+  bottomuvInner3: 0
+  topuvInner3: 0
+  innerHeight3: 0
+  outerHeight3: 0
+  rightInnerStretch: 0.25
+  leftInnerStretch: 0.25
+  mat1: {fileID: 0}
+  mat2: {fileID: 0}
+  mat3: {fileID: 0}
+  name: 
