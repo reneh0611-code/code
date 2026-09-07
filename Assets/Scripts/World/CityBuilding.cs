@@ -36,6 +36,7 @@ namespace CheatOnYourDayOnes.World
         Leisure
     }
 
+    [SelectionBase]
     public sealed class CityBuilding : MonoBehaviour
     {
         [SerializeField] private string buildingId;
