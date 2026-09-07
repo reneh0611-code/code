@@ -17,7 +17,7 @@ namespace CheatOnYourDayOnes.EditorTools
     public static partial class CivicBuildingsBuilder
     {
         const string Folder="Assets/Generated/NeubeckumCity";
-        const string Ready=Folder+"/STADTGEBAEUDE V3 - SHOPS UND LOKALE";
+        const string Ready=Folder+"/ARCHITEKTUR V6 - WOHNEN UND GEWERBE";
         const string Request=Folder+"/CivicBuildings.request";
         class Spec
         {
@@ -55,7 +55,27 @@ namespace CheatOnYourDayOnes.EditorTools
             new Spec("44_Fahrradladen","Fahrradladen","RADWERK","shop_bikes",15,16,4.6f,new Color(.48f,.27f,.17f),CityBuildingType.GenericShop),
             new Spec("45_Tierbedarf","Tierbedarf","TIERBEDARF","shop_pets",17,14,4,new Color(.71f,.65f,.49f),CityBuildingType.GenericShop),
             new Spec("46_Baumarkt","Baumarkt","BAUMARKT","shop_hardware",32,25,6.2f,new Color(.48f,.5f,.46f),CityBuildingType.GenericShop),
-            new Spec("47_Buchhandlung","Buchhandlung","BUCHHAUS","shop_books",9,13,3.8f,new Color(.38f,.46f,.4f),CityBuildingType.GenericShop)
+            new Spec("47_Buchhandlung","Buchhandlung","BUCHHAUS","shop_books",9,13,3.8f,new Color(.38f,.46f,.4f),CityBuildingType.GenericShop),
+            new Spec("48_Mehrfamilienhaus","Mehrfamilienhaus - 6 begehbare Wohnungen","WOHNHAUS","apartments",18,16,12,Brick,CityBuildingType.Apartment),
+            new Spec("49_Autohandel","Autohandel - befahrbarer Showroom","AUTOHAUS","showroom",28,20,5.6f,White,CityBuildingType.CarDealer),
+            new Spec("50_Autowerkstatt","Autowerkstatt - 3 offene Garagen","WERKSTATT","garage",25,18,5.8f,new Color(.4f,.43f,.45f),CityBuildingType.Workshop),
+            new Spec("51_Skateboardshop","Skateboardshop","SKATE SHOP","skate",13,14,4.5f,Brick,CityBuildingType.GenericShop),
+            new Spec("52_Nachtclub","Nachtclub","NACHTWERK","nightclub",22,21,5.5f,new Color(.12f,.13f,.17f),CityBuildingType.Leisure),
+            new Spec("53_MafiaVilla","Mafia-Villa - begehbares Erdgeschoss","VILLA","mafia",22,18,5,new Color(.72f,.65f,.54f),CityBuildingType.Leisure),
+            new Spec("54_Fashionhaus","Fashionhaus - Premium","MODEHAUS","fashion_new",18,15,5,White,CityBuildingType.ClothingStore),
+            new Spec("55_Streetwear","Streetwear Store","STREETWEAR","streetwear",12,16,4.3f,new Color(.3f,.34f,.35f),CityBuildingType.ClothingStore),
+            new Spec("56_Immobilienbuero","Immobilienbuero","IMMOBILIEN","estate",14,12,4.2f,Sand,CityBuildingType.Office),
+            new Spec("57_Busbahnhof","Busbahnhof - 4 Haltebuchten","BUSBAHNHOF","bus",36,32,4.5f,White,CityBuildingType.GenericShop),
+            new Spec("58_Trattoria","Italienisches Restaurant","TRATTORIA","italian",15,15,4.5f,Sand,CityBuildingType.Restaurant),
+            new Spec("59_AsiaRestaurant","Asiatisches Restaurant","ASIA KUECHE","asian",18,14,4.4f,new Color(.32f,.25f,.21f),CityBuildingType.Restaurant),
+            new Spec("60_Grillhaus","Grillrestaurant","GRILLHAUS","grill",20,16,5,Brick,CityBuildingType.Restaurant),
+            new Spec("61_Klinkerblock","Klinkerblock - ohne Garten","","exterior",16,12,10,Brick,CityBuildingType.Residential),
+            new Spec("62_AltstadtReihenhaus","Altstadt-Reihenhaus - ohne Garten","","exterior",9,11,7,Sand,CityBuildingType.Residential),
+            new Spec("63_Doppelhaus","Doppelhaus - grosser Garten","","exterior",20,11,7,White,CityBuildingType.Residential),
+            new Spec("64_GartenVilla","Villa - grosser Garten","","exterior",14,12,7,White,CityBuildingType.Residential),
+            new Spec("65_HofBungalow","Bungalow - kleiner Garten","","exterior",12,10,4,Sand,CityBuildingType.Residential),
+            new Spec("66_Eckwohnhaus","Eckwohnhaus - ohne Garten","","exterior",17,13,10,new Color(.43f,.49f,.43f),CityBuildingType.Residential),
+            new Spec("67_Stadtvilla","Stadtvilla - kompakter Innenhof","","exterior",13,12,7,new Color(.32f,.39f,.43f),CityBuildingType.Residential)
         };
         static readonly Dictionary<string,Material> Mats=new Dictionary<string,Material>();
         static readonly List<GameObject> Catalog=new List<GameObject>();
@@ -72,7 +92,7 @@ namespace CheatOnYourDayOnes.EditorTools
         public static void BuildCatalog()
         {
             if(EditorApplication.isPlayingOrWillChangePlaymode)throw new InvalidOperationException("Play-Modus zuerst beenden.");
-            if(!AssetDatabase.IsValidFolder(Ready))AssetDatabase.CreateFolder(Folder,"STADTGEBAEUDE V3 - SHOPS UND LOKALE");
+            if(!AssetDatabase.IsValidFolder(Ready))AssetDatabase.CreateFolder(Folder,"ARCHITEKTUR V6 - WOHNEN UND GEWERBE");
             if(!AssetDatabase.IsValidFolder(Ready+"/Meshes"))AssetDatabase.CreateFolder(Ready,"Meshes");
             if(!AssetDatabase.IsValidFolder(Ready+"/Materials"))AssetDatabase.CreateFolder(Ready,"Materials");
             Catalog.Clear();
@@ -82,7 +102,9 @@ namespace CheatOnYourDayOnes.EditorTools
                 try
                 {
                     Create(root,s);
-                    ValidateDoorway(root,s);
+                    root.transform.localScale=new Vector3(1,s.style=="exterior"?1:.8f,1);
+                    if(s.style!="exterior")ValidateDoorway(root,s);
+                    ValidateExpansion(root,s);
                     BatchStaticVisuals(root,s.id);
                     var prefab=PrefabUtility.SaveAsPrefabAsset(root,Ready+"/"+s.id+".prefab");
                     if(prefab==null)throw new InvalidOperationException("Prefab nicht gespeichert: "+s.label);
@@ -94,19 +116,23 @@ namespace CheatOnYourDayOnes.EditorTools
             // Placement uses the same road/terrain exclusion tests as the city.
             int placed=0; // Catalog only: enlarged replacements must not overwrite occupied lots.
             Selection.activeObject=AssetDatabase.LoadAssetAtPath<Object>(Ready);EditorGUIUtility.PingObject(Selection.activeObject);
-            File.WriteAllText("Library/CivicBuildingsResult.txt","Created "+Catalog.Count+" enterable prefabs; placed "+placed+" on safe free lots. Existing city and roads preserved. Play Mode gate test pending.");
+            File.WriteAllText("Library/CivicBuildingsResult.txt","V6: Created "+Catalog.Count+" prefabs (42 enterable at Y=0.8, 7 exterior) in "+Ready+"; placed "+placed+". Entrance and expansion checks passed. Existing city and roads preserved. Play Mode movement test pending.");
             Debug.Log("[CITY CIVIC] "+Catalog.Count+" begehbare Typen, "+placed+" platziert. Katalog: "+Ready);
         }
         [MenuItem("Day Ones/Stadt/Begehbare Gebaeude oeffnen")]
         static void Open(){Selection.activeObject=AssetDatabase.LoadAssetAtPath<Object>(Ready);EditorGUIUtility.PingObject(Selection.activeObject);}
-        [MenuItem("Day Ones/Stadt/Individuelle Gebaeude V2 erstellen")]
-        static void BuildV2(){BuildCatalog();}
         [MenuItem("Day Ones/Stadt/Individuelle Gebaeude V2 oeffnen")]
-        static void OpenV2(){Open();}
-        [MenuItem("Day Ones/Stadt/Shops und Gebaeude V3 erstellen")]
-        static void BuildV3(){BuildCatalog();}
+        static void OpenV2(){Selection.activeObject=AssetDatabase.LoadAssetAtPath<Object>(Folder+"/INDIVIDUELLE GEBAEUDE V2");EditorGUIUtility.PingObject(Selection.activeObject);}
         [MenuItem("Day Ones/Stadt/Shops und Gebaeude V3 oeffnen")]
-        static void OpenV3(){Open();}
+        static void OpenV3(){Selection.activeObject=AssetDatabase.LoadAssetAtPath<Object>(Folder+"/STADTGEBAEUDE V3 - SHOPS UND LOKALE");EditorGUIUtility.PingObject(Selection.activeObject);}
+        [MenuItem("Day Ones/Stadt/Architektur V4 oeffnen")]
+        static void OpenV4(){Selection.activeObject=AssetDatabase.LoadAssetAtPath<Object>(Folder+"/ARCHITEKTUR V4 - DETAILLIERT");EditorGUIUtility.PingObject(Selection.activeObject);}
+        [MenuItem("Day Ones/Stadt/Architektur V5 oeffnen")]
+        static void OpenV5(){Selection.activeObject=AssetDatabase.LoadAssetAtPath<Object>(Folder+"/ARCHITEKTUR V5 - ALLE GEBAEUDE");EditorGUIUtility.PingObject(Selection.activeObject);}
+        [MenuItem("Day Ones/Stadt/Architektur V6 erstellen")]
+        static void BuildV6(){BuildCatalog();}
+        [MenuItem("Day Ones/Stadt/Architektur V6 oeffnen")]
+        static void OpenV6(){Open();}
         static Material Mat(string key,Color color,bool glass=false,bool glow=false)
         {
             if(Mats.TryGetValue(key,out var material))return material;
@@ -138,12 +164,13 @@ namespace CheatOnYourDayOnes.EditorTools
         {var g=new GameObject(name);g.transform.SetParent(parent,false);g.transform.localPosition=p;g.transform.localRotation=Quaternion.Euler(0,yaw,0);return g.transform;}
         static void Create(GameObject root,Spec s)
         {
+            if(CreateExpansion(root,s))return;
             var t=root.transform;var wall=Mat(s.id,s.color);var trim=Mat("WarmWhite",White);var dark=Mat("Anthrazit",new Color(.10f,.13f,.16f));
             var glass=Mat("ClearGlass",new Color(.63f,.8f,.87f,.19f),true);var floor=Mat("InteriorFloor",new Color(.56f,.54f,.5f));
             var asphalt=Mat("Asphalt",new Color(.20f,.22f,.23f));var gold=Mat("Champagne",new Color(.72f,.54f,.22f));
             bool police=s.style=="police",wash=s.style=="carwash",warehouse=s.style=="warehouse",construction=s.style=="construction";
             Box(t,"Innenboden",new Vector3(0,-.06f,0),new Vector3(s.w,.2f,s.d),floor);
-            if(construction){Construction(t,s,wall,dark);return;}
+            if(construction){Construction(t,s,wall,dark);ArchitecturalFinish(t,s);return;}
             float door=wash?4.6f:warehouse?4.2f:3.2f;
             BuildArchitecturalShell(t,s,door,wall,trim,glass,dark);
             Box(t,"Fassadenband",new Vector3(0,s.h-.42f,-s.d*.5f-.18f),new Vector3(s.w+.25f,.65f,.25f),police?Mat("PolizeiBlau",new Color(.035f,.16f,.31f)):s.style=="casino"?gold:dark);
@@ -175,6 +202,7 @@ namespace CheatOnYourDayOnes.EditorTools
             if(s.style=="station")Station(t,s,trim,dark);
             if(s.style=="motel")Motel(t,s,trim,dark);
             if(police)PoliceYard(t,s,asphalt,trim,dark);
+            ArchitecturalFinish(t,s);
             var info=root.AddComponent<CityBuilding>();info.Configure(s.id,s.label,police?CityDistrict.Civic:CityDistrict.Commercial,s.type,false,true);
         }
         static void Facade(Transform t,float width,float height,float door,Material wall,Material trim,Material glass,Material dark,bool bars,bool onlyDoor,int windows=2,float windowWidth=1.35f,float sill=.95f,float windowTop=2.65f)
@@ -336,7 +364,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 for(float z=-s.d*.5f-.2f;z<-s.d*.5f+2.5f;z+=.25f)
                 foreach(float x in new[]{-.4f,0,.4f})foreach(float y in new[]{.15f,.9f,1.8f})
                 {
-                    Vector3 p=root.transform.TransformPoint(new Vector3(x,y,z));
+                    Vector3 p=root.transform.TransformPoint(new Vector3(x,y/root.transform.lossyScale.y,z));
                     Vector3 local=c.transform.InverseTransformPoint(p)-c.center;Vector3 half=c.size*.5f;
                     if(Mathf.Abs(local.x)<half.x&&Mathf.Abs(local.y)<half.y&&Mathf.Abs(local.z)<half.z)
                         throw new InvalidOperationException(s.label+": Eingang wird blockiert durch "+c.name);
@@ -356,7 +384,7 @@ namespace CheatOnYourDayOnes.EditorTools
                 preview.camera.transform.position=bounds.center+new Vector3(.8f,.65f,-1).normalized*bounds.size.magnitude*1.6f;
                 preview.camera.transform.LookAt(bounds.center);preview.lights[0].intensity=1.1f;preview.lights[0].transform.rotation=Quaternion.Euler(40,30,0);preview.lights[1].intensity=.7f;
                 preview.BeginStaticPreview(new Rect(0,0,640,480));preview.Render(true);
-                var texture=preview.EndStaticPreview();Directory.CreateDirectory("Library/CivicPreviewsV2");File.WriteAllBytes("Library/CivicPreviewsV2/"+id+".png",texture.EncodeToPNG());Object.DestroyImmediate(texture);
+                var texture=preview.EndStaticPreview();Directory.CreateDirectory("Library/CivicPreviewsV6");File.WriteAllBytes("Library/CivicPreviewsV6/"+id+".png",texture.EncodeToPNG());Object.DestroyImmediate(texture);
             }
             finally{preview.Cleanup();}
         }
@@ -371,7 +399,9 @@ namespace CheatOnYourDayOnes.EditorTools
                 var previous=AssetDatabase.LoadAssetAtPath<Mesh>(path);
                 if(previous==null)AssetDatabase.CreateAsset(mesh,path);else{EditorUtility.CopySerialized(mesh,previous);Object.DestroyImmediate(mesh);mesh=previous;EditorUtility.SetDirty(previous);}
                 var batch=new GameObject("Fassade - "+group.Key.name);batch.transform.SetParent(root.transform,false);batch.AddComponent<MeshFilter>().sharedMesh=mesh;batch.AddComponent<MeshRenderer>().sharedMaterial=group.Key;
+                var temporary=list.Select(r=>r.GetComponent<MeshFilter>().sharedMesh).Where(m=>m!=null&&m.name.StartsWith("V4 ",StringComparison.Ordinal)&&!AssetDatabase.Contains(m)).Distinct().ToArray();
                 foreach(var renderer in list){Object.DestroyImmediate(renderer.GetComponent<MeshFilter>());Object.DestroyImmediate(renderer);}
+                foreach(var source in temporary)Object.DestroyImmediate(source);
             }
         }
     }
