@@ -21,6 +21,7 @@ GameObject:
   - component: {fileID: 9219537829159665089}
   - component: {fileID: 345283889893129988}
   - component: {fileID: 740202495813414270}
+  - component: {fileID: 4927595333275006004}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -307,14 +308,26 @@ MonoBehaviour:
   sprintSpeed: 6.8
   acceleration: 18
   deceleration: 22
+  airAcceleration: 7
   rotationSpeed: 18
   gravity: -26
   jumpHeight: 1.35
+  groundProbeDistance: 0.28
+  groundStickSpeed: 4.5
+  maxFallSpeed: 42
+  fallingGravityMultiplier: 1.35
+  groundMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
   maxStamina: 100
   staminaDrainPerSecond: 22
   staminaRegenPerSecond: 18
   staminaRegenDelay: 0.8
   sprintResumeThreshold: 12
+  inputSendRate: 30
+  remotePositionSharpness: 18
+  remoteRotationSharpness: 20
+  remoteSnapDistance: 4
   cameraTarget: {fileID: 8491741125697097670}
   playerCamera: {fileID: 4688447741953944486}
   audioListener: {fileID: 5778332021678954214}
@@ -351,13 +364,22 @@ MonoBehaviour:
   animator: {fileID: 6020039368730957742}
   characterController: {fileID: 8700160010155521570}
   fallbackController: {fileID: 9100000, guid: a63a0568432d4429eae0847312bc1794, type: 2}
-  walkThreshold: 0.35
-  runThreshold: 5.1
+  idleEnterSpeed: 0.16
+  walkEnterSpeed: 0.28
+  runEnterSpeed: 4.75
+  runExitSpeed: 4.25
+  speedSharpness: 12
   idleWalkBlend: 0.1
   walkRunBlend: 0.08
   idleRunBlend: 0.1
   jumpBlend: 0.06
   landBlend: 0.1
+  jumpExitNormalizedTime: 0.98
+  maximumJumpAnimationSeconds: 1.45
+  walkReferenceSpeed: 3
+  runReferenceSpeed: 6.8
+  walkPlaybackRange: {x: 0.78, y: 1.18}
+  runPlaybackRange: {x: 0.82, y: 1.12}
 --- !u!114 &740202495813414270
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -371,6 +393,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Vehicles.VehicleInteractor
   enterRadius: 3.5
+--- !u!114 &4927595333275006004
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669583366774212533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a6cb315e369e2f74eaa3503a8db22621, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheatOnYourDayOnes.Casino.CasinoPlayerGames
+  ShowTopMostFoldoutHeaderGroup: 1
 --- !u!1 &3031222564111219763
 GameObject:
   m_ObjectHideFlags: 0
@@ -519,6 +554,11 @@ MonoBehaviour:
   vehiclePitch: 10
   vehicleYawFollow: 10
   vehiclePositionFollow: 12
+  pullingPivotOffset: {x: 0, y: 1.34, z: 0}
+  pullingDistance: 2.75
+  pullingPitch: 7
+  pullingYawFollow: 9
+  pullingInvertedYawMultiplier: 1
   followSmooth: 20
   rotationSmooth: 18
   collisionRadius: 0.18
@@ -526,6 +566,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   minimumDistance: 0.75
+  farClipDistance: 250
 --- !u!1 &6832226492209183316
 GameObject:
   m_ObjectHideFlags: 0
