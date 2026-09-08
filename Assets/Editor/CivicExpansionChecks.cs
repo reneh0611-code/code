@@ -1,10 +1,35 @@
 using System;
+using System.IO;
+using UnityEditor;
 using UnityEngine;
 
 namespace CheatOnYourDayOnes.EditorTools
 {
     public static partial class CivicBuildingsBuilder
     {
+        static void RenderApartmentCutaway(GameObject root)
+        {
+            if(SystemInfo.graphicsDeviceType==UnityEngine.Rendering.GraphicsDeviceType.Null)return;
+            var preview=new PreviewRenderUtility();
+            try
+            {
+                var copy=UnityEngine.Object.Instantiate(root);preview.AddSingleGO(copy);
+                foreach(var r in copy.GetComponentsInChildren<MeshRenderer>())
+                {
+                    for(var p=r.transform;p!=null;p=p.parent)
+                        if(p.name=="Hausfront"||p.name=="Wohnhaus Schieferdach"||p.name.StartsWith("Dachdeckung",StringComparison.Ordinal))
+                        {r.enabled=false;break;}
+                }
+                preview.camera.clearFlags=CameraClearFlags.Color;preview.camera.backgroundColor=new Color(.23f,.27f,.29f);
+                preview.camera.nearClipPlane=.1f;preview.camera.farClipPlane=200;preview.camera.fieldOfView=38;
+                preview.camera.transform.position=new Vector3(13,13,-31);preview.camera.transform.LookAt(new Vector3(0,4,0));
+                preview.lights[0].intensity=1.6f;preview.lights[0].transform.rotation=Quaternion.Euler(35,-25,0);preview.lights[1].intensity=1;
+                preview.BeginStaticPreview(new Rect(0,0,1000,750));preview.Render(true);
+                var texture=preview.EndStaticPreview();Directory.CreateDirectory("Library/CivicPreviewsV6");File.WriteAllBytes("Library/CivicPreviewsV6/48_Mehrfamilienhaus_Schnitt.png",texture.EncodeToPNG());UnityEngine.Object.DestroyImmediate(texture);
+            }
+            catch(Exception e){Debug.LogWarning("Wohnhaus-Schnittvorschau nicht verfuegbar: "+e.Message);}
+            finally{preview.Cleanup();}
+        }
         static void BusTerminal(Transform t,Spec s,Material wall,Material trim,Material glass,Material dark)
         {
             var asphalt=Mat("BusAsphalt",new Color(.19f,.205f,.22f));var yellow=Mat("BusStopYellow",new Color(.95f,.8f,.14f));var green=Mat("BusStopGreen",new Color(.04f,.35f,.16f));
@@ -41,9 +66,9 @@ namespace CheatOnYourDayOnes.EditorTools
             if(int.Parse(s.id.Substring(0,2))<48||s.style=="exterior")return;
             float sy=root.transform.lossyScale.y;
             var boxes=root.GetComponentsInChildren<BoxCollider>();
-            void Clear(float x,float groundY,float z,float halfWidth=.3f,float head=2)
+            void Clear(float x,float groundY,float z,float halfWidth=.35f,float head=2)
             {
-                foreach(float dx in new[]{-halfWidth,0,halfWidth})foreach(float dy in new[]{.12f,1f,head})
+                foreach(float dx in new[]{-halfWidth,0,halfWidth})foreach(float dy in new[]{.12f,.35f,.6f,.85f,1.1f,1.35f,1.6f,1.85f,head})
                 {
                     var world=root.transform.TransformPoint(new Vector3(x+dx,groundY+dy/sy,z));
                     foreach(var c in boxes)
@@ -62,8 +87,8 @@ namespace CheatOnYourDayOnes.EditorTools
                     foreach(int side in new[]{-1,1})
                     {
                         for(float x=0;x<=7;x+=.25f)Clear(side*x,y,-4);
-                        for(float z=-4;z<=4;z+=.25f)Clear(side*6,y,z);
-                        Clear(side*4.5f,y,4);Clear(side*7,y,4);
+                        for(float z=-4;z<=4;z+=.25f)Clear(side*5.5f,y,z);
+                        for(float x=4.5f;x<=7.1f;x+=.2f)Clear(side*x,y,4);
                     }
                     for(float z=-4;z<7.2f;z+=.25f)Clear(2,y,z);
                     Clear(0,y,7);Clear(0,y,-2);
@@ -79,7 +104,16 @@ namespace CheatOnYourDayOnes.EditorTools
             {
                 for(float z=-15;z<=14;z+=.3f)Clear(0,0,z);
             }
-            else for(float z=-s.d*.5f;z<s.d*.3f;z+=.25f)Clear(0,0,z);
+            else if(s.style=="mafia")
+            {
+                for(float z=-s.d*.5f;z<=4.1f;z+=.25f)Clear(0,0,z);
+                foreach(int side in new[]{-1,1})
+                {
+                    for(float x=0;x<=4;x+=.25f)Clear(side*x,0,4.1f);
+                    for(float z=4.1f;z<=8.3f;z+=.25f)Clear(side*4,0,z);
+                }
+            }
+            else for(float z=-s.d*.5f;z<(s.style=="mafia"?4.1f:s.d*.3f);z+=.25f)Clear(0,0,z);
         }
     }
 }

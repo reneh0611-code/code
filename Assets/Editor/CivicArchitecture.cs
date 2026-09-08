@@ -104,7 +104,7 @@ namespace CheatOnYourDayOnes.EditorTools
                         Box(t,"Bronzene Sonnenschutzlamelle",new Vector3(x,s.h+2.3f,-s.d*.5f+2.4f),new Vector3(.12f,3.7f,.7f),gold,false);
                     Box(t,"Asymmetrisches Eingangsportal",new Vector3(5.2f,2.8f,-s.d*.5f-.55f),new Vector3(.6f,5.6f,1.1f),dark);
                     Box(t,"Auskragendes Portalband",new Vector3(0,5.55f,-s.d*.5f-.55f),new Vector3(11,.32f,1.1f),dark);
-                    for(int i=0;i<2;i++){Box(t,"Geldautomat",new Vector3(-7+i*1.5f,1,-s.d*.5f-.4f),new Vector3(.9f,2,.6f),dark);Box(t,"ATM Bildschirm",new Vector3(-7+i*1.5f,1.4f,-s.d*.5f-.72f),new Vector3(.6f,.4f,.025f),Mat("ATMLight",new Color(.2f,.65f,.7f),false,true),false);}
+                    for(int i=0;i<2;i++){var atm=Group(t,"GELDAUTOMAT - komplett verschiebbar",new Vector3(-7+i*1.5f,0,-s.d*.5f-.4f));Box(atm,"Gehaeuse",Vector3.up,new Vector3(.9f,2,.6f),dark);Box(atm,"Bildschirm",new Vector3(0,1.4f,-.32f),new Vector3(.6f,.4f,.025f),Mat("ATMLight",new Color(.2f,.65f,.7f),false,true),false);}
                     break;
                 case "townhall":
                     Upper(t,"Rathaus Beletage",new Vector3(0,s.h,0),s.w,s.d,4.2f,wall,trim,glass,dark);

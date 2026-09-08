@@ -64,9 +64,9 @@ namespace CheatOnYourDayOnes.EditorTools
             bool panel=s.style=="casino"||s.style=="civic"||s.style=="office"||s.style=="shop_electronics";
             float cw=brick?.48f:panel?1.7f:1.1f,ch=brick?.20f:panel?.85f:.48f,gap=brick?.012f:.015f;
             var surfaces=root.GetComponentsInChildren<MeshRenderer>().Where(r=>r.name=="Wandpfeiler"||r.name=="Sturz"||r.name=="Fensterbruestung").ToArray();
-            var groups=new Dictionary<Material,SurfaceMesh>();
             foreach(var r in surfaces)
             {
+                var groups=new Dictionary<Material,SurfaceMesh>();
                 Transform q=r.transform;Vector3 sz=q.localScale;
                 if(sz.z>.5f||sz.x<.2f||sz.y<.15f)continue;
                 // Only the exterior face of each actual wall segment: doors/windows remain open.
@@ -80,11 +80,11 @@ namespace CheatOnYourDayOnes.EditorTools
                     Color c=r.sharedMaterial.color*(.96f+variant*.035f);c.a=1;
                     var mat=Mat("V4_Surface_"+r.sharedMaterial.name+"_"+variant,c);
                     if(!groups.TryGetValue(mat,out var mesh)){mesh=new SurfaceMesh();groups.Add(mat,mesh);}
-                    Vector3 A(float x,float y)=>root.InverseTransformPoint(q.TransformPoint(new Vector3(x/sz.x-.5f,y/sz.y-.5f,-.5f-.025f/sz.z)));
+                    Vector3 A(float x,float y)=>new Vector3(x/sz.x-.5f,y/sz.y-.5f,-.5f-.025f/sz.z);
                     mesh.Quad(A(x0,y0),A(x0,y1),A(x1,y1),A(x1,y0));
                 }
+                foreach(var pair in groups)pair.Value.Save(q,"Mauerwerk Relief "+pair.Key.name,pair.Key);
             }
-            foreach(var pair in groups)pair.Value.Save(root,"Mauerwerk Relief "+pair.Key.name,pair.Key);
         }
         static void RoofCourses(Transform root)
         {
@@ -96,11 +96,11 @@ namespace CheatOnYourDayOnes.EditorTools
                 for(float x=-w*.5f;x<w*.5f;x+=.38f)for(float z=-d*.5f;z<d*.5f;z+=.65f)
                 {
                     float x0=x+.013f,x1=Mathf.Min(x+.38f,w*.5f)-.013f,z0=z+.012f,z1=Mathf.Min(z+.65f,d*.5f)-.012f;
-                    Vector3 P(float xx,float zz)=>root.InverseTransformPoint(roof.transform.TransformPoint(new Vector3(xx,rise*(1-Mathf.Abs(xx)/(w*.5f))+.025f,zz)));
+                    Vector3 P(float xx,float zz)=>new Vector3(xx,rise*(1-Mathf.Abs(xx)/(w*.5f))+.025f,zz);
                     mesh.Quad(P(x0,z0),P(x0,z1),P(x1,z1),P(x1,z0));
                 }
                 var source=roof.GetComponent<Renderer>().sharedMaterial;Color c=source.color*1.14f;c.a=1;
-                mesh.Save(root,"Dachdeckung "+roof.name,Mat("V4_Roof_"+source.name,c));
+                mesh.Save(roof.transform,"Dachdeckung "+roof.name,Mat("V4_Roof_"+source.name,c));
             }
         }
         static void WindowDressings(Transform root,Material stone,bool pediments)
