@@ -18,6 +18,7 @@ namespace CheatOnYourDayOnes.EditorTools
     {
         const string Folder="Assets/Generated/NeubeckumCity";
         const string Ready=Folder+"/ARCHITEKTUR V6 - WOHNEN UND GEWERBE";
+        static string AssetOutput=Ready;
         const string Request=Folder+"/CivicBuildings.request";
         class Spec
         {
@@ -96,7 +97,8 @@ namespace CheatOnYourDayOnes.EditorTools
             if(!AssetDatabase.IsValidFolder(Ready+"/Meshes"))AssetDatabase.CreateFolder(Ready,"Meshes");
             if(!AssetDatabase.IsValidFolder(Ready+"/Materials"))AssetDatabase.CreateFolder(Ready,"Materials");
             Catalog.Clear();
-            foreach(var s in Specs)
+            File.WriteAllText("Library/CivicBuildingsResult.txt","V6: Building catalog; checks pending.");
+            foreach(var s in Specs.OrderBy(s=>int.Parse(s.id.Substring(0,2))<48?1:0))
             {
                 var root=new GameObject(s.label);
                 try
@@ -105,6 +107,7 @@ namespace CheatOnYourDayOnes.EditorTools
                     root.transform.localScale=new Vector3(1,s.style=="exterior"?1:.8f,1);
                     if(s.style!="exterior")ValidateDoorway(root,s);
                     ValidateExpansion(root,s);
+                    if(s.style=="apartments")RenderApartmentCutaway(root);
                     BatchStaticVisuals(root,s.id);
                     var prefab=PrefabUtility.SaveAsPrefabAsset(root,Ready+"/"+s.id+".prefab");
                     if(prefab==null)throw new InvalidOperationException("Prefab nicht gespeichert: "+s.label);
@@ -117,7 +120,7 @@ namespace CheatOnYourDayOnes.EditorTools
             int placed=0; // Catalog only: enlarged replacements must not overwrite occupied lots.
             Selection.activeObject=AssetDatabase.LoadAssetAtPath<Object>(Ready);EditorGUIUtility.PingObject(Selection.activeObject);
             File.WriteAllText("Library/CivicBuildingsResult.txt","V6: Created "+Catalog.Count+" prefabs (42 enterable at Y=0.8, 7 exterior) in "+Ready+"; placed "+placed+". Entrance and expansion checks passed. Existing city and roads preserved. Play Mode movement test pending.");
-            Debug.Log("[CITY CIVIC] "+Catalog.Count+" begehbare Typen, "+placed+" platziert. Katalog: "+Ready);
+            Debug.Log("[CITY CIVIC] "+Catalog.Count+" Gebaeudemodelle, "+placed+" platziert. Katalog: "+Ready);
         }
         [MenuItem("Day Ones/Stadt/Begehbare Gebaeude oeffnen")]
         static void Open(){Selection.activeObject=AssetDatabase.LoadAssetAtPath<Object>(Ready);EditorGUIUtility.PingObject(Selection.activeObject);}
@@ -136,7 +139,7 @@ namespace CheatOnYourDayOnes.EditorTools
         static Material Mat(string key,Color color,bool glass=false,bool glow=false)
         {
             if(Mats.TryGetValue(key,out var material))return material;
-            string path=Ready+"/Materials/"+key+".mat";material=AssetDatabase.LoadAssetAtPath<Material>(path);
+            string path=AssetOutput+"/Materials/"+key+".mat";material=AssetDatabase.LoadAssetAtPath<Material>(path);
             if(material==null)
             {
                 material=new Material(Shader.Find("Universal Render Pipeline/Lit")??Shader.Find("Standard")){name=key,color=color,enableInstancing=true};
@@ -383,26 +386,33 @@ namespace CheatOnYourDayOnes.EditorTools
                 preview.camera.nearClipPlane=.1f;preview.camera.farClipPlane=500;preview.camera.fieldOfView=35;
                 preview.camera.transform.position=bounds.center+new Vector3(.8f,.65f,-1).normalized*bounds.size.magnitude*1.6f;
                 preview.camera.transform.LookAt(bounds.center);preview.lights[0].intensity=1.1f;preview.lights[0].transform.rotation=Quaternion.Euler(40,30,0);preview.lights[1].intensity=.7f;
-                preview.BeginStaticPreview(new Rect(0,0,640,480));preview.Render(true);
+                preview.BeginStaticPreview(new Rect(0,0,1000,750));preview.Render(true);
                 var texture=preview.EndStaticPreview();Directory.CreateDirectory("Library/CivicPreviewsV6");File.WriteAllBytes("Library/CivicPreviewsV6/"+id+".png",texture.EncodeToPNG());Object.DestroyImmediate(texture);
             }
             finally{preview.Cleanup();}
         }
         static void BatchStaticVisuals(GameObject root,string id)
         {
-            var renderers=root.GetComponentsInChildren<MeshRenderer>().Where(r=>r.GetComponentInParent<Rigidbody>()==null&&r.sharedMaterial!=null&&r.sharedMaterial.renderQueue<3000).ToArray();
-            foreach(var group in renderers.GroupBy(r=>r.sharedMaterial))
+            // Keep geometry at its original transform. Material sharing is safe;
+            // merging unrelated objects by material destroys modular editing.
+            int index=0;
+            var saved=new System.Collections.Generic.Dictionary<Mesh,Mesh>();
+            AssetDatabase.StartAssetEditing();
+            try
             {
-                var list=group.ToArray();var combines=list.Select(r=>new CombineInstance{mesh=r.GetComponent<MeshFilter>().sharedMesh,transform=root.transform.worldToLocalMatrix*r.transform.localToWorldMatrix}).ToArray();
-                var mesh=new Mesh{name=id+" "+group.Key.name,indexFormat=IndexFormat.UInt32};mesh.CombineMeshes(combines,true,true);
-                string path=Ready+"/Meshes/"+id+"_"+group.Key.name+".asset";
-                var previous=AssetDatabase.LoadAssetAtPath<Mesh>(path);
-                if(previous==null)AssetDatabase.CreateAsset(mesh,path);else{EditorUtility.CopySerialized(mesh,previous);Object.DestroyImmediate(mesh);mesh=previous;EditorUtility.SetDirty(previous);}
-                var batch=new GameObject("Fassade - "+group.Key.name);batch.transform.SetParent(root.transform,false);batch.AddComponent<MeshFilter>().sharedMesh=mesh;batch.AddComponent<MeshRenderer>().sharedMaterial=group.Key;
-                var temporary=list.Select(r=>r.GetComponent<MeshFilter>().sharedMesh).Where(m=>m!=null&&m.name.StartsWith("V4 ",StringComparison.Ordinal)&&!AssetDatabase.Contains(m)).Distinct().ToArray();
-                foreach(var renderer in list){Object.DestroyImmediate(renderer.GetComponent<MeshFilter>());Object.DestroyImmediate(renderer);}
-                foreach(var source in temporary)Object.DestroyImmediate(source);
+            foreach(var filter in root.GetComponentsInChildren<MeshFilter>(true))
+            {
+                var source=filter.sharedMesh;if(source==null||AssetDatabase.Contains(source))continue;
+                if(saved.TryGetValue(source,out var existing)){filter.sharedMesh=existing;continue;}
+                string path=AssetOutput+"/Meshes/"+id+"_Modular_"+(index++).ToString("D4")+".asset";
+                var mesh=AssetDatabase.LoadAssetAtPath<Mesh>(path);
+                if(mesh==null){mesh=Object.Instantiate(source);mesh.name=System.IO.Path.GetFileNameWithoutExtension(path);AssetDatabase.CreateAsset(mesh,path);}
+                else{mesh.Clear();EditorUtility.CopySerialized(source,mesh);mesh.name=System.IO.Path.GetFileNameWithoutExtension(path);mesh.RecalculateBounds();mesh.UploadMeshData(false);EditorUtility.SetDirty(mesh);}
+                saved[source]=mesh;filter.sharedMesh=mesh;
             }
+            foreach(var source in saved.Keys)Object.DestroyImmediate(source);
+            }
+            finally{AssetDatabase.StopAssetEditing();}
         }
     }
 }

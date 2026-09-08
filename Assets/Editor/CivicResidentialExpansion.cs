@@ -26,14 +26,17 @@ namespace CheatOnYourDayOnes.EditorTools
                 {
                     Facade(Group(g,"Wohnhaus Giebelseite",new Vector3(side*9,0,0),side*90),16,storey,0,wall,trim,glass,dark,false,false,2,1.4f,1.05f,3.05f);
                     InteriorDivider(g,0,-8,8,side*3,2.2f,storey,trim,true,-4);
-                    InteriorDivider(g,0,side<0?-9:3,side<0?-3:9,0,1.6f,storey,trim,false,side*6);
+                    InteriorDivider(g,0,side<0?-9:3,side<0?-3:9,0,2f,storey,trim,false,side*6);
                     InteriorDivider(g,0,0,8,side*6,1.6f,storey,trim,true,4);
                     Group(g,"WOHNUNG "+(level*2+(side<0?1:2))+" - EINGANG",new Vector3(side*3,0,-4));
                     Box(g,"Kuechenzeile",new Vector3(side*7,.65f,-6.8f),new Vector3(2.5f,1.3f,.7f),wood);
-                    Box(g,"Wohnzimmer Sofa",new Vector3(side*7,.5f,-1.2f),new Vector3(2.2f,1,.75f),dark);
+                    Box(g,"Wohnzimmer Sofa",new Vector3(side*7.5f,.5f,-1.2f),new Vector3(1.8f,1,.75f),dark);
                     Box(g,"Bett",new Vector3(side*7.6f,.4f,6.2f),new Vector3(1.5f,.8f,2.2f),trim);
+                    Box(g,"Kopfkissen",new Vector3(side*7.6f,.86f,6.85f),new Vector3(1.1f,.12f,.5f),trim,false);
                     Box(g,"Waschbecken",new Vector3(side*4.4f,.9f,6.8f),new Vector3(.8f,.25f,.65f),trim);
                     Box(g,"Duschwanne",new Vector3(side*4.3f,.12f,1.3f),new Vector3(1.1f,.24f,1.1f),trim);
+                    Box(g,"WC Sitz",new Vector3(side*4.2f,.55f,5.4f),new Vector3(.5f,.2f,.7f),trim);
+                    Box(g,"WC Spuelkasten",new Vector3(side*4.2f,.9f,5.8f),new Vector3(.6f,.65f,.22f),trim);
                     if(level>0)
                     {
                         Beam(g,"Treppenauge Handlauf",new Vector3(side*1.3f,1.3f,-.9f),new Vector3(side*1.3f,1.3f,6.15f),.08f,dark);
@@ -56,6 +59,8 @@ namespace CheatOnYourDayOnes.EditorTools
                     }
                 }
                 Cornice(g,18,16,3.95f,trim,1);
+                var lamp=new GameObject("Etagenlicht");lamp.transform.SetParent(g,false);lamp.transform.localPosition=new Vector3(0,3.6f,-4);
+                var light=lamp.AddComponent<Light>();light.type=LightType.Point;light.range=15;light.intensity=1.5f;light.shadows=LightShadows.None;light.color=new Color(1,.91f,.78f);
             }
             Pitched(t,"Wohnhaus Schieferdach",18.6f,16.6f,12,2.7f,roof);
             FramedGlazing(t,trim);Masonry(t,s);RoofCourses(t);
@@ -80,8 +85,19 @@ namespace CheatOnYourDayOnes.EditorTools
                 }
                 if(level>0)Cornice(t,s.w,s.d,level*3.1f,trim,1);
             }
-            Box(t,"Geschlossene Haustuer",new Vector3(0,1.25f,-s.d*.5f-.1f),new Vector3(1.4f,2.5f,.18f),dark);
-            Pitched(t,"Wohnhaus Dach",s.w+.7f,s.d+.7f,h,2.2f,roof);
+            if(s.id=="63_Doppelhaus")
+            {
+                foreach(int side in new[]{-1,1})
+                {
+                    Box(t,"Geschlossene Doppelhaustuer",new Vector3(side*3.3f,1.25f,-s.d*.5f-.1f),new Vector3(1.4f,2.5f,.18f),dark);
+                    Pitched(Group(t,"Doppelhaus Haelfte",new Vector3(side*s.w*.25f,0,0)),"Wohnhaus Dach",s.w*.5f+.35f,s.d+.7f,h,2.2f,roof);
+                }
+            }
+            else
+            {
+                Box(t,"Geschlossene Haustuer",new Vector3(0,1.25f,-s.d*.5f-.1f),new Vector3(1.4f,2.5f,.18f),dark);
+                Pitched(t,"Wohnhaus Dach",s.w+.7f,s.d+.7f,h,2.2f,roof);
+            }
             if(floors>1)foreach(int side in new[]{-1,1})
             {
                 float x=side*s.w*.32f;

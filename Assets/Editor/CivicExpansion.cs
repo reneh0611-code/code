@@ -57,6 +57,8 @@ namespace CheatOnYourDayOnes.EditorTools
             else Box(t,"Dach",new Vector3(0,s.h+.15f,0),new Vector3(s.w+.6f,.3f,s.d+.6f),roof);
             Cornice(t,s.w,s.d,s.h,trim,2);
             CityFacadeDetails.Word(t,s.sign,new Vector3(0,s.h-.6f,f-.27f),s.style=="nightclub"?.7f:.5f,trim);
+            var lamp=new GameObject("Innenraumlicht");lamp.transform.SetParent(t,false);lamp.transform.localPosition=new Vector3(0,s.h-.5f,0);
+            var light=lamp.AddComponent<Light>();light.type=LightType.Point;light.range=Mathf.Max(s.w,s.d)*.8f;light.intensity=1.5f;light.shadows=LightShadows.None;
         }
         static void ExpansionIdentity(Transform t,Spec s,Material wall,Material trim,Material glass,Material dark,Material wood)
         {
@@ -111,8 +113,8 @@ namespace CheatOnYourDayOnes.EditorTools
                     Arch(t,new Vector3(0,3.2f,f-.45f),2.2f,.25f,.3f,trim,18);
                     WindowDressings(t,trim,true);
                     InteriorDivider(t,0,-s.w*.5f,s.w*.5f,3,2.4f,s.h,wall,false);
-                    Box(t,"Besprechungstisch",new Vector3(0,.95f,6),new Vector3(6,.15f,2.2f),wood);
-                    for(int i=0;i<5;i++)foreach(int side in new[]{-1,1})Box(t,"Konferenzstuhl",new Vector3(-2.4f+i*1.2f,.5f,6+side*1.7f),new Vector3(.65f,1,.65f),dark);
+                    Box(t,"Besprechungstisch",new Vector3(0,.95f,6.5f),new Vector3(6,.15f,2.2f),wood);
+                    for(int i=0;i<5;i++)foreach(int side in new[]{-1,1})Box(t,"Konferenzstuhl",new Vector3(-2.4f+i*1.2f,.5f,6.5f+side*1.7f),new Vector3(.65f,1,.65f),dark);
                     Planter(t,new Vector3(-7,0,f-1),3,trim,green);Planter(t,new Vector3(7,0,f-1),3,trim,green);
                     break;
                 case "fashion_new":

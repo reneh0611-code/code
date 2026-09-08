@@ -189,6 +189,7 @@ namespace CheatOnYourDayOnes.EditorTools
         }
         static void Bench(Transform t,Vector3 p,float width,Material wood,Material metal)
         {
+            t=Group(t,"SITZBANK - komplett verschiebbar",p);p=Vector3.zero;
             for(int i=0;i<4;i++)Box(t,"Sitzbank Holzlatte",p+new Vector3(0,.48f,-.22f+i*.14f),new Vector3(width,.065f,.11f),wood,false);
             foreach(int side in new[]{-1,1})Box(t,"Bank Stahlfuss",p+new Vector3(side*width*.35f,.24f,0),new Vector3(.10f,.48f,.5f),metal);
             var c=Box(t,"Sitzbank Kollisionsvolumen",p+Vector3.up*.24f,new Vector3(width,.48f,.5f),wood);
